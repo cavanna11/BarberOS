@@ -14,6 +14,7 @@ import ConfirmationPage from './pages/client/ConfirmationPage';
 import MyAppointments from './pages/client/MyAppointments';
 import LoginPage from './pages/client/LoginPage';
 import NoBusinessPage from './pages/client/NoBusinessPage';
+import LandingPage from './pages/LandingPage';
 
 // Admin Pages
 import DashboardPage from './pages/admin/DashboardPage';
@@ -23,6 +24,7 @@ import AppointmentsPage from './pages/admin/AppointmentsPage';
 import SettingsPage from './pages/admin/SettingsPage';
 import AdminsPage from './pages/admin/AdminsPage';
 import ProfileSettingsPage from './pages/admin/ProfileSettingsPage';
+import SupportPage from './pages/admin/SupportPage';
 
 // Super Admin Pages
 import SuperAdminDashboard from './pages/super-admin/SuperAdminDashboard';
@@ -101,8 +103,13 @@ function PublicOnlyRoute({ children }) {
 }
 
 /**
- * Qué mostrar en la raíz. No hay selector público de negocios: el cliente
- * llega siempre por el link directo de su barbería.
+ * Qué mostrar en la raíz.
+ *
+ * Para quien ya trabaja con el sistema, es un atajo a su panel. Para todos los
+ * demás es la landing de venta: el dominio público es la puerta de entrada
+ * comercial, no un cartel de "te falta un link".
+ *
+ * Un cliente de barbería nunca cae acá: llega directo a /su-barberia.
  */
 function EntryRoute() {
   const { isAuthenticated, user, loading } = useAuth();
@@ -114,7 +121,7 @@ function EntryRoute() {
   if (isAuthenticated && (user?.role === 'owner' || user?.role === 'admin')) {
     return <Navigate to="/admin" replace />;
   }
-  return <NoBusinessPage reason="no-slug" />;
+  return <LandingPage />;
 }
 
 function ClientLayout({ children }) {
@@ -160,6 +167,7 @@ export default function App() {
           <Route path="admins" element={<AdminsPage />} />
           <Route path="configuracion" element={<SettingsPage />} />
           <Route path="ajustes" element={<ProfileSettingsPage />} />
+          <Route path="soporte" element={<SupportPage />} />
         </Route>
 
         {/* ── Rutas de super-admin ────────────────────────────────── */}

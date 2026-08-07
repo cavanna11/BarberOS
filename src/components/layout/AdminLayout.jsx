@@ -11,12 +11,14 @@ const ownerNavItems = [
   { to: '/admin/citas',         icon: '📅', label: 'Citas' },
   { to: '/admin/admins',        icon: '🛡️', label: 'Administradores' },
   { to: '/admin/configuracion', icon: '⚙️', label: 'Configuración' },
+  { to: '/admin/soporte',       icon: '💬', label: 'Soporte' },
 ];
 
 // Items para el admin/peluquero → solo sus citas
 const adminNavItems = [
   { to: '/admin',         icon: '📅', label: 'Mis Citas', end: true },
   { to: '/admin/ajustes', icon: '⚙️', label: 'Mi Configuración' },
+  { to: '/admin/soporte', icon: '💬', label: 'Soporte' },
 ];
 
 const ROLE_LABELS = {

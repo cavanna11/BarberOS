@@ -171,6 +171,43 @@ service cloud.firestore {
       }
     }
 
+    // ── Tickets de soporte ─────────────────────────────────────────────────
+    // Colección de primer nivel (no subcolección del negocio) para que el panel
+    // global pueda listarlos todos con una query simple, sin collectionGroup ni
+    // el índice que eso exige.
+    //
+    // Cada barbería solo ve los suyos. La regla de `list` compara contra
+    // `resource.data.businessId`, así que la query del cliente TIENE que llevar
+    // where('businessId','==',suId) — si no, Firestore rechaza toda la consulta.
+    match /tickets/{ticketId} {
+      allow get: if isPlatform() || inBusiness(resource.data.businessId);
+      allow list: if isPlatform()
+                     || (signedIn() && resource.data.businessId == claims().get('businessId', ''));
+
+      // Lo abre la barbería (o vos en su nombre, al preparar la cuenta).
+      allow create: if isPlatform()
+                       || (signedIn()
+                           && request.resource.data.businessId == claims().get('businessId', ''));
+
+      // Cerrar, reabrir, marcar leído. Nadie borra tickets: quedan de historial.
+      allow update: if isPlatform() || inBusiness(resource.data.businessId);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isPlatform()
+                       || inBusiness(get(/databases/$(database)/documents/tickets/$(ticketId)).data.businessId);
+
+        // El autor no se acepta del cliente: se compara contra su propio uid.
+        allow create: if signedIn()
+                         && request.resource.data.authorId == request.auth.uid
+                         && (isPlatform()
+                             || inBusiness(get(/databases/$(database)/documents/tickets/$(ticketId)).data.businessId));
+
+        // Un mensaje enviado no se edita ni se borra.
+        allow update, delete: if false;
+      }
+    }
+
     // ── Usuarios ───────────────────────────────────────────────────────────
     // Cada uno su propio documento. Nadie lista la tabla de usuarios.
     match /users/{userId} {

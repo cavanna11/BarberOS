@@ -1795,3 +1795,255 @@ select.form-input {
   clip: rect(0,0,0,0);
   border: 0;
 }
+
+/* ============================================
+   LANDING PÚBLICA
+   ============================================
+   Sigue la composición de sacia.tech: titulares grandes y apretados, el
+   naranja solo en lo que importa, mucho aire y fondos alternados casi blancos.
+*/
+
+/* El contenedor va a ancho completo y el tope se aplica adentro de cada
+   sección. Antes el fondo alternado se estiraba con un margen negativo en vw, y
+   como 100vw incluye la barra de scroll, dejaba desborde lateral. */
+.landing { width: 100%; }
+
+.landing > section {
+  padding-inline: var(--space-md);
+}
+
+.landing > section > * {
+  max-width: 1080px;
+  margin-inline: auto;
+}
+
+/* ── Hero ── */
+.landing-hero {
+  padding: clamp(48px, 9vw, 104px) 0 clamp(40px, 7vw, 80px);
+  text-align: center;
+}
+
+.landing-title {
+  font-size: clamp(2.4rem, 7.5vw, 4.6rem);
+  font-weight: 700;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  margin: var(--space-md) 0 var(--space-lg);
+}
+
+.landing-title .acento { color: var(--primary); }
+
+.landing-lead {
+  font-size: clamp(1rem, 2.2vw, 1.2rem);
+  color: var(--text-secondary);
+  line-height: 1.55;
+  max-width: 560px;
+  margin: 0 auto var(--space-xl);
+}
+
+.landing-cta-row {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.landing-checks {
+  list-style: none;
+  display: flex;
+  gap: var(--space-lg);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: var(--space-xl);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+/* ── Secciones ── */
+.landing-section {
+  padding: clamp(44px, 7vw, 84px) 0;
+  text-align: center;
+}
+
+/* El fondo alternado se estira a todo el ancho aunque el contenedor tenga tope */
+/* Fondo alternado a sangre completa, sin unidades de viewport. */
+.landing-section-alt {
+  background: var(--bg-secondary);
+  border-block: 1px solid var(--border);
+}
+
+.landing-h2 {
+  font-size: clamp(1.7rem, 4vw, 2.6rem);
+  letter-spacing: -0.03em;
+  margin: var(--space-sm) 0 var(--space-md);
+}
+
+.landing-sub {
+  color: var(--text-secondary);
+  max-width: 580px;
+  margin: 0 auto var(--space-xl);
+  line-height: 1.55;
+}
+
+.landing-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(266px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+  text-align: left;
+}
+
+.landing-card { padding: var(--space-lg); }
+.landing-card h3 { margin-bottom: var(--space-sm); }
+.landing-card p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; }
+.landing-card-icon { font-size: 1.9rem; margin-bottom: var(--space-sm); }
+
+.landing-soon {
+  font-size: 9px;
+  margin-left: 6px;
+  vertical-align: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Pasos ── */
+.landing-step { padding: var(--space-md) 0; }
+
+.landing-step-num {
+  font-family: var(--font-mono);
+  font-size: 2.1rem;
+  font-weight: 700;
+  color: var(--primary);
+  opacity: 0.28;
+  display: block;
+  line-height: 1;
+  margin-bottom: var(--space-sm);
+}
+
+.landing-step h3 { margin-bottom: 6px; }
+.landing-step p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; }
+
+/* ── Precios ── */
+.landing-price {
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.landing-price.destacado {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.landing-price-tag {
+  position: absolute;
+  top: -11px;
+  left: var(--space-lg);
+  background: var(--primary);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+
+.landing-price-amount {
+  font-size: 2.3rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: var(--space-sm) 0 4px;
+}
+
+.landing-price-amount span {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: 0;
+}
+
+.landing-price-desc {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: var(--space-md);
+}
+
+.landing-price-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-lg);
+  flex: 1;
+}
+
+.landing-fineprint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 540px;
+  margin: var(--space-lg) auto 0;
+  line-height: 1.55;
+}
+
+/* ── FAQ ── */
+.landing-faq {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-xl);
+  text-align: left;
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+.landing-faq-item { padding: var(--space-md) var(--space-lg); }
+
+.landing-faq-item summary {
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  align-items: center;
+}
+
+.landing-faq-item summary::-webkit-details-marker { display: none; }
+
+.landing-faq-item summary::after {
+  content: '+';
+  color: var(--primary);
+  font-size: 1.3rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.landing-faq-item[open] summary::after { content: '−'; }
+
+.landing-faq-item p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.65;
+  margin-top: var(--space-sm);
+}
+
+/* ── Cierre ── */
+.landing-final {
+  padding: clamp(52px, 8vw, 96px) 0;
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+
+.landing-login {
+  margin-top: var(--space-lg);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}

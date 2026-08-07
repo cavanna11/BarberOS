@@ -1,4 +1,4 @@
-# SaciaTurno — Roadmap
+# BarberOS — Roadmap
 
 > Documento de contexto para IDE / AI assistants. Define hacia dónde apunta el proyecto, qué decisiones técnicas están tomadas, y qué evitar.
 
@@ -25,21 +25,26 @@ Consecuencias para el desarrollo:
 
 ## Estado actual
 
-> La base arranca **vacía** (`src/config/seedData.js`). Ya no hay datos de
-> demostración: se borraron los 4 negocios, profesionales, servicios, 12 citas y
-> 108 logs de WhatsApp que venían en el viejo `mockData.js`.
+> **Los datos viven en Firestore** (proyecto `barberos-1d60e`). Negocios, staff,
+> servicios, horarios, turnos, admins y tickets. Ya no queda nada operativo en
+> `localStorage`.
 > El único acceso pre-cargado es el dueño de plataforma, en
-> `src/config/platform.js`.
+> `src/config/platform.js`, y su claim `platform: true` está puesto en Firebase.
 
 **Funciona:**
 - Frontend React 19 + Vite + Router v7
-- Google OAuth con `@react-oauth/google` + `jwt-decode`
+- Login con **Firebase Auth** (`signInWithPopup`). Se sacaron `@react-oauth/google` y `jwt-decode`.
 - Roles: `platform owner` (platform.js) | `owner` | `admin` | `client`
 - Auto-revalidación de permisos en `AuthContext` (los platform owners quedan exentos)
 - CRUDs completos en panel admin
 - Motor de disponibilidad (`availabilityEngine.js`) — **no tocar, ya funciona**
 - Stats calculator — **no tocar, ya funciona**
-- Persistencia en `localStorage` (a migrar)
+- **Firestore** con Security Rules desplegadas y verificadas contra el proyecto real
+- Capa única de acceso en `src/lib/repository.js` — ningún componente habla con Firestore directo
+- `BusinessSync` abre las suscripciones en un solo lugar, para no pagar el mismo documento una vez por componente
+- Facturación privada en `/businesses/{id}/private/billing`, fuera del documento público
+- Tickets de soporte: chat por barbería + bandeja en el panel global
+- Landing pública de venta en la raíz
 - Sistema de temas via CSS variables (`theme.js`)
 
 - Panel super-admin con facturación automática (deuda mensual, congelamiento y
@@ -53,10 +58,7 @@ Consecuencias para el desarrollo:
 - Estados vacíos en toda la app (base sin negocios, cuenta sin staff ni catálogo)
 
 **Pendiente:**
-- Backend real (Firebase) → **la guía completa está en `FIREBASE_SETUP.md`**
-- Aislamiento de datos a nivel DB (Security Rules) — hoy el filtro es solo
-  frontend. `firestore.rules` ya está escrito, pero sin probar contra un
-  proyecto real.
+- **Plan Blaze + Cloud Functions** → bloquea el alta de clientes reales (ver arriba)
 - Recordatorios WhatsApp
 - Pagos Mercado Pago
 - White-label dinámico desde DB (falta el upload de logo)
@@ -70,7 +72,7 @@ Consecuencias para el desarrollo:
 |------|-------|-------|
 | Frontend | React 19 + Vite + Tailwind | Migrar CSS puro a Tailwind progresivamente |
 | Backend | Firebase (Firestore + Auth + Storage) | NO Supabase, NO Express custom para MVP |
-| Auth | Firebase Auth + Google OAuth | Ya implementado el frontend, falta backend |
+| Auth | Firebase Auth + Google OAuth | Andando. Permisos por custom claims. |
 | Multi-tenancy | Slug en URL path | `/:businessSlug/...`, NO subdominios |
 | Automatizaciones | n8n self-hosted (Hostinger) | NO Cloud Functions excepto webhooks |
 | WhatsApp | WhatsApp Cloud API (Meta directo) | NO Twilio, NO Evolution API |
@@ -100,6 +102,37 @@ Consecuencias para el desarrollo:
 ```
 
 **Regla de oro:** toda query lleva `where('businessId', '==', userBusinessId)`. Security Rules verifican lo mismo a nivel DB.
+
+---
+
+## ⛔ Bloqueante para vender: plan Blaze
+
+**Sin esto no se puede dar de alta al dueño de una barbería real.**
+
+Los permisos de verdad son los custom claims del token, y solo se pueden
+escribir con el Admin SDK desde una Cloud Function. Las Cloud Functions
+requieren plan Blaze (pago por uso).
+
+Qué queda trabado mientras tanto:
+
+- Un dueño de barbería puede tener su ficha en `/admin/admins`, pero **no puede
+  entrar**: sin claim, Firestore lo trata como cliente.
+- Tampoco puede abrir tickets de soporte (la regla compara contra su claim).
+- La facturación mensual no corre sola: el motor del navegador se retiró y su
+  reemplazo es la función programada `runBilling`.
+- Los recordatorios de WhatsApp no se pueden enviar: el token de Meta no puede
+  vivir en el browser.
+
+El dueño de plataforma sí funciona: su claim se puso a mano con
+`scripts/bootstrap-platform-owner.mjs`. Alcanza para construir y probar todo
+solo, no para entregarle la cuenta a un cliente.
+
+Costo real esperado: **cercano a $0**. La capa gratuita de Blaze es la misma que
+la de Spark; la diferencia es que Blaze permite pasarse pagando. Conviene poner
+un presupuesto con alerta en Google Cloud al activarlo.
+
+Pasos: activar Blaze → `cd functions && npm install` → `firebase deploy --only functions`
+→ conectar `setBusinessAdmin` desde el alta de barbería.
 
 ---
 

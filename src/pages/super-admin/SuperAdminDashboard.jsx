@@ -11,6 +11,7 @@ import {
   savePlatformConfig,
 } from '../../lib/repository';
 import NewBusinessModal from './NewBusinessModal';
+import TicketsPanel from './TicketsPanel';
 
 // --- Professional SVG Icons ---
 const BusinessIcon = () => (
@@ -339,10 +340,17 @@ export default function SuperAdminDashboard() {
         >
           Historial Mensajes ({totalMsgs})
         </button>
+        <button
+          onClick={() => setActiveTab('soporte')}
+          className={`btn ${activeTab === 'soporte' ? 'btn-primary' : 'btn-outline'}`}
+          style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          Soporte
+        </button>
       </div>
 
       {/* Base vacía: lo único que tiene sentido hacer es dar de alta el primer cliente */}
-      {totalBusinesses === 0 && (
+      {totalBusinesses === 0 && activeTab !== 'soporte' && (
         <div className="card empty-state" style={{ padding: 'var(--space-2xl)' }}>
           <div className="empty-state-icon">💈</div>
           <h3 style={{ marginBottom: 8 }}>Todavía no hay ninguna barbería</h3>
@@ -355,6 +363,9 @@ export default function SuperAdminDashboard() {
           </button>
         </div>
       )}
+
+      {/* TAB 6: SOPORTE — bandeja de entrada de tickets */}
+      {activeTab === 'soporte' && <TicketsPanel />}
 
       {/* TAB 1: RESUMEN GENERAL */}
       {totalBusinesses > 0 && activeTab === 'resumen' && (

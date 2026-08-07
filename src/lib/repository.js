@@ -30,6 +30,7 @@ import {
   onSnapshot,
   query,
   where,
+  orderBy,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -308,6 +309,117 @@ export async function saveAdminRecord(businessId, admin) {
 
 export async function removeAdminRecord(businessId, email) {
   await deleteDoc(doc(db, 'businesses', businessId, 'admins', email.toLowerCase()));
+}
+
+// ============================================================================
+// TICKETS DE SOPORTE
+// ============================================================================
+// Colección de primer nivel para que el panel global los liste todos sin
+// necesitar collectionGroup. Cada ticket lleva businessId y las Rules se
+// encargan de que una barbería solo vea los suyos.
+
+const ticketsCol = () => collection(db, 'tickets');
+
+export const TICKET_ESTADOS = {
+  abierto: 'Abierto',
+  respondido: 'Respondido',
+  cerrado: 'Cerrado',
+};
+
+/** Todos los tickets de la plataforma, del más movido al más viejo. */
+export function subscribeAllTickets(cb, onError) {
+  return onSnapshot(
+    query(ticketsCol(), orderBy('lastMessageAt', 'desc')),
+    (snap) => cb(rows(snap)),
+    onError
+  );
+}
+
+/**
+ * Tickets de una barbería.
+ * El where es obligatorio: la regla de `list` lo exige, sin él Firestore
+ * rechaza la consulta entera.
+ */
+export function subscribeBusinessTickets(businessId, cb, onError) {
+  return onSnapshot(
+    query(ticketsCol(), where('businessId', '==', businessId), orderBy('lastMessageAt', 'desc')),
+    (snap) => cb(rows(snap)),
+    onError
+  );
+}
+
+export function subscribeTicketMessages(ticketId, cb, onError) {
+  return onSnapshot(
+    query(collection(db, 'tickets', ticketId, 'messages'), orderBy('createdAt', 'asc')),
+    (snap) => cb(rows(snap)),
+    onError
+  );
+}
+
+/** Abre un ticket con su primer mensaje, en un solo batch. */
+export async function createTicket({ businessId, businessName, subject, category, message, author }) {
+  const ref = doc(ticketsCol());
+  const ahora = serverTimestamp();
+
+  const batch = writeBatch(db);
+  batch.set(ref, {
+    id: ref.id,
+    businessId,
+    businessName,
+    subject,
+    category,
+    status: 'abierto',
+    createdAt: ahora,
+    lastMessageAt: ahora,
+    // Para que el panel global sepa de un vistazo dónde hace falta responder.
+    lastMessageBy: 'business',
+    unreadForPlatform: true,
+    unreadForBusiness: false,
+  });
+  batch.set(doc(collection(db, 'tickets', ref.id, 'messages')), {
+    text: message,
+    authorId: author.id,
+    authorName: author.name,
+    authorRole: 'business',
+    createdAt: ahora,
+  });
+
+  await batch.commit();
+  return ref.id;
+}
+
+/** Responde un ticket. `role` es 'platform' o 'business'. */
+export async function addTicketMessage(ticketId, { text, author, role }) {
+  const ahora = serverTimestamp();
+
+  const batch = writeBatch(db);
+  batch.set(doc(collection(db, 'tickets', ticketId, 'messages')), {
+    text,
+    authorId: author.id,
+    authorName: author.name,
+    authorRole: role,
+    createdAt: ahora,
+  });
+  batch.update(doc(db, 'tickets', ticketId), {
+    lastMessageAt: ahora,
+    lastMessageBy: role,
+    status: role === 'platform' ? 'respondido' : 'abierto',
+    unreadForPlatform: role === 'business',
+    unreadForBusiness: role === 'platform',
+  });
+
+  await batch.commit();
+}
+
+export async function setTicketStatus(ticketId, status) {
+  await updateDoc(doc(db, 'tickets', ticketId), { status });
+}
+
+/** Marca como leído para quien lo está mirando. */
+export async function markTicketRead(ticketId, role) {
+  await updateDoc(doc(db, 'tickets', ticketId), {
+    [role === 'platform' ? 'unreadForPlatform' : 'unreadForBusiness']: false,
+  });
 }
 
 // ============================================================================
