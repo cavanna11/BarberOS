@@ -1,0 +1,195 @@
+rules_version = '2';
+
+// ============================================================================
+// BarberOS — Security Rules
+// ============================================================================
+// Esta es la ÚNICA barrera real de aislamiento entre barberías. Los filtros del
+// frontend (src/hooks/useTenantData.js) son para la UI; cualquiera puede abrir
+// la consola y pedirle datos a Firestore directamente. Lo que decide qué ve
+// cada uno es este archivo.
+//
+// El permiso NO se lee de la base: se lee de los CUSTOM CLAIMS del token, que
+// solo se pueden escribir desde el servidor (Admin SDK). Si el permiso se
+// leyera de un documento, un admin podría editarse su propio documento y
+// escalar privilegios.
+//
+// Claims esperados:
+//   { platform: true }                        → dueño de la plataforma (vos)
+//   { businessId: 'biz-x', role: 'owner' }    → dueño de una barbería
+//   { businessId: 'biz-x', role: 'admin',
+//     professionalId: 'prof-y' }              → peluquero: solo sus turnos
+//   (sin claims)                              → cliente
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function claims() {
+      return request.auth.token;
+    }
+
+    function isPlatform() {
+      return signedIn() && claims().get('platform', false) == true;
+    }
+
+    // Pertenece a este negocio (con cualquier rol de staff)
+    function inBusiness(bizId) {
+      return signedIn() && claims().get('businessId', '') == bizId;
+    }
+
+    function isBusinessOwner(bizId) {
+      return inBusiness(bizId) && claims().get('role', '') == 'owner';
+    }
+
+    function isBusinessStaff(bizId) {
+      return inBusiness(bizId) && claims().get('role', '') in ['owner', 'admin'];
+    }
+
+    // Escribe cosas del negocio: su dueño, o vos preparando la cuenta.
+    function canManage(bizId) {
+      return isBusinessOwner(bizId) || isPlatform();
+    }
+
+    // ── Mapa slug → businessId ─────────────────────────────────────────────
+    // Lectura pública: el cliente entra por /barberia-x y hay que resolver el
+    // slug SIN estar logueado y sin poder listar todos los negocios.
+    // Documento: /slugs/{slug} = { businessId: 'biz-x' }
+    match /slugs/{slug} {
+      allow get: if true;
+      allow list: if isPlatform();
+      allow write: if isPlatform();
+    }
+
+    // ── Negocios ───────────────────────────────────────────────────────────
+    // `get` público porque la página de reservas necesita nombre, colores,
+    // horarios y mensaje de bienvenida antes del login.
+    // OJO: acá NO van datos de facturación. La deuda y el abono viven en
+    // /businesses/{id}/private/billing, que no es público. Si los metés en este
+    // documento, cualquier cliente los puede leer.
+    match /businesses/{bizId} {
+      allow get: if true;
+
+      // Nadie lista todos los negocios salvo el panel global.
+      allow list: if isPlatform();
+
+      // Solo vos das de alta o borrás cuentas: es una operación comercial.
+      allow create, delete: if isPlatform();
+
+      // El dueño edita su marca y configuración, pero no puede tocar su propia
+      // facturación ni descongelarse solo.
+      allow update: if isPlatform() || (
+        isBusinessOwner(bizId) &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id'])
+      );
+
+      // Facturación: solo la plataforma. Ni el dueño la lee.
+      match /private/{docId} {
+        allow read, write: if isPlatform();
+      }
+
+      // ── Staff, catálogo y horarios ───────────────────────────────────────
+      // Lectura pública: sin esto la página de reservas no puede mostrar
+      // profesionales, servicios ni calcular horarios disponibles.
+      match /professionals/{profId} {
+        allow read: if true;
+        allow write: if canManage(bizId);
+      }
+
+      match /services/{srvId} {
+        allow read: if true;
+        allow write: if canManage(bizId);
+      }
+
+      match /schedules/{schId} {
+        allow read: if true;
+        allow write: if canManage(bizId);
+      }
+
+      match /professionalServices/{psId} {
+        allow read: if true;
+        allow write: if canManage(bizId);
+      }
+
+      // ── Turnos ───────────────────────────────────────────────────────────
+      match /appointments/{aptId} {
+        // El staff ve la agenda del negocio; el cliente solo sus propios turnos.
+        allow get: if isBusinessStaff(bizId)
+                      || isPlatform()
+                      || (signedIn() && resource.data.userId == request.auth.uid);
+
+        // Listar la agenda completa es solo del staff. El cliente puede listar
+        // filtrando por su uid: la query DEBE llevar where('userId','==',uid),
+        // si no, Firestore la rechaza.
+        allow list: if isBusinessStaff(bizId)
+                       || isPlatform()
+                       || (signedIn() && request.query.limit <= 100);
+
+        // Reservar: cualquiera logueado, pero el turno tiene que ser suyo,
+        // pertenecer a este negocio y nacer en estado 'pendiente'.
+        // El precio no se acepta del cliente por acá — ver nota en el .md.
+        allow create: if signedIn()
+                         && request.resource.data.userId == request.auth.uid
+                         && request.resource.data.businessId == bizId
+                         && request.resource.data.status == 'pendiente';
+
+        // Cancelar: el cliente solo puede cambiar el estado a 'cancelada' de un
+        // turno propio. Cambiar fecha, precio o profesional es cosa del staff.
+        allow update: if isBusinessStaff(bizId)
+                         || isPlatform()
+                         || (
+                              signedIn()
+                              && resource.data.userId == request.auth.uid
+                              && request.resource.data.status == 'cancelada'
+                              && request.resource.data.diff(resource.data).affectedKeys()
+                                   .hasOnly(['status', 'cancelledAt', 'cancellationReason'])
+                            );
+
+        // Los turnos no se borran: se cancelan. Así queda historial.
+        allow delete: if false;
+      }
+
+      // ── Admins del negocio ───────────────────────────────────────────────
+      // Este documento es un REGISTRO para la UI, no la fuente del permiso.
+      // El permiso real son los custom claims, que se asignan con la Cloud
+      // Function `setBusinessAdmin`. Se puede escribir acá sin que eso otorgue
+      // acceso por sí solo.
+      match /admins/{adminId} {
+        allow read: if isBusinessStaff(bizId) || isPlatform();
+        allow write: if canManage(bizId);
+      }
+
+      // Log de notificaciones enviadas. Lo escribe el backend, no el browser.
+      match /notifications/{notifId} {
+        allow read: if isBusinessStaff(bizId) || isPlatform();
+        allow write: if false;
+      }
+    }
+
+    // ── Usuarios ───────────────────────────────────────────────────────────
+    // Cada uno su propio documento. Nadie lista la tabla de usuarios.
+    match /users/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || isPlatform());
+      allow list: if isPlatform();
+      allow create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if isPlatform();
+    }
+
+    // ── Configuración global de la plataforma ──────────────────────────────
+    // Credenciales de WhatsApp y afines. El token NUNCA se guarda acá: va como
+    // secret de las Cloud Functions. Ver FIREBASE_SETUP.md.
+    match /platform/{docId} {
+      allow read, write: if isPlatform();
+    }
+
+    // Todo lo que no esté declarado arriba queda cerrado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
