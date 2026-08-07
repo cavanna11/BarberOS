@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPlatformOwner, PLATFORM_OWNERS } from '../../config/platform';
 
 export default function LoginPage() {
   const [error, setError] = useState('');
+  const [entrando, setEntrando] = useState(false);
   const [bypassEmail, setBypassEmail] = useState('');
   const { loginWithGoogle, loginBypass } = useAuth();
   const navigate = useNavigate();
@@ -16,7 +16,7 @@ export default function LoginPage() {
   const from = location.state?.from;
 
   const redirectAfterLogin = (user) => {
-    if (isPlatformOwner(user.email)) {
+    if (user.isPlatformOwner || isPlatformOwner(user.email)) {
       navigate('/super-admin');
     } else if (user.role === 'owner' || user.role === 'admin') {
       navigate('/admin');
@@ -25,26 +25,26 @@ export default function LoginPage() {
     }
   };
 
-  const handleGoogleSuccess = (credentialResponse) => {
-    const result = loginWithGoogle(credentialResponse.credential);
-    if (result.success) {
-      redirectAfterLogin(result.user);
-    } else {
-      setError(result.error);
-    }
-  };
+  /**
+   * Abre el popup de Firebase Auth.
+   * Antes esto usaba el widget de @react-oauth/google, que solo decodificaba
+   * el token en el cliente: no creaba sesión de servidor, y sin eso las
+   * Security Rules de Firestore no tienen contra qué validar.
+   */
+  const handleGoogle = async () => {
+    setError('');
+    setEntrando(true);
+    const result = await loginWithGoogle();
+    setEntrando(false);
 
-  const handleGoogleError = () => {
-    setError('Error al iniciar sesión con Google. Intentá de nuevo.');
+    if (result.success) redirectAfterLogin(result.user);
+    else if (!result.cancelled) setError(result.error);
   };
 
   const handleBypass = (email) => {
     const result = loginBypass(email);
-    if (result.success) {
-      redirectAfterLogin(result.user);
-    } else {
-      setError(result.error);
-    }
+    if (result.success) redirectAfterLogin(result.user);
+    else setError(result.error);
   };
 
   const handleDevBypass = () => {
@@ -59,20 +59,30 @@ export default function LoginPage() {
         <p className="auth-subtitle">Iniciá sesión con tu cuenta de Google para continuar</p>
 
         {error && (
-          <div className="badge badge-danger mb-md" style={{ display: 'block', textAlign: 'center', padding: '8px 16px', borderRadius: '8px' }}>
+          <div
+            className="badge badge-danger mb-md"
+            style={{ display: 'block', textAlign: 'center', padding: '8px 16px', borderRadius: '8px' }}
+          >
             {error}
           </div>
         )}
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--space-lg)' }}>
-          <GoogleLogin
-            onSuccess={handleGoogleSuccess}
-            onError={handleGoogleError}
-            useOneTap
-            theme="filled_blue"
-            shape="pill"
-            text="signin_with"
-          />
+          <button
+            type="button"
+            className="btn btn-primary btn-lg"
+            onClick={handleGoogle}
+            disabled={entrando}
+            style={{ width: '100%', gap: 10 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 11v3.2h5.3c-.2 1.4-1.6 4-5.3 4a5.7 5.7 0 0 1 0-11.4c1.7 0 2.9.7 3.6 1.4l2.4-2.4A9.1 9.1 0 0 0 12 3a9 9 0 1 0 0 18c5.2 0 8.6-3.6 8.6-8.7 0-.6 0-1-.1-1.4H12z"
+              />
+            </svg>
+            {entrando ? 'Abriendo Google…' : 'Continuar con Google'}
+          </button>
         </div>
 
         {/*
@@ -82,10 +92,28 @@ export default function LoginPage() {
           `import.meta.env.DEV`, que Vite reemplaza por `false` en `npm run build`
           y elimina el bloque entero del bundle de producción.
           NO sacar este guard.
+
+          Ojo: esta sesión NO es de Firebase. Sirve para probar la UI mientras
+          los datos sigan en localStorage; cuando estén en Firestore, las Rules
+          la van a rechazar y no va a poder leer nada.
         */}
         {import.meta.env.DEV && (
-          <div style={{ marginTop: 'var(--space-xl)', borderTop: '1px dashed var(--border-color)', paddingTop: 'var(--space-md)' }}>
-            <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, fontWeight: 600 }}>
+          <div
+            style={{
+              marginTop: 'var(--space-xl)',
+              borderTop: '1px dashed var(--border-color)',
+              paddingTop: 'var(--space-md)',
+            }}
+          >
+            <p
+              style={{
+                textAlign: 'center',
+                fontSize: 12,
+                color: 'var(--text-muted)',
+                marginBottom: 12,
+                fontWeight: 600,
+              }}
+            >
               🛠️ ACCESO RÁPIDO (SOLO EN DESARROLLO)
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

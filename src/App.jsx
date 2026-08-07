@@ -32,8 +32,13 @@ import SuperAdminDashboard from './pages/super-admin/SuperAdminDashboard';
 // adminOnly = true       → además exige rol admin | owner
 // superAdminOnly = true  → exige ser dueño de la plataforma
 function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, loading } = useAuth();
   const location = useLocation();
+
+  // Al recargar, Firebase tarda un instante en restaurar la sesión. Sin esta
+  // espera, `isAuthenticated` arranca en false y el usuario sale rebotado al
+  // login en cada F5 aunque tenga sesión válida.
+  if (loading) return <SessionLoading />;
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
@@ -70,9 +75,19 @@ function TenantRoute({ children }) {
   return children;
 }
 
+/** Placeholder mientras Firebase resuelve si hay sesión abierta. */
+function SessionLoading() {
+  return (
+    <div className="empty-state" style={{ padding: 'var(--space-2xl)' }}>
+      <p>Cargando…</p>
+    </div>
+  );
+}
+
 // Redirige a /admin (o /super-admin) si el usuario ya está logueado
 function PublicOnlyRoute({ children }) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, loading } = useAuth();
+  if (loading) return <SessionLoading />;
   if (isAuthenticated) {
     if (isPlatformOwner(user?.email)) {
       return <Navigate to="/super-admin" replace />;
@@ -89,8 +104,9 @@ function PublicOnlyRoute({ children }) {
  * llega siempre por el link directo de su barbería.
  */
 function EntryRoute() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, loading } = useAuth();
 
+  if (loading) return <SessionLoading />;
   if (isAuthenticated && isPlatformOwner(user?.email)) {
     return <Navigate to="/super-admin" replace />;
   }

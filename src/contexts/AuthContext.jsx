@@ -1,134 +1,200 @@
-import { createContext, useContext, useReducer, useEffect } from 'react';
-import { jwtDecode } from 'jwt-decode';
+import { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import {
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  getIdTokenResult,
+} from 'firebase/auth';
+import { auth, googleProvider } from '../lib/firebase';
 import { useBusiness } from './BusinessContext';
 import { isPlatformOwner } from '../config/platform';
 
 const AuthContext = createContext();
-const AUTH_KEY = 'barberos_auth';
 
-function loadAuth() {
-  try {
-    const saved = localStorage.getItem(AUTH_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch (e) {}
-  return { user: null, isAuthenticated: false };
-}
-
-function saveAuth(state) {
-  try {
-    localStorage.setItem(AUTH_KEY, JSON.stringify(state));
-  } catch (e) {}
-}
+/**
+ * ============================================================================
+ * MIGRACIÓN EN CURSO — de dónde salen los permisos
+ * ============================================================================
+ * Objetivo: los permisos vienen de los CUSTOM CLAIMS del token de Firebase,
+ * que solo se escriben desde el servidor y son lo que verifican las Security
+ * Rules. Ver FIREBASE_SETUP.md, paso 6.
+ *
+ * Mientras tanto, todavía no hay claims asignados (faltan desplegar las Cloud
+ * Functions y correr el bootstrap). Así que hay un fallback: si el token no
+ * trae claims, se usan `platform.js` y `authorizedAdmins` como antes.
+ *
+ * El fallback es TRANSITORIO y NO es seguridad: se puede falsificar desde el
+ * browser. Sacarlo en cuanto los claims estén andando.
+ * ============================================================================
+ */
 
 function authReducer(state, action) {
   switch (action.type) {
     case 'LOGIN':
-      return { user: action.payload, isAuthenticated: true };
+      return { user: action.payload, isAuthenticated: true, loading: false };
     case 'LOGOUT':
-      return { user: null, isAuthenticated: false };
+      return { user: null, isAuthenticated: false, loading: false };
     case 'UPDATE_USER':
       return { ...state, user: { ...state.user, ...action.payload } };
+    case 'READY':
+      return { ...state, loading: false };
     default:
       return state;
   }
 }
 
+// Las sesiones reales las persiste Firebase solo (IndexedDB). Esta clave es
+// únicamente para que la sesión falsa de desarrollo sobreviva a un F5.
+const DEV_BYPASS_KEY = 'barberos_dev_bypass';
+
+function loadDevBypass() {
+  if (!import.meta.env.DEV) return null;
+  try {
+    const raw = localStorage.getItem(DEV_BYPASS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function initialState() {
+  const bypass = loadDevBypass();
+  return bypass
+    ? { user: bypass, isAuthenticated: true, loading: false }
+    : { user: null, isAuthenticated: false, loading: true };
+}
+
 export function AuthProvider({ children }) {
   // AuthProvider es hijo de BusinessProvider → puede usar useBusiness()
   const { state: bizState } = useBusiness();
-  const [state, dispatch] = useReducer(authReducer, loadAuth());
+  const [state, dispatch] = useReducer(authReducer, undefined, initialState);
 
-  useEffect(() => {
-    saveAuth(state);
-  }, [state]);
+  // En un ref y no en el state: el callback de onAuthStateChanged se suscribe
+  // una sola vez y capturaría un `state` viejo, borrando la sesión de
+  // desarrollo cuando Firebase reporta "sin usuario".
+  const bypassActivo = useRef(Boolean(state.user?.isBypass));
 
-  // Cuando cambia la lista de admins autorizados, revalidar el usuario actual
-  // (ej: el dueño le quitó permisos a alguien que ya estaba logueado)
+  const authorizedAdmins = bizState.authorizedAdmins || [];
+
+  /**
+   * Arma el objeto de usuario de la app a partir de la cuenta de Firebase.
+   * Prioridad de permisos: claims del token > fallback local.
+   */
+  const buildUser = (fbUser, claims = {}) => {
+    const email = (fbUser.email || '').toLowerCase();
+
+    // Fuente definitiva: claims firmados por el servidor.
+    const hasClaims = Boolean(claims.platform || claims.businessId);
+
+    // Fallback transitorio mientras no haya claims asignados.
+    const match = authorizedAdmins.find((a) => a.email.toLowerCase() === email);
+    const platformOwner = claims.platform === true || (!hasClaims && isPlatformOwner(email));
+
+    return {
+      id: fbUser.uid,
+      email: fbUser.email,
+      name: fbUser.displayName || email.split('@')[0],
+      avatarUrl: fbUser.photoURL,
+      role: platformOwner
+        ? 'owner'
+        : (hasClaims ? claims.role : match?.role) || 'client',
+      businessId: platformOwner
+        ? null
+        : (hasClaims ? claims.businessId : match?.businessId) || null,
+      professionalId: platformOwner
+        ? null
+        : (hasClaims ? claims.professionalId : match?.professionalId) || null,
+      isPlatformOwner: platformOwner,
+      // Con qué se resolvieron los permisos. Útil para saber si el bootstrap
+      // de claims ya surtió efecto.
+      permissionSource: hasClaims ? 'claims' : 'local',
+      isActive: true,
+    };
+  };
+
+  // Firebase mantiene la sesión entre recargas. Este listener la rehidrata.
   useEffect(() => {
-    if (!state.user) return;
-    // Los dueños de plataforma no están en `authorizedAdmins` — su permiso sale
-    // de platform.js. Sin este corte, la revalidación no los encuentra y los
-    // degrada a 'client', dejándolos con la vista de peluquero en /admin.
+    return onAuthStateChanged(auth, async (fbUser) => {
+      // Las sesiones de desarrollo (loginBypass) no son de Firebase: no las pisa.
+      if (!fbUser) {
+        if (bypassActivo.current) dispatch({ type: 'READY' });
+        else dispatch({ type: 'LOGOUT' });
+        return;
+      }
+      bypassActivo.current = false;
+      try {
+        const { claims } = await getIdTokenResult(fbUser);
+        dispatch({ type: 'LOGIN', payload: buildUser(fbUser, claims) });
+      } catch (err) {
+        console.error('[auth] No se pudieron leer los claims:', err);
+        dispatch({ type: 'LOGIN', payload: buildUser(fbUser) });
+      }
+    });
+    // Se suscribe una sola vez; buildUser lee lo último vía closure en cada evento.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Revalidar permisos cuando cambia la lista local de admins.
+  // Solo aplica al fallback: si los permisos vinieron de claims, mandan ellos.
+  useEffect(() => {
+    if (!state.user || state.user.permissionSource === 'claims') return;
     if (isPlatformOwner(state.user.email)) return;
 
-    const authorizedAdmins = bizState.authorizedAdmins || [];
     const match = authorizedAdmins.find(
       (a) => a.email.toLowerCase() === state.user.email.toLowerCase()
     );
-    const currentRole = match?.role || 'client';
-    const currentProfessionalId = match?.professionalId || null;
-    const currentBusinessId = match?.businessId || null;
+    const role = match?.role || 'client';
+    const professionalId = match?.professionalId || null;
+    const businessId = match?.businessId || null;
 
-    // Solo actualizar si el rol, el professionalId o el tenant cambiaron
     if (
-      state.user.role !== currentRole ||
-      state.user.professionalId !== currentProfessionalId ||
-      state.user.businessId !== currentBusinessId
+      state.user.role !== role ||
+      state.user.professionalId !== professionalId ||
+      state.user.businessId !== businessId
     ) {
-      dispatch({
-        type: 'UPDATE_USER',
-        payload: {
-          role: currentRole,
-          professionalId: currentProfessionalId,
-          businessId: currentBusinessId,
-        },
-      });
+      dispatch({ type: 'UPDATE_USER', payload: { role, professionalId, businessId } });
     }
-  }, [bizState.authorizedAdmins, state.user]);
+  }, [authorizedAdmins, state.user]);
 
-  /**
-   * Login exclusivo con Google.
-   * - Si el Gmail está en authorizedAdmins  → role = 'owner' | 'admin'
-   * - Si no está                            → role = 'client'
-   */
-  const loginWithGoogle = (credential) => {
+  /** Login real con Google, vía Firebase. */
+  const loginWithGoogle = async () => {
     try {
-      const decoded = jwtDecode(credential);
-      const { email, name, picture, sub: googleId } = decoded;
-
-      const platformOwner = isPlatformOwner(email);
-      const authorizedAdmins = bizState.authorizedAdmins || [];
-      const match = authorizedAdmins.find(
-        (a) => a.email.toLowerCase() === email.toLowerCase()
-      );
-
-      const user = {
-        id: googleId,
-        email,
-        name,
-        avatarUrl: picture,
-        googleId,
-        role: platformOwner ? 'owner' : (match?.role || 'client'),
-        professionalId: platformOwner ? null : (match?.professionalId || null),
-        // Tenant al que pertenece. null = cliente, o dueño de plataforma
-        // (que no está atado a ningún negocio y elige cuál administrar).
-        businessId: platformOwner ? null : (match?.businessId || null),
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      };
-
+      const { user: fbUser } = await signInWithPopup(auth, googleProvider);
+      const { claims } = await getIdTokenResult(fbUser);
+      const user = buildUser(fbUser, claims);
       dispatch({ type: 'LOGIN', payload: user });
       return { success: true, user };
     } catch (error) {
-      console.error('Google Login Error:', error);
-      return { success: false, error: 'Error al iniciar sesión con Google' };
+      // El usuario cerró el popup: no es un error que haya que mostrar.
+      if (
+        error.code === 'auth/popup-closed-by-user' ||
+        error.code === 'auth/cancelled-popup-request'
+      ) {
+        return { success: false, cancelled: true };
+      }
+      console.error('[auth] Error de login con Google:', error);
+      const mensajes = {
+        'auth/popup-blocked': 'El navegador bloqueó la ventana de Google. Permitila y probá de nuevo.',
+        'auth/unauthorized-domain': 'Este dominio no está autorizado en Firebase Authentication.',
+        'auth/operation-not-allowed': 'El proveedor de Google no está habilitado en Firebase.',
+        'auth/network-request-failed': 'Falló la conexión. Revisá tu internet.',
+      };
+      return { success: false, error: mensajes[error.code] || 'No se pudo iniciar sesión con Google.' };
     }
   };
 
   /**
    * Login sin verificar nada, para probar roles en local.
-   * Segundo cerrojo además del de LoginPage: si alguna vez queda una llamada
-   * suelta, en producción no hace nada.
+   * Ojo: NO crea una sesión de Firebase, así que en cuanto los datos estén en
+   * Firestore este usuario no va a poder leer nada (las Rules lo van a
+   * rechazar). Sirve solo para la UI mientras la base siga en localStorage.
    */
   const loginBypass = (email) => {
     if (!import.meta.env.DEV) {
       return { success: false, error: 'Iniciá sesión con Google.' };
     }
     const platformOwner = isPlatformOwner(email);
-    const authorizedAdmins = bizState.authorizedAdmins || [];
-    const match = authorizedAdmins.find(
-      (a) => a.email.toLowerCase() === email.toLowerCase()
-    );
+    const match = authorizedAdmins.find((a) => a.email.toLowerCase() === email.toLowerCase());
 
     const user = {
       id: 'bypass-' + Date.now(),
@@ -138,20 +204,50 @@ export function AuthProvider({ children }) {
       role: platformOwner ? 'owner' : (match?.role || 'client'),
       professionalId: platformOwner ? null : (match?.professionalId || null),
       businessId: platformOwner ? null : (match?.businessId || null),
+      isPlatformOwner: platformOwner,
+      permissionSource: 'local',
+      isBypass: true,
       isActive: true,
-      createdAt: new Date().toISOString(),
     };
+
+    bypassActivo.current = true;
+    try {
+      localStorage.setItem(DEV_BYPASS_KEY, JSON.stringify(user));
+    } catch { /* sin persistencia, se pierde al recargar; no es crítico */ }
 
     dispatch({ type: 'LOGIN', payload: user });
     return { success: true, user };
   };
 
-  const logout = () => {
+  const logout = async () => {
+    bypassActivo.current = false;
+    try {
+      localStorage.removeItem(DEV_BYPASS_KEY);
+    } catch { /* ignorar */ }
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('[auth] Error al cerrar sesión:', err);
+    }
     dispatch({ type: 'LOGOUT' });
   };
 
+  /**
+   * Vuelve a pedir el token para traer claims recién asignados.
+   * Sin esto, un permiso nuevo tarda hasta una hora en verse.
+   */
+  const refreshClaims = async () => {
+    if (!auth.currentUser) return null;
+    const { claims } = await getIdTokenResult(auth.currentUser, true);
+    const user = buildUser(auth.currentUser, claims);
+    dispatch({ type: 'LOGIN', payload: user });
+    return claims;
+  };
+
   return (
-    <AuthContext.Provider value={{ ...state, loginWithGoogle, loginBypass, logout, dispatch }}>
+    <AuthContext.Provider
+      value={{ ...state, loginWithGoogle, loginBypass, logout, refreshClaims, dispatch }}
+    >
       {children}
     </AuthContext.Provider>
   );
