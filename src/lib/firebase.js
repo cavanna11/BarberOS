@@ -23,35 +23,47 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Falla temprano y claro si falta configuración, en vez de tirar errores raros
-// de red más adelante.
-const missing = Object.entries(firebaseConfig)
+/**
+ * Qué variables faltan. Vite congela las VITE_* en tiempo de compilación, así
+ * que si el build se hizo sin ellas (por ejemplo en Vercel, sin cargarlas en
+ * Environment Variables) llegan todas vacías.
+ *
+ * Antes esto tiraba un throw en el import y el resultado era una pantalla en
+ * blanco sin explicación. Ahora se exporta el diagnóstico y main.jsx muestra
+ * una pantalla que dice exactamente qué falta.
+ */
+export const faltanVariables = Object.entries(firebaseConfig)
   .filter(([, v]) => !v)
-  .map(([k]) => k);
+  .map(([k]) => `VITE_FIREBASE_${k.replace(/[A-Z]/g, (c) => '_' + c).toUpperCase()}`);
 
-if (missing.length > 0) {
-  throw new Error(
-    `Falta configuración de Firebase: ${missing.join(', ')}. ` +
-    'Revisá tu archivo .env.local (ver .env.example).'
+export const firebaseListo = faltanVariables.length === 0;
+
+if (!firebaseListo) {
+  console.error(
+    '[firebase] Falta configuración:', faltanVariables.join(', '),
+    '\nEn local: archivo .env (ver .env.example).',
+    '\nEn Vercel: Settings → Environment Variables, y volver a desplegar.'
   );
 }
 
-const app = initializeApp(firebaseConfig);
+// Sin config no se inicializa: initializeApp con valores vacíos deja un cliente
+// roto que falla más tarde y con errores peores de leer.
+const app = firebaseListo ? initializeApp(firebaseConfig) : null;
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-export const functions = getFunctions(app, 'southamerica-east1');
+export const auth = app ? getAuth(app) : null;
+export const db = app ? getFirestore(app) : null;
+export const storage = app ? getStorage(app) : null;
+export const functions = app ? getFunctions(app, 'southamerica-east1') : null;
 
-export const googleProvider = new GoogleAuthProvider();
+export const googleProvider = app ? new GoogleAuthProvider() : null;
 // Fuerza el selector de cuenta: sin esto, quien tiene varias cuentas de Google
 // entra siempre con la última y no puede cambiar.
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+if (googleProvider) googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // ── Emuladores ─────────────────────────────────────────────────────────────
 // Con VITE_USE_EMULATORS=true, todo apunta a los emuladores locales y no se
 // toca la base de producción. Usalo siempre para probar Security Rules.
-if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === 'true') {
+if (app && import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === 'true') {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
   connectStorageEmulator(storage, '127.0.0.1', 9199);

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+
+  "//": [
+    "BarberOS es una SPA: el ruteo lo maneja React Router en el navegador, no",
+    "el servidor. Sin esta reescritura Vercel busca un archivo /login o",
+    "/barberia-x, no lo encuentra y devuelve su propio 404 — se rompe todo",
+    "menos la raíz, incluido el link público de cada barbería.",
+    "",
+    "Los assets con hash quedan fuera de la regla y se sirven directo."
+  ],
+
+  "rewrites": [
+    { "source": "/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    }
+  ]
+}
