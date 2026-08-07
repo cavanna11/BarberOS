@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { useBusiness } from '../../contexts/BusinessContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { updateInSubcollection, replaceMatching } from '../../lib/repository';
 import { useTenant } from '../../hooks/useTenantData';
 import { getDayName, generateId } from '../../utils/dateUtils';
 
 export default function ProfileSettingsPage() {
-  const { dispatch } = useBusiness();
   const { user } = useAuth();
-  const { professionals, schedules } = useTenant();
+  const { professionals, schedules, businessId } = useTenant();
+  const [guardando, setGuardando] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const profId = user?.professionalId;
@@ -61,22 +61,27 @@ export default function ProfileSettingsPage() {
     setEditSchedules(prev => prev.map((s, i) => i === dayIndex ? { ...s, [field]: value } : s));
   };
 
-  const handleSave = () => {
-    // 1. Guardar datos básicos
-    dispatch({
-      type: 'UPDATE_PROFESSIONAL',
-      payload: { id: profId, ...form }
-    });
-
-    // 2. Guardar horarios
-    dispatch({
-      type: 'SET_SCHEDULES',
-      payload: {
-        professionalId: profId,
-        schedules: editSchedules.map(s => ({ ...s, professionalId: profId }))
-      }
-    });
-
+  const handleSave = async () => {
+    if (!businessId || !profId) return;
+    setGuardando(true);
+    try {
+      await updateInSubcollection(businessId, 'professionals', profId, { ...form });
+      // Los horarios se reemplazan enteros: lo natural es "estos son los que
+      // quedan", no ir agregando y borrando día por día.
+      await replaceMatching(
+        businessId,
+        'schedules',
+        'professionalId',
+        profId,
+        editSchedules.map((s) => ({ ...s, id: undefined, professionalId: profId }))
+      );
+    } catch (err) {
+      console.error('[ProfileSettings] No se pudo guardar:', err);
+      alert('No se pudieron guardar los cambios: ' + err.message);
+      setGuardando(false);
+      return;
+    }
+    setGuardando(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -200,7 +205,7 @@ export default function ProfileSettingsPage() {
             <button 
               className="btn btn-primary btn-lg" 
               onClick={handleSave}
-              disabled={!form.name.trim()}
+              disabled={!form.name.trim() || guardando}
             >
               💾 Guardar Mi Configuración
             </button>

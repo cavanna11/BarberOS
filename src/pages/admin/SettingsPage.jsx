@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useBusiness } from '../../contexts/BusinessContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { updateBusiness } from '../../lib/repository';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { getDayName } from '../../utils/dateUtils';
 
@@ -14,28 +15,36 @@ const defaultHours = [
 ];
 
 export default function SettingsPage() {
-  const { dispatch } = useBusiness();
-  const { business } = useCurrentBusiness();
+  const { user } = useAuth();
+  const { business, businessId } = useCurrentBusiness();
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState('');
   const [form, setForm] = useState({
     ...business,
     businessHours: business?.businessHours || defaultHours
   });
   const [saved, setSaved] = useState(false);
 
-  const handleSave = () => {
-    dispatch({ type: 'UPDATE_BUSINESS', payload: form });
+  const handleSave = async () => {
+    if (!businessId) return;
+    setGuardando(true);
+    setError('');
+    try {
+      // Las Rules no dejan que el dueño toque su facturación ni se descongele
+      // solo; el repositorio filtra esos campos antes de mandar.
+      await updateBusiness(businessId, form, { esPlataforma: user?.isPlatformOwner });
+    } catch (err) {
+      console.error('[SettingsPage] No se pudo guardar:', err);
+      setError('No se pudieron guardar los cambios: ' + err.message);
+      setGuardando(false);
+      return;
+    }
+    setGuardando(false);
     // Apply colors
     document.documentElement.style.setProperty('--primary', form.primaryColor);
     document.documentElement.style.setProperty('--secondary', form.secondaryColor || form.primaryColor);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
-  };
-
-  const handleReset = () => {
-    if (window.confirm('¿Restaurar todos los datos al estado original? Esto eliminará todos los cambios.')) {
-      dispatch({ type: 'RESET_DATA' });
-      window.location.reload();
-    }
   };
 
   const toggleScheduleDay = (dayIndex) => {
@@ -175,9 +184,16 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {error && (
+            <div className="notice notice-danger mt-md">{error}</div>
+          )}
+
+          {/* Se quitó "Restaurar datos demo": ya no hay datos demo, y la base
+              vive en Firestore — no se restaura desde el navegador. */}
           <div className="flex gap-sm mt-lg">
-            <button className="btn btn-primary btn-lg" onClick={handleSave}>💾 Guardar Cambios</button>
-            <button className="btn btn-danger btn-sm" onClick={handleReset}>Restaurar datos demo</button>
+            <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={guardando}>
+              {guardando ? 'Guardando…' : '💾 Guardar Cambios'}
+            </button>
           </div>
         </div>
 

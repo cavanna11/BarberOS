@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useBusiness } from '../../contexts/BusinessContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
+import { saveAdminRecord, removeAdminRecord } from '../../lib/repository';
 
 const ROLE_OPTIONS = [
   { value: 'owner', label: '👑 Dueño — acceso total' },
@@ -13,7 +13,6 @@ const EMPTY_FORM = { email: '', role: 'admin', professionalId: '', name: '' };
 
 export default function AdminsPage() {
   const { user } = useAuth();
-  const { dispatch } = useBusiness();
   const { authorizedAdmins, professionals, businessId } = useTenant();
 
   const [showModal, setShowModal] = useState(false);
@@ -45,7 +44,7 @@ export default function AdminsPage() {
     setError('');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.email.trim()) return setError('El email es obligatorio.');
     if (!form.email.includes('@')) return setError('Ingresá un email válido.');
     if (form.role === 'admin' && !form.professionalId) return setError('Los peluqueros deben tener un profesional asignado.');
@@ -58,42 +57,34 @@ export default function AdminsPage() {
       if (exists) return setError('Ese email ya está registrado como administrador.');
     }
 
-    if (editTarget) {
-      dispatch({
-        type: 'UPDATE_AUTHORIZED_ADMIN',
-        payload: {
-          id: editTarget,
-          email: form.email.trim().toLowerCase(),
-          role: form.role,
-          professionalId: form.role === 'admin' ? form.professionalId : null,
-          name: form.name.trim(),
-        },
+    try {
+      // El documento se guarda con el email como id, así que alta y edición
+      // son la misma operación.
+      await saveAdminRecord(businessId, {
+        email: form.email.trim().toLowerCase(),
+        role: form.role,
+        professionalId: form.role === 'admin' ? form.professionalId : null,
+        name: form.name.trim(),
       });
-    } else {
-      dispatch({
-        type: 'ADD_AUTHORIZED_ADMIN',
-        payload: {
-          id: 'auth-' + Date.now(),
-          email: form.email.trim().toLowerCase(),
-          role: form.role,
-          businessId, // el admin nuevo pertenece al negocio activo
-          professionalId: form.role === 'admin' ? form.professionalId : null,
-          name: form.name.trim(),
-          addedAt: new Date().toISOString(),
-        },
-      });
+    } catch (err) {
+      console.error('[AdminsPage] No se pudo guardar el admin:', err);
+      return setError('No se pudo guardar: ' + err.message);
     }
     closeModal();
   };
 
-  const handleRemove = (admin) => {
+  const handleRemove = async (admin) => {
     // No permitir que el dueño se elimine a sí mismo
     if (admin.email.toLowerCase() === user.email.toLowerCase()) {
       alert('No podés eliminarte a vos mismo como dueño.');
       return;
     }
-    if (window.confirm(`¿Quitar acceso a ${admin.email}?`)) {
-      dispatch({ type: 'REMOVE_AUTHORIZED_ADMIN', payload: admin.id });
+    if (!window.confirm(`¿Quitar acceso a ${admin.email}?`)) return;
+    try {
+      await removeAdminRecord(businessId, admin.email);
+    } catch (err) {
+      console.error('[AdminsPage] No se pudo quitar el acceso:', err);
+      alert('No se pudo quitar el acceso: ' + err.message);
     }
   };
 

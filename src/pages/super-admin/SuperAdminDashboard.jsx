@@ -8,6 +8,7 @@ import {
   recordPayment,
   updateBilling,
   upgradePlan,
+  savePlatformConfig,
 } from '../../lib/repository';
 import NewBusinessModal from './NewBusinessModal';
 
@@ -225,11 +226,19 @@ export default function SuperAdminDashboard() {
     setSelectedBusiness(null);
   };
 
-  const handleSaveWhatsApp = (e) => {
+  const handleSaveWhatsApp = async (e) => {
     e.preventDefault();
-    dispatch({ type: 'UPDATE_GLOBAL_WHATSAPP', payload: waForm });
-    setWaSaved(true);
-    setTimeout(() => setWaSaved(false), 3000);
+    try {
+      // Va a /platform/whatsapp, que solo puede leer y escribir la plataforma.
+      // OJO: el token de Meta no debería vivir en Firestore ni en el browser.
+      // Cuando se active el envío real, va como secret de Cloud Functions.
+      await savePlatformConfig('whatsapp', waForm);
+      setWaSaved(true);
+      setTimeout(() => setWaSaved(false), 3000);
+    } catch (err) {
+      console.error('[super-admin] No se pudo guardar WhatsApp:', err);
+      alert('No se pudo guardar la configuración: ' + err.message);
+    }
   };
 
   const filteredBusinesses = businesses?.filter(b => {
@@ -286,20 +295,10 @@ export default function SuperAdminDashboard() {
           >
             + Nueva barbería
           </button>
-          <button
-            onClick={() => {
-              if (window.confirm(
-                'Esto borra TODO: negocios, profesionales, servicios, turnos y credenciales de WhatsApp. No se puede deshacer.\n\n¿Vaciar la base?'
-              )) {
-                dispatch({ type: 'RESET_DATA' });
-                window.location.reload();
-              }
-            }}
-            className="btn btn-outline"
-            style={{ borderColor: 'var(--danger)', color: 'var(--danger)', fontSize: 12, padding: '8px 14px' }}
-          >
-            Vaciar base
-          </button>
+          {/* Se quitó "Vaciar base": los datos ya no están en este navegador.
+              Borrar la base ahora afecta a clientes reales y se hace desde la
+              consola de Firebase, a conciencia — no con un botón al lado del
+              de dar de alta. */}
         </div>
       </div>
 

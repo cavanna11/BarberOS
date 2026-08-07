@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useBusiness } from '../../contexts/BusinessContext';
 import { useTenant } from '../../hooks/useTenantData';
+import { cancelAppointment } from '../../lib/repository';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
 
 const STATUS_LABELS = {
@@ -15,9 +15,8 @@ const STATUS_LABELS = {
 
 export default function MyAppointments() {
   const { user, isAuthenticated } = useAuth();
-  const { dispatch } = useBusiness();
   // Solo las citas del negocio por el que entró el cliente.
-  const { appointments, professionals, services, business, slug } = useTenant();
+  const { appointments, professionals, services, business, slug, businessId } = useTenant();
   const [tab, setTab] = useState('upcoming');
   const today = new Date().toISOString().split('T')[0];
 
@@ -52,7 +51,10 @@ export default function MyAppointments() {
 
   const handleCancel = (id) => {
     if (window.confirm('¿Estás seguro de que querés cancelar esta cita?')) {
-      dispatch({ type: 'CANCEL_APPOINTMENT', payload: id });
+      cancelAppointment(businessId, id).catch((err) => {
+        console.error('[MyAppointments] No se pudo cancelar:', err);
+        alert('No se pudo cancelar el turno: ' + err.message);
+      });
     }
   };
 

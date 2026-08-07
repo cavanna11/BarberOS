@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useBusiness } from '../../contexts/BusinessContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
+import { createAppointment, updateAppointment } from '../../lib/repository';
 import { calculateStats } from '../../utils/statsCalculator';
 import { formatPrice, formatDate } from '../../utils/dateUtils';
 
@@ -92,9 +92,8 @@ function WalkinModal({ onClose, onConfirm }) {
 
 // ─── Componente principal ──────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { dispatch } = useBusiness();
   const { user } = useAuth();
-  const { appointments, professionals, services, professionalServices, business } = useTenant();
+  const { appointments, professionals, services, professionalServices, business, businessId } = useTenant();
   const [showWalkinModal, setShowWalkinModal] = useState(false);
 
   const isOwner = user?.role === 'owner';
@@ -120,28 +119,30 @@ export default function DashboardPage() {
         return da.localeCompare(db);
       });
 
-    const handleWalkin = (startTime, endTime) => {
-      dispatch({
-        type: 'ADD_APPOINTMENT',
-        payload: {
-          id: 'walkin-' + Date.now(),
-          businessId: business.id || 'biz-001',
+    const handleWalkin = async (startTime, endTime) => {
+      try {
+        // Nace en 'pendiente' (lo exigen las Rules) y se confirma acto seguido:
+        // el cliente ya está sentado en la silla.
+        const id = await createAppointment(businessId, {
           professionalId: user.professionalId,
           serviceId: null,
           appointmentDate: today,
           startTime,
           endTime,
           price: 0,
-          status: 'confirmada',
           type: 'walkin',
           clientName: 'Servicio sin turno',
           clientPhone: null,
           notes: '',
           adminNotes: '',
-          createdAt: new Date().toISOString(),
           userId: user.id,
-        },
-      });
+        });
+        await updateAppointment(businessId, id, { status: 'confirmada' });
+      } catch (err) {
+        console.error('[Dashboard] No se pudo registrar el servicio:', err);
+        alert('No se pudo registrar el servicio: ' + err.message);
+        return;
+      }
       setShowWalkinModal(false);
     };
 

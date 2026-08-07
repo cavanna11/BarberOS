@@ -45,15 +45,23 @@ function loadData() {
 }
 
 /**
- * MIGRACIÓN A FIRESTORE — en curso.
+ * Todo lo que ya vive en Firestore NO se persiste acá: una copia vieja en
+ * localStorage taparía la real y mostraría datos que ya no existen.
  *
- * `businesses` ya vive en Firestore (lo sincroniza BusinessSync) y por eso NO
- * se persiste acá: una copia vieja en localStorage taparía la real y mostraría
- * negocios que ya no existen.
- *
- * El resto de las colecciones sigue en localStorage hasta que se migren.
+ * Queda en localStorage solo `whatsappConfig` y `whatsappLogs`, que todavía no
+ * se migraron.
  */
-const NO_PERSISTIR = ['businesses', 'business'];
+const NO_PERSISTIR = [
+  'business',
+  'businesses',
+  'professionals',
+  'services',
+  'schedules',
+  'professionalServices',
+  'appointments',
+  'admins',
+  'authorizedAdmins',
+];
 
 function saveData(state) {
   try {
@@ -197,6 +205,11 @@ function businessReducer(state, action) {
         ...state,
         authorizedAdmins: state.authorizedAdmins.filter((a) => a.id !== action.payload),
       };
+
+    // Datos del negocio activo que llegan de Firestore (los escribe BusinessSync).
+    // Se hace merge parcial: cada subcolección llega por su propia suscripción.
+    case 'SET_TENANT_DATA':
+      return { ...state, ...action.payload };
 
     // ── Tenant activo ──────────────────────────────────────────────────────
     // Cambia cuál es el negocio sobre el que operan las lecturas y escrituras.

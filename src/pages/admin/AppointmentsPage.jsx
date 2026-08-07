@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useBusiness } from '../../contexts/BusinessContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
+import { updateAppointment, cancelAppointment } from '../../lib/repository';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
 
 const STATUS_OPTIONS = [
@@ -41,9 +41,8 @@ function isAppointmentStarted(apt) {
 }
 
 export default function AppointmentsPage() {
-  const { dispatch } = useBusiness();
   const { user } = useAuth();
-  const { appointments, professionals, services, business } = useTenant();
+  const { appointments, professionals, services, business, businessId } = useTenant();
 
   const isOwner = user?.role === 'owner';
 
@@ -70,12 +69,18 @@ export default function AppointmentsPage() {
   }, [appointments, filterProf, filterStatus, filterDate, isOwner, user?.professionalId]);
 
   const updateStatus = (id, status) => {
-    dispatch({ type: 'UPDATE_APPOINTMENT', payload: { id, status } });
+    updateAppointment(businessId, id, { status }).catch((err) => {
+      console.error('[AppointmentsPage] No se pudo actualizar el turno:', err);
+      alert('No se pudo actualizar el turno: ' + err.message);
+    });
   };
 
-  const cancelAppointment = (id) => {
+  const handleCancel = (id) => {
     if (window.confirm('¿Cancelar esta cita?')) {
-      dispatch({ type: 'CANCEL_APPOINTMENT', payload: id });
+      cancelAppointment(businessId, id).catch((err) => {
+        console.error('[AppointmentsPage] No se pudo cancelar:', err);
+        alert('No se pudo cancelar el turno: ' + err.message);
+      });
     }
   };
 
@@ -172,7 +177,7 @@ export default function AppointmentsPage() {
                     }
                   </td>
                   <td>
-                    {isWalkin ? '—' : formatPrice(apt.price, business.currency)}
+                    {isWalkin ? '—' : formatPrice(apt.price, business?.currency)}
                   </td>
                   <td>
                     <span className={`badge ${STATUS_BADGES[apt.status]}`}>
@@ -205,7 +210,7 @@ export default function AppointmentsPage() {
                           <button
                             className="btn btn-ghost btn-sm"
                             title="Cancelar"
-                            onClick={() => cancelAppointment(apt.id)}
+                            onClick={() => handleCancel(apt.id)}
                           >❌</button>
                         </>
                       )}

@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBooking } from '../../contexts/BookingContext';
-import { useBusiness } from '../../contexts/BusinessContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
+import { createAppointment } from '../../lib/repository';
 import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/availabilityEngine';
-import { formatDate, formatPrice, toDateString, getMonthName, generateId } from '../../utils/dateUtils';
+import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
 
 // ---- STEPPER ----
 function Stepper({ step }) {
@@ -349,13 +349,13 @@ function BookingUnavailable({ reason, business }) {
 
 export default function BookingPage() {
   const { booking, dispatch } = useBooking();
-  const { dispatch: bizDispatch } = useBusiness();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
+  const [reservando, setReservando] = useState(false);
 
   // Datos ya filtrados por el negocio del slug de la URL.
-  const { professionals, services, professionalServices, schedules, appointments, business, slug } =
+  const { professionals, services, professionalServices, schedules, appointments, business, slug, businessId } =
     useTenant();
   const { step, professionalId, serviceId, date, timeSlot, personalInfo } = booking;
 
@@ -431,10 +431,12 @@ export default function BookingPage() {
     dispatch({ type: 'PREV_STEP' });
   };
 
-  const handleConfirm = () => {
-    const newAppointment = {
-      id: generateId(),
-      businessId: business.id,
+  const handleConfirm = async () => {
+    if (reservando) return;
+    setReservando(true);
+    setError('');
+
+    const datos = {
       userId: user.id,
       clientName: user.name,
       clientEmail: user.email,
@@ -445,28 +447,27 @@ export default function BookingPage() {
       startTime: timeSlot.startTime,
       endTime: timeSlot.endTime,
       price: finalPrice,
-      status: 'pendiente',
       notes: '',
       adminNotes: '',
-      createdAt: new Date().toISOString(),
     };
-    bizDispatch({ type: 'ADD_APPOINTMENT', payload: newAppointment });
-    bizDispatch({
-      type: 'ADD_WHATSAPP_LOG',
-      payload: {
-        id: 'wlog-' + Date.now(),
-        businessId: business.id,
-        businessName: business.name,
-        recipient: personalInfo.phone,
-        recipientName: user.name,
-        type: 'Confirmación',
-        status: 'sent',
-        sentAt: new Date().toISOString(),
-        message: `Hola ${user.name}, tu turno en ${business.name} para el día ${date} a las ${timeSlot.startTime} ha sido confirmado.`
-      }
-    });
-    dispatch({ type: 'RESET' });
-    navigate(`/${slug}/confirmacion`, { state: { appointment: newAppointment } });
+
+    try {
+      // El turno se escribe en Firestore: desde este momento lo ve el barbero
+      // en su panel, en su propio dispositivo.
+      const id = await createAppointment(businessId, datos);
+      dispatch({ type: 'RESET' });
+      navigate(`/${slug}/confirmacion`, {
+        state: { appointment: { ...datos, id, businessId, status: 'pendiente' } },
+      });
+    } catch (err) {
+      console.error('[BookingPage] No se pudo reservar:', err);
+      setError(
+        err.code === 'permission-denied'
+          ? 'No se pudo confirmar la reserva. Actualizá la página e intentá de nuevo.'
+          : 'No se pudo confirmar la reserva: ' + err.message
+      );
+      setReservando(false);
+    }
   };
 
   return (
@@ -548,8 +549,8 @@ export default function BookingPage() {
             Siguiente →
           </button>
         ) : step === 6 ? (
-          <button className="btn btn-primary btn-lg" onClick={handleConfirm}>
-            ✅ Confirmar Reserva
+          <button className="btn btn-primary btn-lg" onClick={handleConfirm} disabled={reservando}>
+            {reservando ? 'Confirmando…' : '✅ Confirmar Reserva'}
           </button>
         ) : null}
       </div>

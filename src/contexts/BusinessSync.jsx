@@ -6,8 +6,21 @@ import {
   subscribeAllBusinesses,
   subscribeBusiness,
   subscribeBilling,
+  subscribeSubcollection,
   getBusinessIdBySlug,
 } from '../lib/repository';
+
+// Subcolecciones del negocio que la app mantiene en vivo.
+const COLECCIONES = [
+  'professionals',
+  'services',
+  'schedules',
+  'professionalServices',
+  'appointments',
+  'admins',
+];
+
+const VACIO = Object.fromEntries(COLECCIONES.map((c) => [c, []]));
 
 /**
  * Puente entre Firestore y el estado de negocios de la app.
@@ -26,7 +39,7 @@ import {
 const RUTAS_RESERVADAS = new Set(['login', 'admin', 'super-admin', '']);
 
 export default function BusinessSync() {
-  const { dispatch } = useBusiness();
+  const { state, dispatch } = useBusiness();
   const { user, loading } = useAuth();
   const { pathname } = useLocation();
 
@@ -159,6 +172,38 @@ export default function BusinessSync() {
     // 4. Nadie logueado y sin slug: no hay nada que mostrar.
     dispatch({ type: 'SET_BUSINESSES', payload: [] });
   }, [loading, esPlataforma, businessIdPropio, slug, user?.isBypass, dispatch]);
+
+  // ── Subcolecciones del negocio activo ────────────────────────────────────
+  // Se suscriben acá, en un solo lugar, y no dentro de cada hook: si cada
+  // llamada a useProfessionals() abriera su propio listener, el mismo documento
+  // se cobraría una vez por componente montado.
+  const businessId = state.currentBusinessId;
+
+  useEffect(() => {
+    if (!businessId || user?.isBypass) {
+      dispatch({ type: 'SET_TENANT_DATA', payload: VACIO });
+      return;
+    }
+
+    const onError = (col) => (err) => {
+      console.error(`[BusinessSync] ${col}:`, err.code, err.message);
+    };
+
+    const offs = COLECCIONES.map((col) =>
+      subscribeSubcollection(
+        businessId,
+        col,
+        (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { [col]: filas } }),
+        onError(col)
+      )
+    );
+
+    // Al cambiar de negocio, vaciar antes de que lleguen los datos nuevos:
+    // así no se ve por un instante el staff del tenant anterior.
+    dispatch({ type: 'SET_TENANT_DATA', payload: VACIO });
+
+    return () => offs.forEach((off) => off());
+  }, [businessId, user?.isBypass, dispatch]);
 
   return null;
 }

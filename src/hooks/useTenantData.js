@@ -3,86 +3,58 @@ import { useBusiness } from '../contexts/BusinessContext';
 import { useCurrentBusiness, useResolvedBusiness } from './useCurrentBusiness';
 
 // ============================================================================
-// Capa de acceso a datos por tenant.
+// Datos del negocio activo
+// ============================================================================
+// Las suscripciones a Firestore viven en un solo lugar (BusinessSync) y dejan
+// los datos en el contexto. Estos hooks solo los leen.
 //
-// Ningún componente debe leer `state.professionals` / `state.services` / etc.
-// directamente: siempre a través de estos hooks, que filtran por el negocio
-// activo. Cuando migremos a Firestore, el cambio queda contenido acá adentro
-// (cada hook pasa a ser una suscripción con where('businessId','==',id)) y los
-// componentes no se tocan.
+// El aislamiento entre negocios ya no depende de filtrar acá: los datos llegan
+// de /businesses/{id}/… y las Security Rules deciden qué puede leer cada uno.
+// Estos hooks son comodidad de UI, no seguridad.
 // ============================================================================
 
 /** Profesionales del negocio activo. */
 export function useProfessionals() {
   const { state } = useBusiness();
-  const { businessId } = useResolvedBusiness();
-  return useMemo(() => {
-    if (!businessId) return [];
-    return (state.professionals || []).filter((p) => p.businessId === businessId);
-  }, [state.professionals, businessId]);
+  return state.professionals || [];
 }
 
 /** Servicios del negocio activo. */
 export function useServices() {
   const { state } = useBusiness();
-  const { businessId } = useResolvedBusiness();
-  return useMemo(() => {
-    if (!businessId) return [];
-    return (state.services || []).filter((s) => s.businessId === businessId);
-  }, [state.services, businessId]);
+  return state.services || [];
 }
 
-/** Citas del negocio activo. */
+/** Turnos del negocio activo. */
 export function useAppointments() {
   const { state } = useBusiness();
-  const { businessId } = useResolvedBusiness();
-  return useMemo(() => {
-    if (!businessId) return [];
-    return (state.appointments || []).filter((a) => a.businessId === businessId);
-  }, [state.appointments, businessId]);
+  return state.appointments || [];
 }
 
-/**
- * Horarios del negocio activo.
- * `schedules` no lleva businessId propio: pertenece al tenant a través del
- * profesional, así que filtramos de forma transitiva.
- */
+/** Horarios de trabajo del staff. */
 export function useSchedules() {
   const { state } = useBusiness();
-  const professionals = useProfessionals();
-  return useMemo(() => {
-    const ids = new Set(professionals.map((p) => p.id));
-    return (state.schedules || []).filter((s) => ids.has(s.professionalId));
-  }, [state.schedules, professionals]);
+  return state.schedules || [];
 }
 
-/** Relación profesional↔servicio del negocio activo (filtrada transitivamente). */
+/** Relación profesional↔servicio, con precio y duración propios. */
 export function useProfessionalServices() {
   const { state } = useBusiness();
-  const professionals = useProfessionals();
-  return useMemo(() => {
-    const ids = new Set(professionals.map((p) => p.id));
-    return (state.professionalServices || []).filter((ps) => ids.has(ps.professionalId));
-  }, [state.professionalServices, professionals]);
-}
-
-/** Admins autorizados del negocio activo. */
-export function useAuthorizedAdmins() {
-  const { state } = useBusiness();
-  const { businessId } = useResolvedBusiness();
-  return useMemo(() => {
-    if (!businessId) return [];
-    return (state.authorizedAdmins || []).filter((a) => a.businessId === businessId);
-  }, [state.authorizedAdmins, businessId]);
+  return state.professionalServices || [];
 }
 
 /**
- * Agregado de conveniencia: devuelve la misma forma que antes exponía `state`,
- * pero ya filtrado por tenant. Permite migrar los componentes existentes
- * cambiando una sola línea:
- *
- *   const { professionals, services } = state;   // ❌ ve todos los negocios
- *   const { professionals, services } = useTenant();  // ✅ solo el activo
+ * Admins del negocio activo.
+ * Es el registro que muestra la UI: el permiso real son los custom claims.
+ */
+export function useAuthorizedAdmins() {
+  const { state } = useBusiness();
+  return state.admins || [];
+}
+
+/**
+ * Agregado de conveniencia. Devuelve la misma forma que antes exponía `state`,
+ * para que los componentes no tengan que cambiar.
  */
 export function useTenant() {
   const { business, businessId, slug, isPlatformOwner, resolved } = useCurrentBusiness();
@@ -93,17 +65,36 @@ export function useTenant() {
   const professionalServices = useProfessionalServices();
   const authorizedAdmins = useAuthorizedAdmins();
 
-  return {
-    business,
-    businessId,
-    slug,
-    isPlatformOwner,
-    resolved,
-    professionals,
-    services,
-    appointments,
-    schedules,
-    professionalServices,
-    authorizedAdmins,
-  };
+  return useMemo(
+    () => ({
+      business,
+      businessId,
+      slug,
+      isPlatformOwner,
+      resolved,
+      professionals,
+      services,
+      appointments,
+      schedules,
+      professionalServices,
+      authorizedAdmins,
+    }),
+    [
+      business,
+      businessId,
+      slug,
+      isPlatformOwner,
+      resolved,
+      professionals,
+      services,
+      appointments,
+      schedules,
+      professionalServices,
+      authorizedAdmins,
+    ]
+  );
 }
+
+// Se re-exporta para los componentes que solo necesitan saber el negocio activo
+// sin arrastrar todos sus datos.
+export { useResolvedBusiness };

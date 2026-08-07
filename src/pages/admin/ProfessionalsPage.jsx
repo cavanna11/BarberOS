@@ -1,12 +1,17 @@
 import { useState } from 'react';
-import { useBusiness } from '../../contexts/BusinessContext';
 import { useTenant } from '../../hooks/useTenantData';
+import {
+  addToSubcollection,
+  updateInSubcollection,
+  removeFromSubcollection,
+  replaceMatching,
+} from '../../lib/repository';
 import { getDayName, generateId } from '../../utils/dateUtils';
 
 export default function ProfessionalsPage() {
-  const { dispatch } = useBusiness();
-  const { professionals, schedules, professionalServices, services, business } = useTenant();
+  const { professionals, schedules, professionalServices, services, businessId } = useTenant();
 
+  const [guardando, setGuardando]     = useState(false);
   const [showModal, setShowModal]     = useState(false);
   const [editing, setEditing]         = useState(null);
   const [form, setForm]               = useState({ name: '', specialty: '', phone: '', email: '', bio: '' });
@@ -60,57 +65,67 @@ export default function ProfessionalsPage() {
   };
 
   // ── Guardar ────────────────────────────────────────────────────────────────
-  const handleSave = () => {
-    if (!form.name.trim()) return;
+  const handleSave = async () => {
+    if (!form.name.trim() || !businessId) return;
 
-    const profId = editing ? editing.id : generateId();
+    setGuardando(true);
+    try {
+      const profId = editing
+        ? editing.id
+        : await addToSubcollection(businessId, 'professionals', {
+            ...form,
+            avatarUrl: null,
+            displayOrder: professionals.length + 1,
+            isActive: true,
+          });
 
-    if (editing) {
-      dispatch({ type: 'UPDATE_PROFESSIONAL', payload: { id: profId, ...form } });
-      dispatch({
-        type: 'SET_SCHEDULES',
-        payload: { professionalId: profId, schedules: editSchedules.map(s => ({ ...s, professionalId: profId })) },
-      });
-    } else {
-      dispatch({
-        type: 'ADD_PROFESSIONAL',
-        payload: {
-          id: profId,
-          businessId: business.id,
-          ...form,
-          avatarUrl: null,
-          displayOrder: professionals.length + 1,
-          isActive: true,
-        },
-      });
-      dispatch({
-        type: 'SET_SCHEDULES',
-        payload: { professionalId: profId, schedules: editSchedules.map(s => ({ ...s, professionalId: profId })) },
-      });
-    }
+      if (editing) {
+        await updateInSubcollection(businessId, 'professionals', profId, { ...form });
+      }
 
-    // Guardar servicios asignados (reemplaza los anteriores)
-    dispatch({
-      type: 'UPDATE_PROFESSIONAL_SERVICES',
-      payload: {
-        professionalId: profId,
-        services: editServices.map(srvId => ({
-          id: generateId(),
+      // Horarios y servicios asignados se reemplazan enteros: lo natural acá es
+      // "estos son los que quedan", no ir agregando y borrando de a uno.
+      await replaceMatching(
+        businessId,
+        'schedules',
+        'professionalId',
+        profId,
+        editSchedules.map((sch) => ({ ...sch, id: undefined, professionalId: profId }))
+      );
+
+      await replaceMatching(
+        businessId,
+        'professionalServices',
+        'professionalId',
+        profId,
+        editServices.map((serviceId) => ({
           professionalId: profId,
-          serviceId: srvId,
+          serviceId,
           customPrice: null,
           customDuration: null,
-        })),
-      },
-    });
+        }))
+      );
 
-    setShowModal(false);
+      setShowModal(false);
+    } catch (err) {
+      console.error('[ProfessionalsPage] No se pudo guardar:', err);
+      alert('No se pudo guardar el profesional: ' + err.message);
+    } finally {
+      setGuardando(false);
+    }
   };
 
-  // ── Eliminar (con cascada en el reducer) ───────────────────────────────────
-  const handleDelete = (id) => {
-    if (window.confirm('¿Eliminar este profesional? También se eliminarán sus horarios y servicios asignados.')) {
-      dispatch({ type: 'DELETE_PROFESSIONAL', payload: id });
+  // ── Eliminar ───────────────────────────────────────────────────────────────
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este profesional? También se eliminarán sus horarios y servicios asignados.')) return;
+    try {
+      // Firestore no borra en cascada: hay que limpiar lo que cuelga del profesional.
+      await replaceMatching(businessId, 'schedules', 'professionalId', id, []);
+      await replaceMatching(businessId, 'professionalServices', 'professionalId', id, []);
+      await removeFromSubcollection(businessId, 'professionals', id);
+    } catch (err) {
+      console.error('[ProfessionalsPage] No se pudo eliminar:', err);
+      alert('No se pudo eliminar: ' + err.message);
     }
   };
 
@@ -324,8 +339,12 @@ export default function ProfessionalsPage() {
 
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={!form.name.trim()}>
-                💾 Guardar
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={!form.name.trim() || guardando}
+              >
+                {guardando ? 'Guardando…' : '💾 Guardar'}
               </button>
             </div>
           </div>

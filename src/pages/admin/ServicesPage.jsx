@@ -1,11 +1,16 @@
 import { useState } from 'react';
-import { useBusiness } from '../../contexts/BusinessContext';
 import { useTenant } from '../../hooks/useTenantData';
-import { formatPrice, generateId } from '../../utils/dateUtils';
+import {
+  addToSubcollection,
+  updateInSubcollection,
+  removeFromSubcollection,
+  replaceMatching,
+} from '../../lib/repository';
+import { formatPrice } from '../../utils/dateUtils';
 
 export default function ServicesPage() {
-  const { dispatch } = useBusiness();
-  const { services, professionals, professionalServices, business } = useTenant();
+  const { services, professionals, professionalServices, business, businessId } = useTenant();
+  const [guardando, setGuardando] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', durationMinutes: 30, price: 0, category: '' });
@@ -30,40 +35,56 @@ export default function ServicesPage() {
     setAssignedProfs(prev => prev.includes(profId) ? prev.filter(id => id !== profId) : [...prev, profId]);
   };
 
-  const handleSave = () => {
-    if (!form.name || !form.price) return;
-    const serviceId = editing?.id || generateId();
+  const handleSave = async () => {
+    if (!form.name || !form.price || !businessId) return;
 
-    if (editing) {
-      dispatch({ type: 'UPDATE_SERVICE', payload: { id: serviceId, ...form } });
-    } else {
-      dispatch({
-        type: 'ADD_SERVICE',
-        payload: { id: serviceId, businessId: business.id, ...form, imageUrl: null, displayOrder: services.length + 1, isActive: true },
-      });
-    }
+    setGuardando(true);
+    try {
+      const serviceId = editing
+        ? editing.id
+        : await addToSubcollection(businessId, 'services', {
+            ...form,
+            imageUrl: null,
+            displayOrder: services.length + 1,
+            isActive: true,
+          });
 
-    // Reasignar qué profesionales prestan este servicio
-    dispatch({
-      type: 'SET_SERVICE_PROFESSIONALS',
-      payload: {
+      if (editing) {
+        await updateInSubcollection(businessId, 'services', serviceId, { ...form });
+      }
+
+      // Reasigna qué profesionales prestan este servicio (reemplaza los anteriores).
+      await replaceMatching(
+        businessId,
+        'professionalServices',
+        'serviceId',
         serviceId,
-        assignments: assignedProfs.map(profId => ({
-          id: generateId(),
-          professionalId: profId,
+        assignedProfs.map((professionalId) => ({
+          professionalId,
           serviceId,
           customPrice: null,
           customDuration: null,
-        })),
-      },
-    });
+        }))
+      );
 
-    setShowModal(false);
+      setShowModal(false);
+    } catch (err) {
+      console.error('[ServicesPage] No se pudo guardar:', err);
+      alert('No se pudo guardar el servicio: ' + err.message);
+    } finally {
+      setGuardando(false);
+    }
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm('¿Eliminar este servicio?')) {
-      dispatch({ type: 'DELETE_SERVICE', payload: id });
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este servicio?')) return;
+    try {
+      // Firestore no borra en cascada: primero se sueltan las asignaciones.
+      await replaceMatching(businessId, 'professionalServices', 'serviceId', id, []);
+      await removeFromSubcollection(businessId, 'services', id);
+    } catch (err) {
+      console.error('[ServicesPage] No se pudo eliminar:', err);
+      alert('No se pudo eliminar: ' + err.message);
     }
   };
 
@@ -101,7 +122,7 @@ export default function ServicesPage() {
                     </div>
                   </td>
                   <td>{srv.durationMinutes} min</td>
-                  <td><strong>{formatPrice(srv.price, business.currency)}</strong></td>
+                  <td><strong>{formatPrice(srv.price, business?.currency)}</strong></td>
                   <td><span className="text-sm text-secondary">{srvProfs.join(', ')}</span></td>
                   <td><span className={`badge ${srv.isActive ? 'badge-success' : 'badge-neutral'}`}>{srv.isActive ? 'Activo' : 'Inactivo'}</span></td>
                   <td>
@@ -176,7 +197,9 @@ export default function ServicesPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={handleSave}>💾 Guardar</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={guardando}>
+                {guardando ? 'Guardando…' : '💾 Guardar'}
+              </button>
             </div>
           </div>
         </div>
