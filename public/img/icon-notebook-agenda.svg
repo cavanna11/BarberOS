@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none">
+  <!-- Spiral notebook base -->
+  <rect x="12" y="6" width="28" height="36" rx="3" stroke="#0a0a0a" stroke-width="1.5" fill="#fafafa"/>
+  
+  <!-- Spiral rings -->
+  <line x1="8" y1="12" x2="14" y2="12" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="8" y1="18" x2="14" y2="18" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="8" y1="24" x2="14" y2="24" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="8" y1="30" x2="14" y2="30" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="8" y1="36" x2="14" y2="36" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Messy notebook lines -->
+  <line x1="18" y1="14" x2="34" y2="14" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="18" y1="20" x2="30" y2="20" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="18" y1="26" x2="32" y2="26" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  
+  <!-- Orange bookmark tag hanging out -->
+  <path d="M 28 6 L 28 16 L 31 14 L 34 16 L 34 6 Z" fill="#e03d00"/>
+</svg>

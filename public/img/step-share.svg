@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80" width="100%" height="100%">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', sans-serif; }
+      .font-mono { font-family: 'Space Mono', monospace; }
+    </style>
+  </defs>
+  <!-- Share Link pill illustration -->
+  <g transform="translate(10, 15)">
+    <rect x="0" y="0" width="140" height="42" rx="21" fill="#ffffff" stroke="#e03d00" stroke-width="1.5"/>
+    <circle cx="21" cy="21" r="12" fill="#e03d00"/>
+    <text x="21" y="25" text-anchor="middle" class="font-sans" font-size="12" fill="#ffffff">🔗</text>
+    
+    <text x="40" y="20" class="font-mono" font-size="10" font-weight="700" fill="#0a0a0a">barberos.app/...</text>
+    <text x="40" y="32" class="font-sans" font-size="9" fill="#0f9960">¡Primer turno recibido!</text>
+  </g>
+</svg>

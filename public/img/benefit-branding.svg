@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" width="100%" height="100%">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', sans-serif; }
+      .font-mono { font-family: 'Space Mono', monospace; }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="280" height="120" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  
+  <!-- Barber Brand Header Cutout -->
+  <g transform="translate(14, 14)">
+    <rect x="0" y="0" width="252" height="92" rx="8" fill="#ffffff" stroke="#e03d00" stroke-width="1.5"/>
+    
+    <!-- Header banner -->
+    <path d="M 0 8 Q 0 0 8 0 L 244 0 Q 252 0 252 8 L 252 36 L 0 36 Z" fill="#0a0a0a"/>
+    <text x="126" y="24" text-anchor="middle" class="font-sans" font-size="13" font-weight="700" fill="#ffffff" letter-spacing="1">✂️ LA BARBERÍA CLUB</text>
+
+    <!-- Subtitle badge -->
+    <text x="126" y="56" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#0a0a0a">Tu marca. Tus colores.</text>
+    <text x="126" y="74" text-anchor="middle" class="font-mono" font-size="9" fill="#555555">Sin logos ni referencias de terceros</text>
+  </g>
+</svg>

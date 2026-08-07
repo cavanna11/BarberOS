@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
 import { PLANS, OVERAGE_COST_USD } from '../config/plans';
+import HeroMotionMockup from '../components/landing/HeroMotionMockup';
+import FloatingActionWidget from '../components/landing/FloatingActionWidget';
 
 // ============================================================================
 // Landing pública de BarberOS
@@ -13,7 +15,7 @@ import { PLANS, OVERAGE_COST_USD } from '../config/plans';
 // producto: primero se reconoce en el problema, después ve la solución, después
 // pregunta el precio, y recién al final se le contestan las objeciones.
 
-const WHATSAPP = '5491157077758';
+const WHATSAPP = '5492257529684';
 const mensajeWA = encodeURIComponent(
   'Hola, vi BarberOS y quiero saber más para mi barbería.'
 );
@@ -21,17 +23,20 @@ const LINK_WA = `https://wa.me/${WHATSAPP}?text=${mensajeWA}`;
 
 const DOLORES = [
   {
-    icono: '📵',
+    icono: '/img/icon-phone-interrupt.svg',
+    alt: 'Ícono de teléfono interrumpiendo un corte de pelo',
     titulo: 'Cortás el corte para contestar',
     texto: 'Cada mensaje que entra te saca de lo que estás haciendo. Y si no contestás en el momento, el cliente se va a otro lado.',
   },
   {
-    icono: '👻',
+    icono: '/img/icon-ghost-no-show.svg',
+    alt: 'Ícono de turno cancelado y cliente ausente',
     titulo: 'Reservan y no aparecen',
     texto: 'Un turno vacío es plata que no vuelve. Sin recordatorio, entre el 20% y el 30% no se presenta.',
   },
   {
-    icono: '📓',
+    icono: '/img/icon-notebook-agenda.svg',
+    alt: 'Ícono de cuaderno impreso y agenda en papel',
     titulo: 'La agenda vive en un cuaderno',
     texto: 'Si el cuaderno no está, nadie sabe quién viene. Y averiguar cuánto facturaste el mes pasado es imposible.',
   },
@@ -39,36 +44,48 @@ const DOLORES = [
 
 const BENEFICIOS = [
   {
+    imagen: '/img/benefit-link.svg',
+    alt: 'Vista previa del enlace personalizado de la barbería',
     titulo: 'Tu link, tu agenda',
     texto: 'Cada barbería tiene su propia dirección. La ponés en el perfil de Instagram y tus clientes reservan solos, a cualquier hora, sin instalar nada.',
   },
   {
+    imagen: '/img/benefit-whatsapp.svg',
+    alt: 'Vista previa del mensaje de recordatorio automático por WhatsApp',
     titulo: 'Recordatorio por WhatsApp',
     texto: 'El sistema le avisa al cliente el día antes y unas horas antes. Es la función que más ausencias evita.',
     proximamente: true,
   },
   {
+    imagen: '/img/benefit-schedule.svg',
+    alt: 'Vista previa de la grilla de días y horarios de atención por barbero',
     titulo: 'Sabe quién trabaja cuándo',
     texto: 'Cargás el horario de cada barbero, sus descansos y qué servicios hace. La agenda no ofrece turnos que no se pueden atender.',
   },
   {
+    imagen: '/img/benefit-roles.svg',
+    alt: 'Vista previa de los roles de dueño y barberos',
     titulo: 'Cada uno ve lo suyo',
     texto: 'El dueño ve todo: caja, estadísticas, el equipo completo. Cada barbero ve solo sus propios turnos del día.',
   },
   {
+    imagen: '/img/benefit-stats.svg',
+    alt: 'Vista previa de métricas de facturación y servicios destacados',
     titulo: 'Números de verdad',
     texto: 'Cuánto facturaste, qué servicio deja más, quién tiene más ausencias. Sin planillas.',
   },
   {
+    imagen: '/img/benefit-branding.svg',
+    alt: 'Vista previa del encabezado personalizado con la marca de la barbería',
     titulo: 'Con tu cara, no la nuestra',
     texto: 'Tu nombre y tus colores. Para tu cliente es la agenda de tu barbería, no la de un proveedor.',
   },
 ];
 
 const PASOS = [
-  { n: '01', t: 'Hablamos', d: 'Nos contás cómo trabajás: cuántos barberos, qué servicios, qué horarios.' },
-  { n: '02', t: 'Te la dejamos lista', d: 'Configuramos todo nosotros: tu equipo, tus precios, tus horarios. Vos no tocás nada.' },
-  { n: '03', t: 'Compartís el link', d: 'Lo ponés en Instagram y en tu estado de WhatsApp. Esa misma tarde entra el primer turno.' },
+  { n: '01', img: '/img/step-talk.svg', alt: 'Charla inicial de asesoramiento', t: 'Hablamos', d: 'Nos contás cómo trabajás: cuántos barberos, qué servicios, qué horarios.' },
+  { n: '02', img: '/img/step-setup.svg', alt: 'Configuración llave en mano', t: 'Te la dejamos lista', d: 'Configuramos todo nosotros: tu equipo, tus precios, tus horarios. Vos no tocás nada.' },
+  { n: '03', img: '/img/step-share.svg', alt: 'Publicación del link en Instagram', t: 'Compartís el link', d: 'Lo ponés en Instagram y en tu estado de WhatsApp. Esa misma tarde entra el primer turno.' },
 ];
 
 const FAQ = [
@@ -110,7 +127,7 @@ export default function LandingPage() {
   return (
     <div className="landing">
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
-      <section className="landing-hero">
+      <section className="landing-hero" id="inicio">
         <span className="eyebrow">• Turnos para barberías · Argentina</span>
 
         <h1 className="landing-title">
@@ -138,16 +155,21 @@ export default function LandingPage() {
           <li>✓ Sin permanencia</li>
           <li>✓ Andando el mismo día</li>
         </ul>
+
+        {/* Dynamic 3D HTML Motion Hero Mockup */}
+        <HeroMotionMockup />
       </section>
 
       {/* ── PROBLEMA ─────────────────────────────────────────────────────── */}
-      <section className="landing-section">
+      <section className="landing-section" id="problema">
         <span className="eyebrow">• El día a día</span>
         <h2 className="landing-h2">Esto ya lo viviste</h2>
         <div className="landing-grid-3">
           {DOLORES.map((d) => (
             <div key={d.titulo} className="card landing-card">
-              <div className="landing-card-icon">{d.icono}</div>
+              <div className="landing-card-icon">
+                <img src={d.icono} alt={d.alt} width="48" height="48" className="landing-icon-img" />
+              </div>
               <h3>{d.titulo}</h3>
               <p>{d.texto}</p>
             </div>
@@ -156,12 +178,22 @@ export default function LandingPage() {
       </section>
 
       {/* ── SOLUCIÓN ─────────────────────────────────────────────────────── */}
-      <section className="landing-section landing-section-alt">
+      <section className="landing-section landing-section-alt" id="funciones">
         <span className="eyebrow">• Lo que hace</span>
         <h2 className="landing-h2">Una agenda que trabaja sola</h2>
         <div className="landing-grid-3">
           {BENEFICIOS.map((b) => (
-            <div key={b.titulo} className="card landing-card">
+            <div key={b.titulo} className="card landing-card landing-card-benefit">
+              <div className="landing-benefit-img-wrapper">
+                <img
+                  src={b.imagen}
+                  alt={b.alt}
+                  width="280"
+                  height="120"
+                  className="landing-benefit-img"
+                  loading="lazy"
+                />
+              </div>
               <h3>
                 {b.titulo}
                 {b.proximamente && <span className="badge badge-warning landing-soon">pronto</span>}
@@ -173,7 +205,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── CÓMO EMPIEZA ─────────────────────────────────────────────────── */}
-      <section className="landing-section">
+      <section className="landing-section" id="como-arranca">
         <span className="eyebrow">• Cómo arranca</span>
         <h2 className="landing-h2">No tenés que configurar nada</h2>
         <p className="landing-sub">
@@ -182,7 +214,17 @@ export default function LandingPage() {
         <div className="landing-grid-3">
           {PASOS.map((p) => (
             <div key={p.n} className="landing-step">
-              <span className="landing-step-num">{p.n}</span>
+              <div className="landing-step-header">
+                <span className="landing-step-num">{p.n}</span>
+                <img
+                  src={p.img}
+                  alt={p.alt}
+                  width="160"
+                  height="80"
+                  className="landing-step-img"
+                  loading="lazy"
+                />
+              </div>
               <h3>{p.t}</h3>
               <p>{p.d}</p>
             </div>
@@ -196,7 +238,7 @@ export default function LandingPage() {
         <h2 className="landing-h2">Sin letra chica</h2>
         <p className="landing-sub">
           Mes a mes, sin permanencia. La diferencia entre planes es cuántos
-          recordatorios de WhatsApp manda el sistema.
+          recordatorios de WhatsApp manda el sistema y la capacidad de tu barbería.
         </p>
 
         <div className="landing-grid-3">
@@ -210,11 +252,9 @@ export default function LandingPage() {
               </div>
               <p className="landing-price-desc">{plan.description}</p>
               <ul className="landing-price-list">
-                <li>✓ Barberos y servicios sin límite</li>
-                <li>✓ Turnos sin límite</li>
-                <li>✓ Tu link con tu marca</li>
-                <li>✓ Estadísticas de facturación</li>
-                <li>✓ Soporte por chat desde el panel</li>
+                {plan.features.map((feat) => (
+                  <li key={feat}>✓ {feat}</li>
+                ))}
               </ul>
               <CTAWhatsApp clase={i === 1 ? 'btn-primary btn-full' : 'btn-outline btn-full'}>
                 Lo quiero
@@ -231,7 +271,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── FAQ ──────────────────────────────────────────────────────────── */}
-      <section className="landing-section">
+      <section className="landing-section" id="dudas">
         <span className="eyebrow">• Dudas</span>
         <h2 className="landing-h2">Lo que siempre nos preguntan</h2>
         <div className="landing-faq">
@@ -256,6 +296,9 @@ export default function LandingPage() {
           ¿Ya sos cliente? <Link to="/login">Entrá a tu panel</Link>
         </p>
       </section>
+
+      {/* Floating Action Buttons & AI Chat Assistant */}
+      <FloatingActionWidget />
     </div>
   );
 }

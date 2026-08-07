@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="none">
+  <!-- Phone frame -->
+  <rect x="14" y="6" width="20" height="36" rx="4" stroke="#0a0a0a" stroke-width="1.5"/>
+  <line x1="21" y1="9" x2="27" y2="9" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="24" cy="38" r="1.5" fill="#0a0a0a"/>
+  
+  <!-- Vibration lines -->
+  <path d="M 8 18 C 6 21 6 27 8 30" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M 40 18 C 42 21 42 27 40 30" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Incoming message notification dot in brand orange -->
+  <circle cx="30" cy="12" r="5" fill="#e03d00" stroke="#fafafa" stroke-width="1.5"/>
+  <text x="30" y="15" text-anchor="middle" font-family="'Space Grotesk', sans-serif" font-size="8" font-weight="700" fill="#ffffff">!</text>
+
+  <!-- Scissors crossing outline -->
+  <path d="M 20 22 L 28 30" stroke="#e03d00" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M 28 22 L 20 30" stroke="#e03d00" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

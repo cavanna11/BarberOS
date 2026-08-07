@@ -55,6 +55,9 @@ export default function LoginPage() {
   return (
     <div className="auth-container">
       <div className="auth-card">
+        <div style={{ textAlign: 'center', marginBottom: 'var(--space-md)' }}>
+          <img src="/img/barberos-logo-full.svg" alt="BarberOS Logo" width="200" height="48" style={{ margin: '0 auto' }} />
+        </div>
         <h1>Reservar turno</h1>
         <p className="auth-subtitle">Iniciá sesión con tu cuenta de Google para continuar</p>
 

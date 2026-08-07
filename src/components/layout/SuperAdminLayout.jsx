@@ -34,7 +34,7 @@ export default function SuperAdminLayout() {
       {/* Sidebar */}
       <aside className={`admin-sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="admin-sidebar-header">
-          <div className="header-logo-icon" style={{ fontSize: '14px', fontWeight: 'bold' }}>B</div>
+          <img src="/img/barberos-logo-icon.svg" alt="BarberOS" width="32" height="32" />
           <span>BarberOS Global</span>
         </div>
 

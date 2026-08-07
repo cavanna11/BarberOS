@@ -50,7 +50,7 @@ export default function AdminLayout() {
       {/* Sidebar */}
       <aside className={`admin-sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="admin-sidebar-header">
-          <div className="header-logo-icon">B</div>
+          <img src="/img/barberos-logo-icon.svg" alt="BarberOS" width="32" height="32" />
           <span>{business?.name || 'BarberOS'}</span>
         </div>
 

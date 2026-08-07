@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" width="100%" height="100%">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', sans-serif; }
+      .font-mono { font-family: 'Space Mono', monospace; }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="280" height="120" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  
+  <g transform="translate(14, 14)">
+    <text x="0" y="14" class="font-sans" font-size="12" font-weight="700" fill="#0a0a0a">Horarios de atención · Mateo</text>
+    <text x="0" y="28" class="font-mono" font-size="10" fill="#555555">09:00 a 20:00 hs (Almuerzo 13:00 - 14:00)</text>
+
+    <!-- Days Grid -->
+    <g transform="translate(0, 38)">
+      <!-- Lun -->
+      <rect x="0" y="0" width="32" height="42" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.08)"/>
+      <text x="16" y="16" text-anchor="middle" class="font-sans" font-size="10" font-weight="700" fill="#0a0a0a">L</text>
+      <circle cx="16" cy="28" r="3" fill="#0f9960"/>
+
+      <!-- Mar -->
+      <rect x="36" y="0" width="32" height="42" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.08)"/>
+      <text x="52" y="16" text-anchor="middle" class="font-sans" font-size="10" font-weight="700" fill="#0a0a0a">M</text>
+      <circle cx="52" cy="28" r="3" fill="#0f9960"/>
+
+      <!-- Mie -->
+      <rect x="72" y="0" width="32" height="42" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.08)"/>
+      <text x="88" y="16" text-anchor="middle" class="font-sans" font-size="10" font-weight="700" fill="#0a0a0a">X</text>
+      <circle cx="88" cy="28" r="3" fill="#0f9960"/>
+
+      <!-- Jue -->
+      <rect x="108" y="0" width="32" height="42" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.08)"/>
+      <text x="124" y="16" text-anchor="middle" class="font-sans" font-size="10" font-weight="700" fill="#0a0a0a">J</text>
+      <circle cx="124" cy="28" r="3" fill="#0f9960"/>
+
+      <!-- Vie SELECTED -->
+      <rect x="144" y="0" width="32" height="42" rx="6" fill="#e03d00"/>
+      <text x="160" y="16" text-anchor="middle" class="font-sans" font-size="10" font-weight="700" fill="#ffffff">V</text>
+      <circle cx="160" cy="28" r="3" fill="#ffffff"/>
+
+      <!-- Sab -->
+      <rect x="180" y="0" width="32" height="42" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.08)"/>
+      <text x="196" y="16" text-anchor="middle" class="font-sans" font-size="10" font-weight="700" fill="#0a0a0a">S</text>
+      <circle cx="196" cy="28" r="3" fill="#0f9960"/>
+
+      <!-- Dom OFF -->
+      <rect x="216" y="0" width="32" height="42" rx="6" fill="#f2f2f2" stroke="rgba(0,0,0,0.04)"/>
+      <text x="232" y="16" text-anchor="middle" class="font-sans" font-size="10" fill="#aaaaaa">D</text>
+      <circle cx="232" cy="28" r="3" fill="#aaaaaa"/>
+    </g>
+  </g>
+</svg>

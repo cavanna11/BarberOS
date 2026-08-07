@@ -1,0 +1,240 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" width="100%" height="100%" shape-rendering="geometricPrecision">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      .font-mono { font-family: 'Space Mono', Consolas, monospace; }
+    </style>
+  </defs>
+
+  <!-- DESKTOP BACKDROP WINDOW -->
+  <g transform="translate(10, 10)">
+    <!-- Window Frame -->
+    <rect x="0" y="0" width="720" height="580" rx="12" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="1.5" />
+    
+    <!-- Window Header / Browser Bar -->
+    <path d="M 0 12 Q 0 0 12 0 L 708 0 Q 720 0 720 12 L 720 44 L 0 44 Z" fill="#f2f2f2"/>
+    <line x1="0" y1="44" x2="720" y2="44" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+    <!-- Window Controls -->
+    <circle cx="20" cy="22" r="5" fill="#e05252"/>
+    <circle cx="36" cy="22" r="5" fill="#e5c158"/>
+    <circle cx="52" cy="22" r="5" fill="#52c41a"/>
+    <!-- URL Bar -->
+    <rect x="180" y="10" width="360" height="24" rx="4" fill="#ffffff" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+    <text x="360" y="26" text-anchor="middle" class="font-mono" font-size="11" fill="#555555">barberos.app/admin/dashboard</text>
+
+    <!-- Admin Content Area -->
+    <g transform="translate(24, 64)">
+      <!-- Dashboard Top Header -->
+      <text x="0" y="24" class="font-sans" font-size="22" font-weight="700" fill="#0a0a0a">Hola, Mateo 👋</text>
+      <text x="0" y="44" class="font-mono" font-size="12" fill="#555555">Viernes 7 de Agosto</text>
+
+      <g transform="translate(380, 4)">
+        <!-- Pending badge -->
+        <rect x="0" y="0" width="110" height="32" rx="6" fill="#fdf4e7" stroke="rgba(180, 83, 9, 0.2)" stroke-width="1"/>
+        <text x="55" y="20" text-anchor="middle" class="font-sans" font-size="12" font-weight="600" fill="#b45309">⏳ 3 pendientes</text>
+        
+        <!-- Walkin button -->
+        <rect x="120" y="0" width="164" height="32" rx="6" fill="#e03d00"/>
+        <text x="202" y="20" text-anchor="middle" class="font-sans" font-size="12" font-weight="600" fill="#ffffff">✂️ Servicio sin turno</text>
+      </g>
+
+      <!-- Stats Summary Strip -->
+      <g transform="translate(0, 64)">
+        <rect x="0" y="0" width="210" height="64" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+        <text x="16" y="24" class="font-mono" font-size="10" fill="#aaaaaa">TURNOS HOY</text>
+        <text x="16" y="48" class="font-sans" font-size="20" font-weight="700" fill="#0a0a0a">8 confirmados</text>
+
+        <rect x="225" y="0" width="210" height="64" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+        <text x="241" y="24" class="font-mono" font-size="10" fill="#aaaaaa">RECAUDACIÓN ESTIMADA</text>
+        <text x="241" y="48" class="font-sans" font-size="20" font-weight="700" fill="#0a0a0a">$112.000</text>
+
+        <rect x="450" y="0" width="210" height="64" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+        <text x="466" y="24" class="font-mono" font-size="10" fill="#aaaaaa">ASISTENCIA ESTIMADA</text>
+        <text x="466" y="48" class="font-sans" font-size="20" font-weight="700" fill="#0f9960">96%</text>
+      </g>
+
+      <!-- Appointments List Box -->
+      <g transform="translate(0, 148)">
+        <rect x="0" y="0" width="660" height="340" rx="8" fill="#ffffff" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+        
+        <text x="20" y="32" class="font-sans" font-size="15" font-weight="700" fill="#0a0a0a">📋 Agenda de hoy</text>
+        
+        <!-- Row 1 (Highlight: matching mobile step) -->
+        <g transform="translate(16, 50)">
+          <rect x="0" y="0" width="628" height="68" rx="6" fill="#fdf0eb" stroke="#e03d00" stroke-width="1.5"/>
+          <rect x="0" y="0" width="6" height="68" fill="#e03d00" rx="2"/>
+          <text x="24" y="32" class="font-mono" font-size="16" font-weight="700" fill="#e03d00">10:15</text>
+          <text x="24" y="48" class="font-mono" font-size="10" fill="#555555">30 min</text>
+          
+          <text x="100" y="32" class="font-sans" font-size="14" font-weight="700" fill="#0a0a0a">Santiago Rossi</text>
+          <text x="100" y="48" class="font-sans" font-size="12" fill="#555555">Corte + Perfilado de Barba</text>
+          
+          <text x="360" y="40" class="font-sans" font-size="13" font-weight="600" fill="#0a0a0a">$15.000</text>
+
+          <rect x="490" y="20" width="118" height="26" rx="13" fill="#eaf7f1"/>
+          <text x="549" y="37" text-anchor="middle" class="font-mono" font-size="10" font-weight="700" fill="#0f9960">• CONFIRMADO</text>
+        </g>
+
+        <!-- Row 2 -->
+        <g transform="translate(16, 128)">
+          <rect x="0" y="0" width="628" height="60" rx="6" fill="#f2f2f2" stroke="rgba(0,0,0,0.04)" stroke-width="1"/>
+          <text x="24" y="28" class="font-mono" font-size="15" font-weight="700" fill="#0a0a0a">11:00</text>
+          <text x="24" y="44" class="font-mono" font-size="10" fill="#555555">30 min</text>
+          
+          <text x="100" y="28" class="font-sans" font-size="14" font-weight="600" fill="#0a0a0a">Gonzalo Pérez</text>
+          <text x="100" y="44" class="font-sans" font-size="12" fill="#555555">Corte Clásico</text>
+          
+          <text x="360" y="36" class="font-sans" font-size="13" font-weight="600" fill="#0a0a0a">$12.000</text>
+
+          <rect x="490" y="17" width="118" height="26" rx="13" fill="#eaf7f1"/>
+          <text x="549" y="34" text-anchor="middle" class="font-mono" font-size="10" font-weight="700" fill="#0f9960">• CONFIRMADO</text>
+        </g>
+
+        <!-- Row 3 -->
+        <g transform="translate(16, 198)">
+          <rect x="0" y="0" width="628" height="60" rx="6" fill="#fafafa" stroke="rgba(0,0,0,0.04)" stroke-width="1"/>
+          <text x="24" y="28" class="font-mono" font-size="15" font-weight="700" fill="#0a0a0a">11:45</text>
+          <text x="24" y="44" class="font-mono" font-size="10" fill="#555555">45 min</text>
+          
+          <text x="100" y="28" class="font-sans" font-size="14" font-weight="600" fill="#0a0a0a">Lucas Méndez</text>
+          <text x="100" y="44" class="font-sans" font-size="12" fill="#555555">Servicio Completo Premium</text>
+          
+          <text x="360" y="36" class="font-sans" font-size="13" font-weight="600" fill="#0a0a0a">$18.000</text>
+
+          <rect x="490" y="17" width="118" height="26" rx="13" fill="#fdf4e7"/>
+          <text x="549" y="34" text-anchor="middle" class="font-mono" font-size="10" font-weight="700" fill="#b45309">• PENDIENTE</text>
+        </g>
+
+        <!-- Row 4 -->
+        <g transform="translate(16, 268)">
+          <rect x="0" y="0" width="628" height="56" rx="6" fill="#fafafa" stroke="rgba(0,0,0,0.04)" stroke-width="1"/>
+          <text x="24" y="26" class="font-mono" font-size="15" font-weight="700" fill="#555555">15:00</text>
+          <text x="24" y="42" class="font-mono" font-size="10" fill="#aaaaaa">30 min</text>
+          
+          <text x="100" y="26" class="font-sans" font-size="14" font-weight="600" fill="#0a0a0a">Joaquín Fernández</text>
+          <text x="100" y="42" class="font-sans" font-size="12" fill="#555555">Perfilado de Barba</text>
+          
+          <text x="360" y="34" class="font-sans" font-size="13" font-weight="600" fill="#0a0a0a">$8.000</text>
+
+          <rect x="490" y="15" width="118" height="26" rx="13" fill="#eaf7f1"/>
+          <text x="549" y="32" text-anchor="middle" class="font-mono" font-size="10" font-weight="700" fill="#0f9960">• CONFIRMADO</text>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- FOREGROUND MOBILE PHONE MOCKUP -->
+  <g transform="translate(570, 20)">
+    <!-- Outer Phone Shadow / Border -->
+    <rect x="-6" y="-6" width="392" height="592" rx="42" fill="none" stroke="rgba(0,0,0,0.14)" stroke-width="2"/>
+    <rect x="0" y="0" width="380" height="580" rx="36" fill="#0a0a0a"/>
+    
+    <!-- Phone Screen Container -->
+    <rect x="8" y="8" width="364" height="564" rx="30" fill="#fafafa"/>
+    
+    <!-- Dynamic Island / Speaker Notch -->
+    <rect x="132" y="16" width="116" height="24" rx="12" fill="#0a0a0a"/>
+
+    <!-- Screen Content Header -->
+    <g transform="translate(24, 52)">
+      <!-- Brand title -->
+      <text x="0" y="16" class="font-sans" font-size="18" font-weight="700" fill="#0a0a0a">LA BARBERÍA</text>
+      <text x="0" y="30" class="font-mono" font-size="9" font-weight="700" fill="#e03d00" letter-spacing="1">BARBEROS.APP/LABARBERIA</text>
+      
+      <!-- Stepper (6 steps) -->
+      <g transform="translate(0, 44)">
+        <line x1="12" y1="12" x2="300" y2="12" stroke="rgba(0,0,0,0.1)" stroke-width="2"/>
+        <line x1="12" y1="12" x2="180" y2="12" stroke="#e03d00" stroke-width="2"/>
+        
+        <!-- Step 1 Done -->
+        <circle cx="12" cy="12" r="10" fill="#e03d00"/>
+        <text x="12" y="15" text-anchor="middle" class="font-sans" font-size="9" fill="#ffffff">✓</text>
+        
+        <!-- Step 2 Done -->
+        <circle cx="70" cy="12" r="10" fill="#e03d00"/>
+        <text x="70" y="15" text-anchor="middle" class="font-sans" font-size="9" fill="#ffffff">✓</text>
+
+        <!-- Step 3 Done -->
+        <circle cx="128" cy="12" r="10" fill="#e03d00"/>
+        <text x="128" y="15" text-anchor="middle" class="font-sans" font-size="9" fill="#ffffff">✓</text>
+
+        <!-- Step 4 Active -->
+        <circle cx="186" cy="12" r="12" fill="#e03d00" stroke="#fdf0eb" stroke-width="3"/>
+        <text x="186" y="16" text-anchor="middle" class="font-sans" font-size="10" font-weight="700" fill="#ffffff">4</text>
+
+        <!-- Step 5 -->
+        <circle cx="244" cy="12" r="10" fill="#ffffff" stroke="rgba(0,0,0,0.15)" stroke-width="1.5"/>
+        <text x="244" y="15" text-anchor="middle" class="font-sans" font-size="9" fill="#aaaaaa">5</text>
+
+        <!-- Step 6 -->
+        <circle cx="302" cy="12" r="10" fill="#ffffff" stroke="rgba(0,0,0,0.15)" stroke-width="1.5"/>
+        <text x="302" y="15" text-anchor="middle" class="font-sans" font-size="9" fill="#aaaaaa">6</text>
+      </g>
+
+      <!-- Step Title & Subtitle -->
+      <g transform="translate(0, 84)">
+        <text x="0" y="16" class="font-sans" font-size="20" font-weight="700" fill="#0a0a0a" letter-spacing="-0.5">Elegí un horario</text>
+        <text x="0" y="34" class="font-sans" font-size="12" fill="#555555">Viernes 7 de Agosto con Mateo</text>
+      </g>
+
+      <!-- Slot Grids -->
+      <g transform="translate(0, 134)">
+        <!-- Mañana -->
+        <text x="0" y="12" class="font-sans" font-size="13" font-weight="600" fill="#0a0a0a">Mañana</text>
+        <g transform="translate(0, 20)">
+          <!-- 09:30 -->
+          <rect x="0" y="0" width="70" height="38" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+          <text x="35" y="23" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#0a0a0a">09:30</text>
+
+          <!-- 10:15 SELECTED -->
+          <rect x="80" y="0" width="70" height="38" rx="6" fill="#e03d00"/>
+          <text x="115" y="23" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#ffffff">10:15</text>
+
+          <!-- 11:00 -->
+          <rect x="160" y="0" width="70" height="38" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+          <text x="195" y="23" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#0a0a0a">11:00</text>
+
+          <!-- 11:45 -->
+          <rect x="240" y="0" width="70" height="38" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+          <text x="275" y="23" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#0a0a0a">11:45</text>
+        </g>
+
+        <!-- Tarde -->
+        <text x="0" y="82" class="font-sans" font-size="13" font-weight="600" fill="#0a0a0a">Tarde</text>
+        <g transform="translate(0, 90)">
+          <!-- 15:00 -->
+          <rect x="0" y="0" width="70" height="38" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+          <text x="35" y="23" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#0a0a0a">15:00</text>
+
+          <!-- 15:45 -->
+          <rect x="80" y="0" width="70" height="38" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+          <text x="115" y="23" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#0a0a0a">15:45</text>
+
+          <!-- 16:30 -->
+          <rect x="160" y="0" width="70" height="38" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+          <text x="195" y="23" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#0a0a0a">16:30</text>
+
+          <!-- 17:15 -->
+          <rect x="240" y="0" width="70" height="38" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+          <text x="275" y="23" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#0a0a0a">17:15</text>
+        </g>
+      </g>
+
+      <!-- Selected Service Summary Card -->
+      <g transform="translate(0, 305)">
+        <rect x="0" y="0" width="316" height="54" rx="8" fill="#ffffff" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+        <text x="14" y="22" class="font-sans" font-size="12" font-weight="700" fill="#0a0a0a">Corte + Perfilado de Barba</text>
+        <text x="14" y="38" class="font-sans" font-size="11" fill="#555555">⏱ 45 min · $15.000</text>
+      </g>
+
+      <!-- CTA Button -->
+      <g transform="translate(0, 375)">
+        <rect x="0" y="0" width="316" height="46" rx="8" fill="#e03d00"/>
+        <text x="158" y="28" text-anchor="middle" class="font-sans" font-size="14" font-weight="700" fill="#ffffff">Continuar →</text>
+      </g>
+    </g>
+
+    <!-- Home indicator bar -->
+    <rect x="122" y="562" width="136" height="4" rx="2" fill="#0a0a0a"/>
+  </g>
+</svg>

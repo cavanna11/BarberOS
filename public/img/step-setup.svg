@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80" width="100%" height="100%">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', sans-serif; }
+    </style>
+  </defs>
+  <!-- Gear + Checkmark badge illustration -->
+  <g transform="translate(20, 10)">
+    <!-- Base panel -->
+    <rect x="0" y="4" width="120" height="52" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.1)" stroke-width="1.5"/>
+    <text x="14" y="26" class="font-sans" font-size="11" font-weight="700" fill="#0a0a0a">Precios &amp; Horarios</text>
+    <text x="14" y="42" class="font-sans" font-size="9" fill="#0f9960">✓ 100% Configurado</text>
+    
+    <!-- Orange active badge -->
+    <circle cx="106" cy="30" r="16" fill="#e03d00"/>
+    <path d="M 98 30 L 104 36 L 115 24" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none">
+  <!-- Calendar backdrop with dotted lines -->
+  <rect x="6" y="8" width="36" height="34" rx="4" stroke="#0a0a0a" stroke-width="1.5"/>
+  <line x1="6" y1="16" x2="42" y2="16" stroke="#0a0a0a" stroke-width="1.5"/>
+  <line x1="14" y1="5" x2="14" y2="10" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="34" y1="5" x2="34" y2="10" stroke="#0a0a0a" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Ghost outline representing empty appointment / ghosting -->
+  <path d="M 18 36 L 18 27 C 18 23.68 20.68 21 24 21 C 27.32 21 30 23.68 30 27 L 30 36 L 27 34 L 24 36 L 21 34 Z" 
+        stroke="#0a0a0a" stroke-width="1.5" stroke-linejoin="round" fill="#fafafa"/>
+  <circle cx="21.5" cy="26" r="1.2" fill="#0a0a0a"/>
+  <circle cx="26.5" cy="26" r="1.2" fill="#0a0a0a"/>
+
+  <!-- Orange warning badge / empty slot accent -->
+  <circle cx="34" cy="32" r="5" fill="#e03d00" stroke="#fafafa" stroke-width="1.5"/>
+  <path d="M 32 30 L 36 34 M 36 30 L 32 34" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

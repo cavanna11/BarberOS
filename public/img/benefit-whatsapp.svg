@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" width="100%" height="100%">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', sans-serif; }
+      .font-mono { font-family: 'Space Mono', monospace; }
+    </style>
+  </defs>
+  <!-- Background -->
+  <rect x="0" y="0" width="280" height="120" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  
+  <!-- WhatsApp Chat Bubble -->
+  <g transform="translate(14, 14)">
+    <rect x="0" y="0" width="252" height="92" rx="10" fill="#ffffff" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+    
+    <!-- Top Green Stripe / WhatsApp indicator -->
+    <path d="M 0 10 Q 0 0 10 0 L 242 0 Q 252 0 252 10 L 252 24 L 0 24 Z" fill="#25D366"/>
+    <text x="12" y="16" class="font-sans" font-size="10" font-weight="700" fill="#ffffff">💬 Recordatorio de Turno · BarberOS</text>
+
+    <!-- Message Body -->
+    <text x="12" y="42" class="font-sans" font-size="11" font-weight="600" fill="#0a0a0a">Hola Santiago! 💈</text>
+    <text x="12" y="58" class="font-sans" font-size="10" fill="#555555">Mañana a las 10:15 hs tenés tu turno en</text>
+    <text x="12" y="72" class="font-sans" font-size="10" font-weight="700" fill="#e03d00">La Barbería Club (Corte + Barba)</text>
+    
+    <text x="210" y="84" class="font-mono" font-size="9" fill="#0f9960">09:00 ✓✓</text>
+  </g>
+</svg>

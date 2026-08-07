@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 100" width="100%" height="100%" fill="none">
+  <!-- Icon Mark -->
+  <g transform="translate(0, 0)">
+    <!-- Speed Lines -->
+    <line x1="12" y1="40" x2="22" y2="40" stroke="#e03d00" stroke-width="3" stroke-linecap="round"/>
+    <line x1="6" y1="47" x2="22" y2="47" stroke="#e03d00" stroke-width="3" stroke-linecap="round"/>
+    <line x1="14" y1="54" x2="22" y2="54" stroke="#e03d00" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Top pegs -->
+    <line x1="42" y1="20" x2="42" y2="28" stroke="#e03d00" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="66" y1="20" x2="66" y2="28" stroke="#e03d00" stroke-width="3.5" stroke-linecap="round"/>
+
+    <!-- Main Calendar Body Frame -->
+    <path d="M 32 26 H 76 C 81 26 84 29 84 34 V 62 C 84 64 83 66 81 67 M 32 26 C 27 26 24 29 24 34 V 74 C 24 79 27 82 32 82 H 66 C 70 82 73 80 74 76" 
+          stroke="#e03d00" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Calendar Grid Dots -->
+    <rect x="36" y="38" width="5" height="5" rx="1" fill="#555555"/>
+    <rect x="47" y="38" width="5" height="5" rx="1" fill="#555555"/>
+    <rect x="58" y="38" width="5" height="5" rx="1" fill="#555555"/>
+    <rect x="69" y="38" width="5" height="5" rx="1" fill="#555555"/>
+
+    <rect x="36" y="49" width="5" height="5" rx="1" fill="#555555"/>
+    <rect x="47" y="49" width="5" height="5" rx="1" fill="#555555"/>
+    <rect x="58" y="49" width="5" height="5" rx="1" fill="#e03d00"/>
+
+    <rect x="36" y="60" width="5" height="5" rx="1" fill="#aaaaaa"/>
+    <rect x="47" y="60" width="5" height="5" rx="1" fill="#555555"/>
+
+    <!-- Clock Badge Icon -->
+    <circle cx="74" cy="74" r="13" stroke="#e03d00" stroke-width="3.5" fill="#fafafa"/>
+    <path d="M 74 67 V 74 L 79 74" stroke="#e03d00" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Typography "BARBEROS" -->
+  <g transform="translate(105, 52)">
+    <text font-family="'Space Grotesk', -apple-system, sans-serif" font-size="34" font-weight="700" fill="#0a0a0a" letter-spacing="4">BARBEROS</text>
+    <text y="22" font-family="'Space Mono', monospace" font-size="11" font-weight="700" fill="#e03d00" letter-spacing="3.5">SOFTWARE DE GESTIÓN DE TURNOS</text>
+  </g>
+</svg>
