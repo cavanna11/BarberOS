@@ -3,7 +3,7 @@ import { useBusiness } from '../../contexts/BusinessContext';
 import { PLANS, DEFAULT_PLAN_ID, getPlan, DEFAULT_BUSINESS_HOURS } from '../../config/plans';
 import { isPlatformOwner } from '../../config/platform';
 import { slugify, isReservedSlug } from '../../utils/slug';
-import { generateId } from '../../utils/dateUtils';
+import { createBusiness, isSlugAvailable } from '../../lib/repository';
 
 // Onboarding manual: el cliente se contacta, se cierra la venta, y la cuenta se
 // prepara desde acá. No hay registro self-service a propósito.
@@ -38,9 +38,10 @@ function nextMonthISO() {
 }
 
 export default function NewBusinessModal({ onClose, onCreated }) {
-  const { state, dispatch } = useBusiness();
+  const { state } = useBusiness();
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
+  const [guardando, setGuardando] = useState(false);
   // Al crear, en vez de cerrar mostramos los datos para entregarle al cliente.
   const [created, setCreated] = useState(null);
 
@@ -59,9 +60,8 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     set({ slug: slugify(slug), slugEdited: true });
   };
 
-  const validate = () => {
+  const validate = async () => {
     const e = {};
-    const existingSlugs = state.businesses.map((b) => b.slug);
     const email = form.ownerEmail.trim().toLowerCase();
 
     if (!form.name.trim()) e.name = 'Poné el nombre del negocio.';
@@ -70,7 +70,9 @@ export default function NewBusinessModal({ onClose, onCreated }) {
       e.slug = 'Hace falta un slug para la URL pública.';
     } else if (isReservedSlug(form.slug)) {
       e.slug = `"${form.slug}" es una ruta interna de la app. Elegí otro.`;
-    } else if (existingSlugs.includes(form.slug)) {
+    } else if (!(await isSlugAvailable(form.slug))) {
+      // Se consulta contra Firestore, no contra la lista en memoria: el slug es
+      // la URL pública del cliente y no puede pisarse.
       e.slug = 'Ya hay un negocio con este slug.';
     }
 
@@ -92,16 +94,16 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = (ev) => {
+  const handleSubmit = async (ev) => {
     ev.preventDefault();
-    if (!validate()) return;
+    if (guardando) return;
+    if (!(await validate())) return;
 
     const plan = getPlan(form.planId);
-    const businessId = 'biz-' + generateId();
     const now = new Date().toISOString();
 
+    // El id lo asigna Firestore al crear el documento.
     const business = {
-      id: businessId,
       name: form.name.trim(),
       slug: form.slug,
       logoUrl: null,
@@ -123,30 +125,47 @@ export default function NewBusinessModal({ onClose, onCreated }) {
         instagram: form.instagram.trim(),
         whatsapp: form.whatsapp.trim(),
       },
-      // Facturación
+      // Público: la UI del negocio muestra el plan y su cuota de mensajes.
       planId: plan.id,
-      monthlyFee: plan.monthlyFee,
       whatsappQuota: plan.whatsappQuota,
-      debt: 0,
       isFrozen: false,
-      createdAt: now,
-      lastPaymentDate: null,
-      nextBillingDate: nextMonthISO(),
       businessHours: DEFAULT_BUSINESS_HOURS.map((h) => ({ ...h })),
     };
 
+    // Privado: la plata va en /businesses/{id}/private/billing, no en el
+    // documento público. El doc público lo puede leer cualquier cliente.
+    const billing = {
+      planId: plan.id,
+      monthlyFee: plan.monthlyFee,
+      debt: 0,
+      lastPaymentDate: null,
+      nextBillingDate: nextMonthISO(),
+    };
+
     const ownerAdmin = {
-      id: 'auth-' + generateId(),
       email: form.ownerEmail.trim().toLowerCase(),
       name: form.ownerName.trim(),
       role: 'owner',
-      businessId,
       professionalId: null,
       addedAt: now,
     };
 
-    dispatch({ type: 'CREATE_BUSINESS', payload: { business, ownerAdmin } });
-    setCreated({ business, ownerAdmin });
+    setGuardando(true);
+    setErrors({});
+    try {
+      const businessId = await createBusiness({ business, billing, ownerAdmin });
+      setCreated({ business: { ...business, id: businessId, ...billing }, ownerAdmin });
+    } catch (err) {
+      console.error('[NewBusinessModal] No se pudo crear el negocio:', err);
+      setErrors({
+        general:
+          err.code === 'permission-denied'
+            ? 'Firestore rechazó la operación. Verificá que tu cuenta tenga el permiso de plataforma.'
+            : `No se pudo crear la cuenta: ${err.message}`,
+      });
+    } finally {
+      setGuardando(false);
+    }
   };
 
   // ── Pantalla de entrega: qué pasarle al cliente ──────────────────────────
@@ -218,6 +237,12 @@ export default function NewBusinessModal({ onClose, onCreated }) {
         </div>
 
         <div className="modal-body">
+          {errors.general && (
+            <div className="notice notice-danger" style={{ marginBottom: 'var(--space-md)' }}>
+              {errors.general}
+            </div>
+          )}
+
           {/* Identidad */}
           <div className="form-group">
             <label className="form-label">Nombre del negocio <span className="required">*</span></label>
@@ -447,8 +472,12 @@ export default function NewBusinessModal({ onClose, onCreated }) {
         </div>
 
         <div className="modal-footer">
-          <button type="button" className="btn btn-outline" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="btn btn-primary">Crear cuenta</button>
+          <button type="button" className="btn btn-outline" onClick={onClose} disabled={guardando}>
+            Cancelar
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={guardando}>
+            {guardando ? 'Creando…' : 'Crear cuenta'}
+          </button>
         </div>
       </form>
     </div>

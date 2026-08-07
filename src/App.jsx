@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { useBusiness } from './contexts/BusinessContext';
+import BusinessSync from './contexts/BusinessSync';
 import { isPlatformOwner } from './config/platform';
 import Header from './components/layout/Header';
 import Footer from './components/layout/Footer';
@@ -129,6 +130,8 @@ function ClientLayout({ children }) {
 export default function App() {
   return (
     <BrowserRouter>
+      {/* Mantiene el estado de negocios sincronizado con Firestore. No pinta nada. */}
+      <BusinessSync />
       <Routes>
 
         {/* ── Raíz ────────────────────────────────────────────────── */}

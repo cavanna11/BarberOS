@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useEffect, useState } from 'react';
+import { createContext, useContext, useReducer, useEffect } from 'react';
 import * as seed from '../config/seedData';
 import { LEGACY_BUSINESS_ID } from '../config/platform';
 
@@ -44,9 +44,22 @@ function loadData() {
   return null;
 }
 
+/**
+ * MIGRACIÓN A FIRESTORE — en curso.
+ *
+ * `businesses` ya vive en Firestore (lo sincroniza BusinessSync) y por eso NO
+ * se persiste acá: una copia vieja en localStorage taparía la real y mostraría
+ * negocios que ya no existen.
+ *
+ * El resto de las colecciones sigue en localStorage hasta que se migren.
+ */
+const NO_PERSISTIR = ['businesses', 'business'];
+
 function saveData(state) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const aGuardar = { ...state };
+    for (const clave of NO_PERSISTIR) delete aGuardar[clave];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(aGuardar));
   } catch (e) {}
 }
 
@@ -291,63 +304,16 @@ function businessReducer(state, action) {
 
 export function BusinessProvider({ children }) {
   const [state, dispatch] = useReducer(businessReducer, initialState);
-  const [billingChecked, setBillingChecked] = useState(false);
+  /**
+   * El motor de facturación que corría acá se movió a la Cloud Function
+   * `runBilling` (functions/index.js, todos los días a las 3 AM).
+   *
+   * Dos razones: los negocios ahora viven en Firestore y el navegador no puede
+   * escribirles la deuda (las Rules solo dejan a la plataforma), y este motor
+   * solo se ejecutaba cuando alguien abría la app — una cuenta impaga podía
+   * seguir funcionando indefinidamente si nadie entraba al panel.
+   */
 
-  // Motor de facturación automático (ejecutado una vez por sesión en local).
-  // Con la base vacía no hay nada que facturar.
-  useEffect(() => {
-    if (billingChecked || !state.businesses?.length) return;
-
-    const today = new Date().toISOString().split('T')[0];
-    let updated = false;
-
-    const newBusinesses = state.businesses.map((b) => {
-      const biz = { ...b };
-      let changed = false;
-
-      // Inicializar fecha de cobro si no tiene
-      if (!biz.nextBillingDate) {
-        const createdDate = biz.createdAt ? new Date(biz.createdAt) : new Date();
-        const nextDate = new Date(createdDate.setMonth(createdDate.getMonth() + 1));
-        biz.nextBillingDate = nextDate.toISOString().split('T')[0];
-        changed = true;
-      }
-
-      // Si se superó la fecha de vencimiento sin pagar
-      while (today > biz.nextBillingDate) {
-        // Sumar mensualidad a la deuda acumulada
-        biz.debt = (biz.debt || 0) + (biz.monthlyFee || 0);
-        // Desplazar fecha al mes siguiente
-        const currentNext = new Date(biz.nextBillingDate + 'T00:00:00');
-        currentNext.setMonth(currentNext.getMonth() + 1);
-        biz.nextBillingDate = currentNext.toISOString().split('T')[0];
-        changed = true;
-      }
-
-      // Suspensión automática: si tiene deuda, congelar
-      if ((biz.debt || 0) > 0 && !biz.isFrozen) {
-        biz.isFrozen = true;
-        changed = true;
-      }
-
-      // Reactivación automática: si no tiene deuda y estaba congelado por deuda, descongelar
-      if ((biz.debt || 0) === 0 && biz.isFrozen) {
-        biz.isFrozen = false;
-        changed = true;
-      }
-
-      if (changed) {
-        updated = true;
-      }
-      return biz;
-    });
-
-    setBillingChecked(true);
-
-    if (updated) {
-      dispatch({ type: 'SET_BUSINESSES', payload: newBusinesses });
-    }
-  }, [state.businesses, billingChecked]);
 
   useEffect(() => {
     saveData(state);

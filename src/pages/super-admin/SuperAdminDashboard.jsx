@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useBusiness } from '../../contexts/BusinessContext';
 import { PLANS, OVERAGE_COST_USD, findPlanByQuota } from '../../config/plans';
 import { formatPrice, formatDate } from '../../utils/dateUtils';
+import {
+  setBusinessFrozen,
+  recordPayment,
+  updateBilling,
+  upgradePlan,
+} from '../../lib/repository';
 import NewBusinessModal from './NewBusinessModal';
 
 // --- Professional SVG Icons ---
@@ -96,8 +102,14 @@ export default function SuperAdminDashboard() {
   const failedPercentage = totalMsgs > 0 ? ((failedMsgs / totalMsgs) * 100).toFixed(1) : '0.0';
 
   // --- Handlers ---
-  const handleToggleFreeze = (id) => {
-    dispatch({ type: 'TOGGLE_FREEZE_BUSINESS', payload: id });
+  const handleToggleFreeze = async (id) => {
+    const biz = businesses.find((b) => b.id === id);
+    try {
+      await setBusinessFrozen(id, !biz?.isFrozen);
+    } catch (err) {
+      console.error('[super-admin] No se pudo cambiar el estado:', err);
+      alert('No se pudo cambiar el estado de la cuenta: ' + err.message);
+    }
   };
 
   /**
@@ -111,13 +123,13 @@ export default function SuperAdminDashboard() {
 
   const handleOpenPaymentModal = (biz) => {
     setSelectedBusiness(biz);
-    setPaymentAmount(biz.debt.toString());
+    setPaymentAmount(String(biz.debt ?? 0));
     setModalType('payment');
   };
 
   const handleOpenDebtModal = (biz) => {
     setSelectedBusiness(biz);
-    setDebtAmount(biz.debt.toString());
+    setDebtAmount(String(biz.debt ?? 0));
     setModalType('debt');
   };
 
@@ -134,17 +146,16 @@ export default function SuperAdminDashboard() {
     setModalType('upgrade');
   };
 
-  const handleRecordPayment = () => {
+  const handleRecordPayment = async () => {
     if (!paymentAmount || isNaN(paymentAmount)) return;
     const todayStr = new Date().toISOString().split('T')[0];
-    dispatch({
-      type: 'RECORD_BUSINESS_PAYMENT',
-      payload: { 
-        businessId: selectedBusiness.id, 
-        amount: Number(paymentAmount),
-        date: todayStr
-      }
-    });
+    try {
+      await recordPayment(selectedBusiness.id, Number(paymentAmount), todayStr);
+    } catch (err) {
+      console.error('[super-admin] No se pudo registrar el pago:', err);
+      alert('No se pudo registrar el pago: ' + err.message);
+      return;
+    }
     dispatch({
       type: 'ADD_WHATSAPP_LOG',
       payload: {
@@ -163,32 +174,37 @@ export default function SuperAdminDashboard() {
     setSelectedBusiness(null);
   };
 
-  const handleEditDebt = () => {
+  const handleEditDebt = async () => {
     if (debtAmount === '' || isNaN(debtAmount)) return;
-    dispatch({
-      type: 'UPDATE_BUSINESS_DEBT',
-      payload: { businessId: selectedBusiness.id, debt: Number(debtAmount) }
-    });
+    try {
+      await updateBilling(selectedBusiness.id, { debt: Number(debtAmount) });
+    } catch (err) {
+      console.error('[super-admin] No se pudo actualizar el saldo:', err);
+      alert('No se pudo actualizar el saldo: ' + err.message);
+      return;
+    }
     setModalType(null);
     setSelectedBusiness(null);
   };
 
-  const handleRecordUpgrade = () => {
+  const handleRecordUpgrade = async () => {
     // Los planes vienen de src/config/plans.js; solo "personalizado" se escribe a mano.
     const plan = PLANS.find((p) => p.id === selectedPlan);
     const quota = plan ? plan.whatsappQuota : Number(upgradeQuota) || 0;
     const fee = plan ? plan.monthlyFee : Number(upgradeFee) || 0;
     const planLabel = plan ? plan.label : 'Plan Personalizado';
 
-    dispatch({
-      type: 'UPGRADE_BUSINESS_PLAN',
-      payload: {
-        businessId: selectedBusiness.id,
+    try {
+      await upgradePlan(selectedBusiness.id, {
         planId: plan ? plan.id : 'personalizado',
         whatsappQuota: quota,
         monthlyFee: fee,
-      }
-    });
+      });
+    } catch (err) {
+      console.error('[super-admin] No se pudo cambiar el plan:', err);
+      alert('No se pudo cambiar el plan: ' + err.message);
+      return;
+    }
 
     dispatch({
       type: 'ADD_WHATSAPP_LOG',
@@ -404,7 +420,7 @@ export default function SuperAdminDashboard() {
             <div className="card" style={{ padding: 'var(--space-md)' }}>
               <h3>Alertas del Sistema</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 'var(--space-sm)' }}>
-                {businesses?.filter(b => b.debt > 0).map(b => (
+                {businesses?.filter(b => (b.debt || 0) > 0).map(b => (
                   <div 
                     key={b.id} 
                     style={{ 
@@ -483,7 +499,7 @@ export default function SuperAdminDashboard() {
                   }
                   return null;
                 })}
-                {businesses?.filter(b => b.debt === 0 && !b.isFrozen).length === totalBusinesses && 
+                {businesses?.filter(b => (b.debt || 0) === 0 && !b.isFrozen).length === totalBusinesses && 
                  !businesses?.some(b => getMonthlyMessageCount(b.id) > (b.whatsappQuota || 0)) && (
                   <div className="empty-state" style={{ padding: 'var(--space-md)' }}>
                     <p>No hay alertas financieras ni de consumo pendientes. Todos los abonos están al día.</p>
