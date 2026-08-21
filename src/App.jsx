@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { useBusiness } from './contexts/BusinessContext';
@@ -8,26 +9,35 @@ import Footer from './components/layout/Footer';
 import AdminLayout from './components/layout/AdminLayout';
 import SuperAdminLayout from './components/layout/SuperAdminLayout';
 
-// Client Pages
-import BookingPage from './pages/client/BookingPage';
-import ConfirmationPage from './pages/client/ConfirmationPage';
-import MyAppointments from './pages/client/MyAppointments';
+// ── Carga diferida por ruta ────────────────────────────────────────────────
+// Cada bloque se descarga solo cuando hace falta. Antes todo iba en un único
+// bundle: quien entraba a reservar un turno se bajaba también el panel de
+// administración y el panel global, que nunca va a usar.
+//
+// LoginPage y NoBusinessPage quedan en el bundle inicial: son livianas y se
+// necesitan al toque en el recorrido más común.
+
+// Cliente
 import LoginPage from './pages/client/LoginPage';
 import NoBusinessPage from './pages/client/NoBusinessPage';
-import LandingPage from './pages/LandingPage';
 
-// Admin Pages
-import DashboardPage from './pages/admin/DashboardPage';
-import ProfessionalsPage from './pages/admin/ProfessionalsPage';
-import ServicesPage from './pages/admin/ServicesPage';
-import AppointmentsPage from './pages/admin/AppointmentsPage';
-import SettingsPage from './pages/admin/SettingsPage';
-import AdminsPage from './pages/admin/AdminsPage';
-import ProfileSettingsPage from './pages/admin/ProfileSettingsPage';
-import SupportPage from './pages/admin/SupportPage';
+const LandingPage      = lazy(() => import('./pages/LandingPage'));
+const BookingPage      = lazy(() => import('./pages/client/BookingPage'));
+const ConfirmationPage = lazy(() => import('./pages/client/ConfirmationPage'));
+const MyAppointments   = lazy(() => import('./pages/client/MyAppointments'));
 
-// Super Admin Pages
-import SuperAdminDashboard from './pages/super-admin/SuperAdminDashboard';
+// Panel del negocio
+const DashboardPage       = lazy(() => import('./pages/admin/DashboardPage'));
+const ProfessionalsPage   = lazy(() => import('./pages/admin/ProfessionalsPage'));
+const ServicesPage        = lazy(() => import('./pages/admin/ServicesPage'));
+const AppointmentsPage    = lazy(() => import('./pages/admin/AppointmentsPage'));
+const SettingsPage        = lazy(() => import('./pages/admin/SettingsPage'));
+const AdminsPage          = lazy(() => import('./pages/admin/AdminsPage'));
+const ProfileSettingsPage = lazy(() => import('./pages/admin/ProfileSettingsPage'));
+const SupportPage         = lazy(() => import('./pages/admin/SupportPage'));
+
+// Panel global
+const SuperAdminDashboard = lazy(() => import('./pages/super-admin/SuperAdminDashboard'));
 
 // Redirige a /login si no está autenticado, recordando a dónde quería ir
 // para volver ahí después del login (importante ahora que el link del cliente
@@ -139,6 +149,9 @@ export default function App() {
     <BrowserRouter>
       {/* Mantiene el estado de negocios sincronizado con Firestore. No pinta nada. */}
       <BusinessSync />
+      {/* Suspense envuelve todo el ruteo: sin esto, cualquier ruta diferida
+          lanza al montar y rompe el árbol entero. */}
+      <Suspense fallback={<SessionLoading />}>
       <Routes>
 
         {/* ── Raíz ────────────────────────────────────────────────── */}
@@ -200,6 +213,7 @@ export default function App() {
         {/* Fallback */}
         <Route path="*" element={<ClientLayout><NoBusinessPage reason="not-found" /></ClientLayout>} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
