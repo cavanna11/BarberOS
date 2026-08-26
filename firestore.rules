@@ -126,9 +126,23 @@ service cloud.firestore {
         // Listar la agenda completa es solo del staff. El cliente puede listar
         // filtrando por su uid: la query DEBE llevar where('userId','==',uid),
         // si no, Firestore la rechaza.
+        //
+        // La condición se apoya en resource.data, no en request.query.limit.
+        // Con el límite había DOS problemas, los dos verificados contra el
+        // emulador:
+        //   1. No miraba de quién era el turno. Cualquiera logueado que pusiera
+        //      un limit listaba la agenda entera del negocio y se llevaba
+        //      nombre, teléfono y horario de todos los clientes.
+        //   2. Si la query no traía limit, `request.query.limit` es null y
+        //      `null <= 100` es un error de tipos en Rules, que cuenta como
+        //      denegado. Como subscribeMyAppointments no pone límite, "Mis
+        //      Citas" fallaba para todos los clientes.
+        // En un `list`, Firestore evalúa esta condición contra cada documento
+        // devuelto y exige que la query garantice que todos la cumplen: el
+        // where por userId la satisface, y una query sin filtrar la viola.
         allow list: if isBusinessStaff(bizId)
                        || isPlatform()
-                       || (signedIn() && request.query.limit <= 100);
+                       || (signedIn() && resource.data.userId == request.auth.uid);
 
         // Reservar: cualquiera logueado, pero el turno tiene que ser suyo,
         // pertenecer a este negocio y nacer en estado 'pendiente'.

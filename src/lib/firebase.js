@@ -11,7 +11,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
-import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
 const firebaseConfig = {
@@ -52,8 +51,11 @@ const app = firebaseListo ? initializeApp(firebaseConfig) : null;
 
 export const auth = app ? getAuth(app) : null;
 export const db = app ? getFirestore(app) : null;
-export const storage = app ? getStorage(app) : null;
 export const functions = app ? getFunctions(app, 'southamerica-east1') : null;
+
+// Storage no se importa todavía a propósito: el SDK pesa y no hay ninguna
+// función que lo use (el logo por barbería está pendiente). Cuando se active,
+// va acá y también al manualChunks de vite.config.js.
 
 export const googleProvider = app ? new GoogleAuthProvider() : null;
 // Fuerza el selector de cuenta: sin esto, quien tiene varias cuentas de Google
@@ -66,7 +68,6 @@ if (googleProvider) googleProvider.setCustomParameters({ prompt: 'select_account
 if (app && import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === 'true') {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
-  connectStorageEmulator(storage, '127.0.0.1', 9199);
   connectFunctionsEmulator(functions, '127.0.0.1', 5001);
   console.info('[firebase] Usando emuladores locales.');
 }

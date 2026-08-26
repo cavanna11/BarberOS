@@ -6,6 +6,7 @@ import {
   getIdTokenResult,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
+import { applyPendingClaims, esFunctionNoDesplegada } from '../lib/functions';
 import { useBusiness } from './BusinessContext';
 import { isPlatformOwner } from '../config/platform';
 
@@ -55,6 +56,49 @@ function loadDevBypass() {
   } catch {
     return null;
   }
+}
+
+/**
+ * Reclama un permiso que quedó anotado en /pendingAdmins antes del primer
+ * login. Devuelve los claims ya actualizados, o los que había si no había nada
+ * pendiente.
+ *
+ * Solo se llama cuando el token viene SIN claims: alguien que ya los tiene no
+ * puede tener nada pendiente (setBusinessAdmin los aplica en el acto cuando el
+ * UID ya existe), así que llamar siempre sería pagar una invocación de más.
+ */
+async function reclamarPendientes(fbUser, claimsActuales) {
+  try {
+    const res = await applyPendingClaims();
+    if (res?.status !== 'applied') return claimsActuales;
+    // Los claims recién escritos no están en el token que ya teníamos: sin
+    // forzar el refresh, el permiso nuevo tarda hasta una hora en verse.
+    const { claims } = await getIdTokenResult(fbUser, true);
+    return claims;
+  } catch (err) {
+    // Mientras no haya Blaze esto falla en todos los logins. No puede romper el
+    // ingreso: el fallback local sigue resolviendo permisos mientras tanto.
+    if (!esFunctionNoDesplegada(err)) {
+      console.error('[auth] No se pudieron aplicar los permisos pendientes:', err);
+    }
+    return claimsActuales;
+  }
+}
+
+/**
+ * ¿Corresponde reintentar el reclamo para este uid? Marca y responde.
+ *
+ * Una vez por sesión del navegador, no por carga de página: casi todos los
+ * usuarios sin claims son clientes reservando un turno, y llamar en cada
+ * navegación sería pagar una invocación por pantalla.
+ */
+function tocaReintentar(uid) {
+  const clave = `barberos_claims_check_${uid}`;
+  try {
+    if (sessionStorage.getItem(clave)) return false;
+    sessionStorage.setItem(clave, '1');
+  } catch { /* sin sessionStorage se reintenta igual; no es crítico */ }
+  return true;
 }
 
 function initialState() {
@@ -123,7 +167,15 @@ export function AuthProvider({ children }) {
       }
       bypassActivo.current = false;
       try {
-        const { claims } = await getIdTokenResult(fbUser);
+        let { claims } = await getIdTokenResult(fbUser);
+
+        // Red de seguridad: si el reclamo del login se cortó a mitad (se cerró
+        // la pestaña, falló la red), sin esto la persona queda como cliente
+        // para siempre y solo se arregla cerrando y abriendo sesión.
+        if (!claims.platform && !claims.businessId && tocaReintentar(fbUser.uid)) {
+          claims = await reclamarPendientes(fbUser, claims);
+        }
+
         dispatch({ type: 'LOGIN', payload: buildUser(fbUser, claims) });
       } catch (err) {
         console.error('[auth] No se pudieron leer los claims:', err);
@@ -160,7 +212,14 @@ export function AuthProvider({ children }) {
   const loginWithGoogle = async () => {
     try {
       const { user: fbUser } = await signInWithPopup(auth, googleProvider);
-      const { claims } = await getIdTokenResult(fbUser);
+      let { claims } = await getIdTokenResult(fbUser);
+
+      // Token sin claims: puede ser alguien a quien le dejaron el permiso
+      // anotado antes de que existiera su cuenta. Es su primer login.
+      if (!claims.platform && !claims.businessId) {
+        claims = await reclamarPendientes(fbUser, claims);
+      }
+
       const user = buildUser(fbUser, claims);
       dispatch({ type: 'LOGIN', payload: user });
       return { success: true, user };

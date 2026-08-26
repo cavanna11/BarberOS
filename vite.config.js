@@ -10,7 +10,10 @@ export default defineConfig({
         // cambia. En un chunk aparte, el navegador lo cachea entre despliegues
         // en vez de volver a bajarlo con cada cambio de una pantalla.
         manualChunks: {
-          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage', 'firebase/functions'],
+          // Listar un módulo acá lo mete en el bundle aunque nadie lo importe:
+          // `firebase/storage` estaba entrando por esta puerta. Agregarlo de
+          // nuevo recién cuando algo lo use.
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'],
           react: ['react', 'react-dom', 'react-router-dom'],
         },
       },

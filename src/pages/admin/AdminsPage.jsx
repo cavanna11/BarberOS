@@ -2,12 +2,10 @@ import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
-import { saveAdminRecord, removeAdminRecord } from '../../lib/repository';
+import { setBusinessAdmin, revokeBusinessAdmin } from '../../lib/functions';
 
-const ROLE_OPTIONS = [
-  { value: 'owner', label: '👑 Dueño — acceso total' },
-  { value: 'admin', label: '✂️ Peluquero — solo sus citas' },
-];
+const ROLE_ADMIN = { value: 'admin', label: '✂️ Peluquero — solo sus citas' };
+const ROLE_OWNER = { value: 'owner', label: '👑 Dueño — acceso total' };
 
 const EMPTY_FORM = { email: '', role: 'admin', professionalId: '', name: '' };
 
@@ -19,6 +17,13 @@ export default function AdminsPage() {
   const [editTarget, setEditTarget] = useState(null); // null = nuevo, id = editar
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  // Designar dueños es exclusivo de la plataforma: el dueño es quien paga la
+  // cuenta, así que quién lo es no se delega al tenant. La Cloud Function
+  // rechaza el intento; acá directamente no se ofrece la opción.
+  const roleOptions = user?.isPlatformOwner ? [ROLE_OWNER, ROLE_ADMIN] : [ROLE_ADMIN];
 
   // Solo el dueño entra acá. El corte va DESPUÉS de los hooks: si va antes,
   // React ve una cantidad distinta de hooks entre renders y explota cuando el
@@ -57,18 +62,30 @@ export default function AdminsPage() {
       if (exists) return setError('Ese email ya está registrado como administrador.');
     }
 
+    setGuardando(true);
+    setError('');
     try {
-      // El documento se guarda con el email como id, así que alta y edición
-      // son la misma operación.
-      await saveAdminRecord(businessId, {
+      // Va por la Cloud Function y no por Firestore: lo que realmente da acceso
+      // son los custom claims del token, y solo el Admin SDK los escribe. La
+      // función también deja el registro que alimenta esta tabla, así que alta
+      // y edición son la misma operación (el id del documento es el email).
+      const res = await setBusinessAdmin({
         email: form.email.trim().toLowerCase(),
+        businessId,
         role: form.role,
         professionalId: form.role === 'admin' ? form.professionalId : null,
         name: form.name.trim(),
       });
+      setAviso(
+        res?.status === 'pending'
+          ? `${form.email.trim().toLowerCase()} todavía no entró nunca. El permiso queda anotado y se activa solo en su primer login con Google.`
+          : ''
+      );
     } catch (err) {
       console.error('[AdminsPage] No se pudo guardar el admin:', err);
       return setError('No se pudo guardar: ' + err.message);
+    } finally {
+      setGuardando(false);
     }
     closeModal();
   };
@@ -81,7 +98,11 @@ export default function AdminsPage() {
     }
     if (!window.confirm(`¿Quitar acceso a ${admin.email}?`)) return;
     try {
-      await removeAdminRecord(businessId, admin.email);
+      // Además de borrar el registro, la función le vacía los claims y corta
+      // las sesiones abiertas. Sin eso su token seguiría siendo válido —y
+      // dándole acceso— hasta una hora después de quitarlo de la lista.
+      await revokeBusinessAdmin({ email: admin.email, businessId });
+      setAviso('');
     } catch (err) {
       console.error('[AdminsPage] No se pudo quitar el acceso:', err);
       alert('No se pudo quitar el acceso: ' + err.message);
@@ -99,6 +120,12 @@ export default function AdminsPage() {
         </div>
         <button className="btn btn-primary" onClick={openNew}>+ Agregar</button>
       </div>
+
+      {aviso && (
+        <div className="notice notice-info" style={{ marginBottom: 'var(--space-md)' }}>
+          {aviso}
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflow: 'auto' }}>
         <table className="data-table">
@@ -155,9 +182,10 @@ export default function AdminsPage() {
       <div className="card" style={{ marginTop: 'var(--space-lg)', background: 'var(--primary-light)', border: '1px solid var(--primary)' }}>
         <h4 style={{ color: 'var(--primary)', marginBottom: 'var(--space-sm)' }}>ℹ️ ¿Cómo funciona?</h4>
         <ul style={{ paddingLeft: 'var(--space-lg)', color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.8 }}>
-          <li>Cuando alguien inicia sesión con Google, su Gmail se compara contra esta lista.</li>
-          <li><strong>Si está en la lista</strong> → accede al panel de administración con su rol.</li>
-          <li><strong>Si no está</strong> → va al flujo normal de reserva de clientes.</li>
+          <li>Al agregar un Gmail acá, el permiso queda escrito en su cuenta de Google.</li>
+          <li><strong>Si ya usó BarberOS alguna vez</strong> → el acceso queda activo enseguida, pero tiene que cerrar sesión y volver a entrar para que le tome.</li>
+          <li><strong>Si nunca entró</strong> → el permiso queda anotado y se activa solo, la primera vez que inicie sesión con Google.</li>
+          <li><strong>Quien no está en la lista</strong> → va al flujo normal de reserva de clientes.</li>
           <li><strong>Dueño</strong>: ve todas las citas, estadísticas globales y puede modificar todo.</li>
           <li><strong>Peluquero</strong>: solo ve las citas asignadas a su perfil de profesional.</li>
         </ul>
@@ -211,10 +239,16 @@ export default function AdminsPage() {
                   value={form.role}
                   onChange={e => setForm(f => ({ ...f, role: e.target.value, professionalId: '' }))}
                 >
-                  {ROLE_OPTIONS.map(opt => (
+                  {roleOptions.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
+                {!user?.isPlatformOwner && (
+                  <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                    Para designar otro dueño, escribinos: el dueño es la cuenta
+                    responsable del abono y lo asignamos nosotros.
+                  </p>
+                )}
               </div>
 
               {form.role === 'admin' && (
@@ -237,9 +271,9 @@ export default function AdminsPage() {
               )}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={closeModal}>Cancelar</button>
-              <button className="btn btn-primary" onClick={handleSave}>
-                {editTarget ? 'Guardar cambios' : 'Agregar'}
+              <button className="btn btn-outline" onClick={closeModal} disabled={guardando}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={guardando}>
+                {guardando ? 'Guardando…' : editTarget ? 'Guardar cambios' : 'Agregar'}
               </button>
             </div>
           </div>

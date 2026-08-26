@@ -4,6 +4,7 @@ import { PLANS, DEFAULT_PLAN_ID, getPlan, DEFAULT_BUSINESS_HOURS } from '../../c
 import { isPlatformOwner } from '../../config/platform';
 import { slugify, isReservedSlug } from '../../utils/slug';
 import { createBusiness, isSlugAvailable } from '../../lib/repository';
+import { setBusinessAdmin } from '../../lib/functions';
 
 // Onboarding manual: el cliente se contacta, se cierra la venta, y la cuenta se
 // prepara desde acá. No hay registro self-service a propósito.
@@ -154,7 +155,27 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     setErrors({});
     try {
       const businessId = await createBusiness({ business, billing, ownerAdmin });
-      setCreated({ business: { ...business, id: businessId, ...billing }, ownerAdmin });
+
+      // El permiso REAL del dueño son los custom claims, y solo los escribe la
+      // Cloud Function. `createBusiness` ya dejó el registro que muestra la UI,
+      // así que si esto falla el negocio queda creado igual — pero el dueño no
+      // va a poder entrar, y eso hay que decirlo en la pantalla de entrega en
+      // vez de dejar que lo descubra el cliente.
+      let claims = { ok: false, status: null, error: null };
+      try {
+        const res = await setBusinessAdmin({
+          email: ownerAdmin.email,
+          businessId,
+          role: 'owner',
+          name: ownerAdmin.name,
+        });
+        claims = { ok: true, status: res?.status ?? null, error: null };
+      } catch (err) {
+        console.error('[NewBusinessModal] No se pudieron asignar los permisos:', err);
+        claims = { ok: false, status: null, error: err.message };
+      }
+
+      setCreated({ business: { ...business, id: businessId, ...billing }, ownerAdmin, claims });
     } catch (err) {
       console.error('[NewBusinessModal] No se pudo crear el negocio:', err);
       setErrors({
@@ -200,7 +221,24 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 Entra en <strong>/login</strong> con Google usando{' '}
                 <strong>{created.ownerAdmin.email}</strong>
               </div>
+              {created.claims?.ok && created.claims.status === 'pending' && (
+                <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                  Esa cuenta nunca entró a BarberOS. El permiso queda anotado y se
+                  activa solo, en su primer login con Google.
+                </p>
+              )}
             </div>
+
+            {!created.claims?.ok && (
+              <div className="notice notice-warn">
+                <strong>El dueño todavía no puede entrar.</strong> La cuenta y el
+                link quedaron creados, pero no se le pudieron asignar los permisos:
+                sin ellos, Firestore lo trata como un cliente más y el panel le va
+                a aparecer vacío.
+                <br />
+                {created.claims?.error}
+              </div>
+            )}
 
             <div className="notice notice-info">
               <strong>Falta configurar</strong> antes de entregarla: cargar los

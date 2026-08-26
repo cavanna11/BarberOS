@@ -72,12 +72,18 @@ client secret de Google). Sin él la app arranca, pero muestra la pantalla de
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase use --add
 ```
 
-En `firebase use --add` elegir `barberos-1d60e` con alias `default`.
 `firebase login` abre el navegador y necesita interacción humana: **no lo puede
-correr un agente**.
+correr un agente**. Si `firebase projects:list` da `HTTP 401`, la credencial
+guardada venció aunque `firebase login:list` siga mostrando la cuenta: se
+arregla con `firebase login --reauth`.
+
+`firebase.json` y `.firebaserc` **ya están en el repo**. No corras
+`firebase init`: es interactivo y te los va a querer reescribir. `firebase.json`
+declara `firestore`, `functions` y los emuladores, y **no declara Hosting a
+propósito** — producción es Vercel, y con Hosting configurado un `firebase
+deploy` pelado publicaría un sitio paralelo compitiendo con el de Vercel.
 
 **3.** `npm run dev` → http://localhost:5173
 
@@ -120,12 +126,42 @@ curl -s -o /dev/null -w "%{http_code}\n" https://southamerica-east1-barberos-1d6
 
 `404` = sigue bloqueado. `400`/`401` = ya está desplegada.
 
-Para resolverlo: activar Blaze → `cd functions && npm install` →
-`firebase deploy --only functions` → conectar `setBusinessAdmin` desde
-`NewBusinessModal` y `AdminsPage`, y llamar `applyPendingClaims` después del
-login en `AuthContext`.
+**El cableado del frontend ya está hecho y probado.** `NewBusinessModal`,
+`AdminsPage` y `AuthContext` ya llaman a las functions vía `src/lib/functions.js`.
+Falta solo el deploy:
+
+```bash
+cd functions && npm install && cd ..
+firebase deploy --only functions
+```
 
 Costo esperado: cercano a $0. La capa gratuita de Blaze es la misma que Spark.
+**Blaze no tiene cargo base mensual**: si la consola pide ~US$10, es la
+retención de verificación del medio de pago de Google Cloud, no una suscripción.
+
+Mientras no esté desplegado, la app **no se rompe**: `applyPendingClaims` falla
+en silencio y el fallback local de `AuthContext` sigue resolviendo permisos.
+Lo que no funciona es el alta de un dueño real.
+
+### Quién puede asignar permisos
+
+- **Plataforma**: todo. Designar dueños, mover gente entre negocios.
+- **Dueño de una barbería**: solo dentro de SU `businessId` y solo rol `admin`
+  (barbero). No puede designar otros dueños — el dueño es quien paga la cuenta,
+  así que quién lo es es una decisión comercial y no se delega al tenant.
+
+Lo hacen cumplir `assertCanManageAdmins` y `assertTargetEnAlcance` en
+`functions/index.js`. **El segundo no es paranoia:** `setCustomUserClaims`
+REEMPLAZA todos los claims, no los mergea. Sin ese chequeo, el dueño de una
+barbería podía llamar `setBusinessAdmin` con el mail de la plataforma y borrarle
+el claim `platform`, dejando el panel global sin nadie que pudiera entrar.
+
+Para verificarlo sin tocar producción (20 casos, incluidos todos los rechazos):
+
+```bash
+firebase emulators:start --only auth,firestore,functions
+node scripts/test-claims-emulador.mjs
+```
 
 ---
 
@@ -218,6 +254,42 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
   diagnosticar, recargar limpio.
 - **Los reemplazos por script fallan con CRLF.** Varios archivos tienen finales
   de línea Windows; usar la herramienta Edit o verificar siempre el resultado.
+- **En Rules, `request.query.limit` es `null` si la query no puso límite**, y
+  `null <= 100` es un error de tipos que cuenta como denegado. Peor: condicionar
+  un `list` al límite no verifica de quién son los datos. La regla de
+  `appointments` tenía las dos cosas — un cliente logueado con un `limit` se
+  llevaba nombre y teléfono de todos los turnos del negocio, y "Mis Citas"
+  fallaba para todos. Para listados de a-uno-mismo la condición va sobre
+  `resource.data`, no sobre la forma de la query.
+- **Los turnos guardan la fecha en `appointmentDate`, NO en `date`.** Todo el
+  código lo usa así (`BookingPage`, `AppointmentsPage`, `DashboardPage`,
+  `MyAppointments`, `availabilityEngine`). Sembrar datos de prueba con `date`
+  hace que el motor de disponibilidad no bloquee los slots y parezca un bug de
+  doble reserva que no existe.
+- **En las Functions, nunca `admin.firestore.FieldValue`.** El emulador envuelve
+  `firebase-admin` en un proxy para interceptar `initializeApp` y en el camino
+  pierde los namespaces perezosos: llega `undefined` y revienta recién en
+  runtime, adentro del callable. Usar siempre los submódulos
+  (`require('firebase-admin/firestore')`). Este bug estaba en el código desde
+  el principio y no se veía porque las functions nunca se habían ejecutado.
+- **Listar un módulo en `manualChunks` lo mete en el bundle aunque nadie lo
+  importe.** Así entraba `firebase/storage`, para una feature que todavía no
+  existe. Agregar ahí solo lo que de verdad se usa.
+- **Un `npm run dev` con HMR arrastra módulos viejos.** Después de tocar
+  `src/lib/firebase.js` la consola puede mostrar errores de la versión anterior
+  (se reconocen por el `?t=` en la URL del stack). Abrir pestaña nueva antes de
+  diagnosticar; `vite.config.js` sí reinicia el server solo.
+
+---
+
+## ⚠️ Reglas cambiadas y sin desplegar
+
+`firestore.rules` tiene el arreglo del listado de `appointments` (ver Trampas).
+**Producción todavía corre la versión vieja.** No necesita Blaze:
+
+```bash
+firebase deploy --only firestore:rules
+```
 
 ---
 
@@ -248,12 +320,19 @@ curl -s "https://barberos.sacia.tech$B" | grep -c "TEXTO_A_BUSCAR"
 
 ## Próximos pasos, en orden
 
-1. **Activar Blaze y desplegar Cloud Functions** ← desbloquea la venta
+1. **Activar Blaze y desplegar Cloud Functions** ← desbloquea la venta.
+   El código ya está cableado y probado: falta solo el deploy.
 2. **Trámite de Meta para WhatsApp** — tarda 1-2 semanas, arrancar en paralelo
 3. Verificar que `barberos.sacia.tech` esté en Firebase → Authentication →
    Settings → Dominios autorizados
-4. Code-splitting: separar landing de la app — quien reserva un turno no
-   necesita descargar el panel de administración
+4. Sacar el SDK de Firebase del camino crítico de la landing. **El split por
+   rutas ya está hecho** (`vite.config.js` tiene `manualChunks` y cada página es
+   su propio chunk): lo que falta es otra cosa. Hoy quien entra a ver precios
+   baja 265 kB gzip, de los cuales 164 kB son Firebase, que la landing no usa.
+   Sin él serían 101 kB — 62% menos. No es cambiar un import: `App.jsx` importa
+   `LoginPage` eager y los tres contexts importan firebase a nivel de módulo,
+   así que hay que desmontar los providers de la raíz y montarlos dentro de las
+   rutas de app. Toca `main.jsx`, `App.jsx` y los contexts.
 5. Revisar `src/components/landing/HeroMotionMockup.jsx` y
    `FloatingActionWidget.jsx` (generados por Antigravity, sin auditar)
 6. Monitoreo global de turnos: hoy la pestaña del panel global solo muestra el

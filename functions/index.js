@@ -18,22 +18,65 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { setGlobalOptions } = require('firebase-functions/v2');
-const admin = require('firebase-admin');
+const { initializeApp } = require('firebase-admin/app');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
 
-admin.initializeApp();
-const db = admin.firestore();
+// Se usan los submódulos y no el namespace `admin.*` a propósito: el emulador
+// de Functions envuelve firebase-admin en un proxy para interceptar
+// initializeApp, y en el camino se pierden los namespaces perezosos —
+// `admin.firestore.FieldValue` llega como undefined y revienta recién en
+// runtime, dentro del callable. Con los submódulos no hay proxy que valga.
+initializeApp();
+const db = getFirestore();
 
 setGlobalOptions({ region: 'southamerica-east1', maxInstances: 10 });
 
 // ── Guardas ────────────────────────────────────────────────────────────────
 
-/** Solo el dueño de la plataforma. Se apoya en el claim, no en una lista. */
-function assertPlatform(request) {
+/**
+ * Quién puede tocar los permisos de un negocio. Devuelve 'platform' | 'owner'
+ * para que quien llama sepa hasta dónde puede llegar.
+ *
+ * - La plataforma puede todo: designar dueños, mover gente entre negocios.
+ * - El dueño de una barbería puede gestionar SOLO su propio negocio y SOLO el
+ *   rol `admin` (barbero). No puede designar otros dueños: el dueño es quien
+ *   paga la cuenta, así que quién lo es es una decisión comercial de la
+ *   plataforma y no se delega al tenant.
+ */
+function assertCanManageAdmins(request, businessId) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
   }
-  if (request.auth.token.platform !== true) {
-    throw new HttpsError('permission-denied', 'Solo el dueño de la plataforma.');
+  const token = request.auth.token;
+  if (token.platform === true) return 'platform';
+  if (token.role === 'owner' && token.businessId === businessId) return 'owner';
+  throw new HttpsError('permission-denied', 'No podés gestionar los permisos de este negocio.');
+}
+
+/**
+ * Impide que un llamador que no es la plataforma toque a alguien fuera de su
+ * alcance — y sobre todo, a la plataforma misma.
+ *
+ * Esto NO es paranoia: `setCustomUserClaims` REEMPLAZA todos los claims, no los
+ * mergea. Sin este chequeo, el dueño de una barbería podría llamar a
+ * `setBusinessAdmin` con el mail de la plataforma y rol `admin`: le borraría el
+ * claim `platform` y dejaría el panel global sin nadie que pueda entrar. El
+ * mismo agujero existe por el lado de `revokeBusinessAdmin`.
+ *
+ * `targetClaims` son los claims que el destinatario tiene HOY (vacío si nunca
+ * entró, que es un caso legítimo y se deja pasar).
+ */
+function assertTargetEnAlcance(caller, targetClaims, businessId) {
+  if (caller === 'platform') return;
+  if (targetClaims?.platform === true) {
+    throw new HttpsError('permission-denied', 'No podés modificar a la plataforma.');
+  }
+  if (targetClaims?.role === 'owner') {
+    throw new HttpsError('permission-denied', 'Solo la plataforma puede modificar a un dueño.');
+  }
+  if (targetClaims?.businessId && targetClaims.businessId !== businessId) {
+    throw new HttpsError('permission-denied', 'Esa cuenta pertenece a otro negocio.');
   }
 }
 
@@ -54,12 +97,15 @@ function assertPlatform(request) {
  * Llamada desde el panel: httpsCallable(functions, 'setBusinessAdmin')
  */
 exports.setBusinessAdmin = onCall(async (request) => {
-  assertPlatform(request);
-
   const { email, businessId, role, professionalId = null, name = '' } = request.data || {};
 
   if (!email || !businessId || !['owner', 'admin'].includes(role)) {
     throw new HttpsError('invalid-argument', 'Faltan email, businessId o role válido.');
+  }
+
+  const caller = assertCanManageAdmins(request, businessId);
+  if (caller !== 'platform' && role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Solo la plataforma puede designar dueños.');
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -70,6 +116,17 @@ exports.setBusinessAdmin = onCall(async (request) => {
     throw new HttpsError('not-found', `El negocio ${businessId} no existe.`);
   }
 
+  // Se busca al destinatario ANTES de escribir nada: si está fuera del alcance
+  // de quien llama hay que rechazar sin dejar la operación a medio hacer.
+  let targetUser = null;
+  try {
+    targetUser = await getAuth().getUserByEmail(normalizedEmail);
+  } catch (err) {
+    if (err.code !== 'auth/user-not-found') throw err;
+  }
+
+  assertTargetEnAlcance(caller, targetUser?.customClaims, businessId);
+
   // Registro para la UI (la lista de /admin/admins sale de acá).
   await db.doc(`businesses/${businessId}/admins/${normalizedEmail}`).set({
     email: normalizedEmail,
@@ -77,59 +134,63 @@ exports.setBusinessAdmin = onCall(async (request) => {
     role,
     businessId,
     professionalId,
-    addedAt: admin.firestore.FieldValue.serverTimestamp(),
+    addedAt: FieldValue.serverTimestamp(),
   });
 
-  try {
-    const user = await admin.auth().getUserByEmail(normalizedEmail);
-
-    // Un usuario pertenece a un solo negocio. Si ya administraba otro, esto lo
-    // reemplaza: es intencional, evita accesos cruzados olvidados.
-    await admin.auth().setCustomUserClaims(user.uid, claims);
-
-    // El token del cliente sigue teniendo los claims viejos hasta que se
-    // refresca. El frontend tiene que llamar a getIdToken(true) — o cerrar y
-    // volver a abrir sesión — para que tomen efecto.
-    return { status: 'applied', uid: user.uid };
-  } catch (err) {
-    if (err.code === 'auth/user-not-found') {
-      await db.doc(`pendingAdmins/${normalizedEmail}`).set({
-        ...claims,
-        email: normalizedEmail,
-        name,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      return { status: 'pending', message: 'Se aplicará en su primer login con Google.' };
-    }
-    throw err;
+  // Nunca entró: su UID todavía no existe, así que el permiso queda anotado y
+  // se aplica solo en el primer login (ver applyPendingClaims).
+  if (!targetUser) {
+    await db.doc(`pendingAdmins/${normalizedEmail}`).set({
+      ...claims,
+      email: normalizedEmail,
+      name,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return { status: 'pending', message: 'Se aplicará en su primer login con Google.' };
   }
+
+  // Un usuario pertenece a un solo negocio. Si ya administraba otro, esto lo
+  // reemplaza: es intencional, evita accesos cruzados olvidados.
+  await getAuth().setCustomUserClaims(targetUser.uid, claims);
+
+  // El token del cliente sigue teniendo los claims viejos hasta que se
+  // refresca. El frontend tiene que llamar a getIdToken(true) — o cerrar y
+  // volver a abrir sesión — para que tomen efecto.
+  return { status: 'applied', uid: targetUser.uid };
 });
 
 /** Le quita todo acceso administrativo a un mail. */
 exports.revokeBusinessAdmin = onCall(async (request) => {
-  assertPlatform(request);
-
   const { email, businessId } = request.data || {};
   if (!email || !businessId) {
     throw new HttpsError('invalid-argument', 'Faltan email o businessId.');
   }
 
+  const caller = assertCanManageAdmins(request, businessId);
   const normalizedEmail = String(email).trim().toLowerCase();
+
+  // Igual que en setBusinessAdmin: primero se mira a quién se está por tocar.
+  // Revocar es tan destructivo como asignar — dejar entrar acá al mail de la
+  // plataforma le vaciaría los claims y nadie podría abrir el panel global.
+  let targetUser = null;
+  try {
+    targetUser = await getAuth().getUserByEmail(normalizedEmail);
+  } catch (err) {
+    if (err.code !== 'auth/user-not-found') throw err;
+  }
+
+  assertTargetEnAlcance(caller, targetUser?.customClaims, businessId);
 
   await db.doc(`businesses/${businessId}/admins/${normalizedEmail}`).delete();
   await db.doc(`pendingAdmins/${normalizedEmail}`).delete().catch(() => {});
 
-  try {
-    const user = await admin.auth().getUserByEmail(normalizedEmail);
-    await admin.auth().setCustomUserClaims(user.uid, {});
-    // Corta las sesiones abiertas: sin esto, su token actual sigue siendo
-    // válido hasta una hora después.
-    await admin.auth().revokeRefreshTokens(user.uid);
-    return { status: 'revoked' };
-  } catch (err) {
-    if (err.code === 'auth/user-not-found') return { status: 'not-found' };
-    throw err;
-  }
+  if (!targetUser) return { status: 'not-found' };
+
+  await getAuth().setCustomUserClaims(targetUser.uid, {});
+  // Corta las sesiones abiertas: sin esto, su token actual sigue siendo
+  // válido hasta una hora después.
+  await getAuth().revokeRefreshTokens(targetUser.uid);
+  return { status: 'revoked' };
 });
 
 /**
@@ -150,7 +211,7 @@ exports.applyPendingClaims = onCall(async (request) => {
   if (!pending.exists) return { status: 'none' };
 
   const { businessId, role, professionalId = null } = pending.data();
-  await admin.auth().setCustomUserClaims(request.auth.uid, {
+  await getAuth().setCustomUserClaims(request.auth.uid, {
     businessId,
     role,
     professionalId,
