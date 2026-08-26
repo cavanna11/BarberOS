@@ -45,6 +45,48 @@ ex socio). No pushear ahí.
 
 ---
 
+## Levantar el proyecto en otra máquina
+
+Git trae el código, **pero no trae lo que hace falta para que arranque**:
+
+```bash
+git clone https://github.com/cavanna11/BarberOS.git
+cd BarberOS
+npm install
+```
+
+Después, y esto es lo que siempre se olvida:
+
+**1. Crear `.env` en la raíz.** Está en `.gitignore` a propósito (tiene el
+client secret de Google). Sin él la app arranca, pero muestra la pantalla de
+"Falta la configuración de Firebase".
+
+- Las siete `VITE_*` están en **Vercel → Settings → Environment Variables**.
+- El `GOOGLE_CLIENT_SECRET` (sin prefijo `VITE_`) está en Google Cloud Console →
+  Credenciales. El frontend no lo usa; queda para cuando haga falta del lado
+  del servidor.
+- Estructura de referencia: `.env.example`.
+
+**2. CLI de Firebase**, solo si vas a desplegar reglas o functions:
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase use --add
+```
+
+En `firebase use --add` elegir `barberos-1d60e` con alias `default`.
+`firebase login` abre el navegador y necesita interacción humana: **no lo puede
+correr un agente**.
+
+**3.** `npm run dev` → http://localhost:5173
+
+**No hay estado local que migrar.** Los datos viven en Firestore, así que la
+notebook ve exactamente lo mismo que la máquina de escritorio apenas entrás con
+Google.
+
+---
+
 ## Estado: qué funciona hoy
 
 - Datos en **Firestore**. Ya no queda nada operativo en `localStorage`.
