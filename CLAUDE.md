@@ -164,6 +164,21 @@ cliente parado en `/su-barberia` que toca "Iniciar Sesión" también terminaría
 su `pathname`, y `LoginPage` descarta `/` y `/login` como orígenes — volver ahí
 es justamente el problema que esto resuelve.
 
+### Límite de barberos por plan
+
+`maxBarbers` (en `config/plans.js`) ahora se hace cumplir: al llegar al tope, el
+botón de agregar se deshabilita y aparece un aviso con el link para ampliar. Se
+cuentan solo los ACTIVOS, así que desactivar a alguien que se fue libera el
+lugar. Se compara al agregar y no al editar, para que una barbería que quedó por
+encima del tope —porque le bajaron el plan— pueda seguir administrando a los que
+tiene en vez de quedar trabada.
+
+**Es un límite comercial, no una barrera de seguridad**: vive en la interfaz y
+alguien con la consola abierta podría saltearlo. Igual que cualquier tope de
+plan en una app de browser. Lo que protege los datos son las Rules, y la
+cantidad de barberos no es un dato a proteger. Si algún día se cobra por
+barbero de verdad, hay que moverlo a una Cloud Function.
+
 ### Cuentas de prueba
 
 En el alta hay un campo **"Días de prueba sin cargo"**. Con un valor mayor a

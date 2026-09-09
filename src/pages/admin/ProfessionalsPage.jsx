@@ -10,9 +10,30 @@ import {
   removeStaffContact,
 } from '../../lib/repository';
 import { getDayName, generateId } from '../../utils/dateUtils';
+import { getPlan } from '../../config/plans';
+
+// Mismo número que la landing y el resto del panel.
+const LINK_AMPLIAR = 'https://wa.me/5492257529684?text=' +
+  encodeURIComponent('Hola! Necesito sumar más barberos a mi cuenta de BarberOS.');
 
 export default function ProfessionalsPage() {
-  const { professionals, schedules, professionalServices, services, businessId } = useTenant();
+  const { professionals, schedules, professionalServices, services, businessId, business } = useTenant();
+
+  // Límite de barberos del plan contratado. `maxBarbers: null` = sin tope.
+  //
+  // Se cuentan solo los activos: un barbero que se fue no debería ocuparle un
+  // lugar al que entra. Y se compara al AGREGAR, no al editar, para que una
+  // barbería que ya está por encima del límite —porque le bajaron el plan—
+  // pueda seguir administrando a los que tiene en vez de quedar trabada.
+  //
+  // Esto es un límite comercial, no una barrera de seguridad: vive en la
+  // interfaz. Alguien con la consola abierta podría saltearlo, igual que
+  // cualquier tope de plan en una app de browser. Lo que protege los datos son
+  // las Rules, y este número no es un dato a proteger.
+  const plan = getPlan(business?.planId);
+  const topeBarberos = plan?.maxBarbers ?? null;
+  const activos = professionals.filter((p) => p.isActive !== false).length;
+  const llegoAlTope = topeBarberos !== null && activos >= topeBarberos;
 
   const [guardando, setGuardando]     = useState(false);
   const [showModal, setShowModal]     = useState(false);
@@ -37,6 +58,7 @@ export default function ProfessionalsPage() {
 
   // ── Abrir modal NUEVO ──────────────────────────────────────────────────────
   const openAdd = () => {
+    if (llegoAlTope) return;
     setEditing(null);
     setForm({ name: '', specialty: '', phone: '', email: '', bio: '' });
     setEditSchedules(Array.from({ length: 7 }, (_, i) => ({
@@ -168,9 +190,30 @@ export default function ProfessionalsPage() {
   return (
     <div>
       <div className="admin-page-header">
-        <h1>Profesionales</h1>
-        <button className="btn btn-primary" onClick={openAdd}>+ Agregar Profesional</button>
+        <div>
+          <h1>Profesionales</h1>
+          {topeBarberos !== null && (
+            <p className="text-secondary text-sm" style={{ marginTop: 4 }}>
+              {activos} de {topeBarberos} {topeBarberos === 1 ? 'lugar usado' : 'lugares usados'} en tu plan
+            </p>
+          )}
+        </div>
+        <button className="btn btn-primary" onClick={openAdd} disabled={llegoAlTope}>
+          + Agregar Profesional
+        </button>
       </div>
+
+      {llegoAlTope && (
+        <div className="notice notice-info" style={{ marginBottom: 'var(--space-md)' }}>
+          <strong>Llegaste al tope de tu plan.</strong> Incluye{' '}
+          {topeBarberos === 1 ? '1 barbero' : `${topeBarberos} barberos`} y ya los
+          tenés cargados. Para sumar más,{' '}
+          <a href={LINK_AMPLIAR} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>
+            escribinos y ampliamos tu cuenta
+          </a>
+          . Si alguien dejó de trabajar con vos, desactivalo y se libera el lugar.
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="data-table">
@@ -231,7 +274,9 @@ export default function ProfessionalsPage() {
               Todavía no hay profesionales. Sin al menos uno cargado, el link
               público no puede mostrar horarios disponibles.
             </p>
-            <button className="btn btn-primary" onClick={openAdd}>+ Agregar el primero</button>
+            <button className="btn btn-primary" onClick={openAdd} disabled={llegoAlTope}>
+              + Agregar el primero
+            </button>
           </div>
         )}
       </div>
