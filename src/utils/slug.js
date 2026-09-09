@@ -16,7 +16,7 @@ export function slugify(text) {
 
 // Rutas propias de la app: un negocio no puede quedarse con estos slugs porque
 // chocarían con el ruteo.
-const RESERVED_SLUGS = ['login', 'admin', 'super-admin', 'confirmacion', 'mis-citas'];
+const RESERVED_SLUGS = ['login', 'admin', 'super-admin', 'confirmacion', 'mis-citas', 'cuenta'];
 
 /**
  * Igual que slugify pero garantiza que no choque con uno existente ni con las

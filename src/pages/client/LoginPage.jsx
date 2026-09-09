@@ -18,15 +18,24 @@ export default function LoginPage() {
 
   // Si el usuario venía de un link de negocio (`/barberia-sacia`) y lo mandamos
   // a loguearse, después lo devolvemos ahí en vez de tirarlo a la raíz.
-  const from = location.state?.from;
+  // '/' y '/login' no sirven como destino: volver ahí es justo lo que dejaba
+  // al barbero curioso sin entender qué pasó.
+  const origen = location.state?.from;
+  const from = origen && origen !== '/' && origen !== '/login' ? origen : null;
 
   const redirectAfterLogin = (user) => {
     if (user.isPlatformOwner || isPlatformOwner(user.email)) {
       navigate('/super-admin');
     } else if (user.role === 'owner' || user.role === 'admin') {
       navigate('/admin');
+    } else if (from) {
+      // Venía del link de una barbería: se lo devuelve ahí a terminar de reservar.
+      navigate(from);
     } else {
-      navigate(from || '/');
+      // Entró por "Iniciar Sesión" desde la landing y no tiene barbería. Antes
+      // se lo mandaba de vuelta a la landing sin decirle nada, y quedaba
+      // pensando que no había funcionado.
+      navigate('/cuenta');
     }
   };
 

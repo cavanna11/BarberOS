@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { cancelAppointment } from '../../lib/repository';
@@ -14,6 +14,7 @@ const STATUS_LABELS = {
 };
 
 export default function MyAppointments() {
+  const location = useLocation();
   const { user, isAuthenticated } = useAuth();
   // Solo las citas del negocio por el que entró el cliente.
   const { appointments, professionals, services, business, slug, businessId } = useTenant();
@@ -26,7 +27,9 @@ export default function MyAppointments() {
         <div className="empty-state">
           <div className="empty-state-icon">🔒</div>
           <p>Necesitás iniciar sesión para ver tus citas</p>
-          <Link to="/login" className="btn btn-primary mt-lg">Iniciar Sesión</Link>
+          <Link to="/login" state={{ from: location.pathname }} className="btn btn-primary mt-lg">
+            Iniciar Sesión
+          </Link>
         </div>
       </div>
     );

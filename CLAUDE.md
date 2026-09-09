@@ -147,6 +147,23 @@ method → Email/Password. Sin eso, el login con contraseña falla con
 Los permisos no cambian en nada: son los mismos custom claims, y no saben con
 qué proveedor entró la persona.
 
+### Quien entra y no tiene barbería
+
+No hay registro self-service **y es a propósito**, pero antes eso dejaba un
+agujero: el barbero curioso que entraba a la landing, tocaba "Iniciar Sesión" y
+se logueaba con su Google volvía a la landing **sin ningún mensaje**. Quedaba
+pensando que había fallado, y era justo el lead más caliente.
+
+Ahora cae en `/cuenta`, que le explica que las cuentas las activa la plataforma
+y le da el botón de WhatsApp.
+
+Ojo con el detalle que casi lo rompe: `Header` es compartido entre la landing y
+la página de cada barbería. Si el link a `/login` no lleva `state.from`, un
+cliente parado en `/su-barberia` que toca "Iniciar Sesión" también terminaría en
+`/cuenta` en vez de volver a reservar. Por eso `Header` y `MyAppointments` pasan
+su `pathname`, y `LoginPage` descarta `/` y `/login` como orígenes — volver ahí
+es justamente el problema que esto resuelve.
+
 ### Cuentas de prueba
 
 En el alta hay un campo **"Días de prueba sin cargo"**. Con un valor mayor a

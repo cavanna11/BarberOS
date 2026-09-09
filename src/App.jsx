@@ -20,6 +20,7 @@ import SuperAdminLayout from './components/layout/SuperAdminLayout';
 // Cliente
 import LoginPage from './pages/client/LoginPage';
 import NoBusinessPage from './pages/client/NoBusinessPage';
+import CuentaSinBarberia from './pages/client/CuentaSinBarberia';
 
 const LandingPage      = lazy(() => import('./pages/LandingPage'));
 const BookingPage      = lazy(() => import('./pages/client/BookingPage'));
@@ -166,6 +167,10 @@ export default function App() {
 
         {/* Redirigir la vieja URL del admin login al login unificado */}
         <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+
+        {/* Adónde cae quien se logueó pero no tiene barbería. Antes volvía a la
+            landing sin explicación y parecía que el login había fallado. */}
+        <Route path="/cuenta" element={<ClientLayout><CuentaSinBarberia /></ClientLayout>} />
 
         {/* ── Rutas de admin ──────────────────────────────────────── */}
         <Route path="/admin" element={

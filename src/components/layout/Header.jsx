@@ -1,8 +1,9 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 
 export default function Header() {
+  const location = useLocation();
   const { isAuthenticated, logout } = useAuth();
   const { business, slug } = useCurrentBusiness();
 
@@ -40,7 +41,11 @@ export default function Header() {
             </button>
           </>
         ) : (
-          <Link to="/login" className="btn btn-secondary btn-sm">
+          <Link
+            to="/login"
+            state={{ from: location.pathname }}
+            className="btn btn-secondary btn-sm"
+          >
             Iniciar Sesión
           </Link>
         )}
