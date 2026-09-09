@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useBooking } from '../../contexts/BookingContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
-import { createAppointment as createAppointmentDirecto } from '../../lib/repository';
-import { createAppointment as createAppointmentValidado, esFunctionNoDesplegada } from '../../lib/functions';
+import { createAppointment } from '../../lib/functions';
 import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/availabilityEngine';
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
 
@@ -463,40 +462,39 @@ export default function BookingPage() {
       // motor de disponibilidad de acá arriba pinta la grilla, pero cualquiera
       // con la consola abierta lo saltea. El precio sale del servicio, no de
       // este formulario.
-      //
-      // El fallback existe SOLO hasta que se despliegue Blaze: sin él, publicar
-      // esta versión dejaría la reserva rota hasta el deploy. Sacarlo apenas
-      // `setBusinessAdmin` deje de devolver 404 (ver CLAUDE.md).
-      let id;
-      try {
-        const res = await createAppointmentValidado({
-          businessId,
-          professionalId,
-          serviceId,
-          appointmentDate: date,
-          startTime: timeSlot.startTime,
-          clientName: user.name,
-          clientPhone: personalInfo.phone,
-          clientEmail: user.email,
-        });
-        id = res.id;
-        datos.price = res.price;
-        datos.endTime = res.endTime;
-      } catch (errFn) {
-        if (!esFunctionNoDesplegada(errFn)) throw errFn;
-        console.warn('[BookingPage] Functions sin desplegar: se reserva sin validación de servidor.');
-        id = await createAppointmentDirecto(businessId, datos);
-      }
+      const res = await createAppointment({
+        businessId,
+        professionalId,
+        serviceId,
+        appointmentDate: date,
+        startTime: timeSlot.startTime,
+        clientName: user.name,
+        clientPhone: personalInfo.phone,
+        clientEmail: user.email,
+      });
+      const id = res.id;
+      datos.price = res.price;
+      datos.endTime = res.endTime;
+
       dispatch({ type: 'RESET' });
       navigate(`/${slug}/confirmacion`, {
         state: { appointment: { ...datos, id, businessId, status: 'pendiente' } },
       });
     } catch (err) {
       console.error('[BookingPage] No se pudo reservar:', err);
+      // La Cloud Function devuelve mensajes ya escritos para el cliente
+      // ("Ese horario ya fue tomado. Elegí otro."), así que se muestran tal
+      // cual en vez de envolverlos en otra frase.
+      const esDeNegocio = [
+        'functions/already-exists',
+        'functions/failed-precondition',
+        'functions/invalid-argument',
+        'functions/not-found',
+      ].includes(err.code);
       setError(
-        err.code === 'permission-denied'
-          ? 'No se pudo confirmar la reserva. Actualizá la página e intentá de nuevo.'
-          : 'No se pudo confirmar la reserva: ' + err.message
+        esDeNegocio
+          ? err.message
+          : 'No se pudo confirmar la reserva. Actualizá la página e intentá de nuevo.'
       );
       setReservando(false);
     }

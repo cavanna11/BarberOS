@@ -144,13 +144,15 @@ service cloud.firestore {
                        || isPlatform()
                        || (signedIn() && resource.data.userId == request.auth.uid);
 
-        // Reservar: cualquiera logueado, pero el turno tiene que ser suyo,
-        // pertenecer a este negocio y nacer en estado 'pendiente'.
-        // El precio no se acepta del cliente por acá — ver nota en el .md.
-        allow create: if signedIn()
-                         && request.resource.data.userId == request.auth.uid
-                         && request.resource.data.businessId == bizId
-                         && request.resource.data.status == 'pendiente';
+        // Un cliente NO escribe turnos directo: reserva por la Cloud Function
+        // `createAppointment`, que valida precio, fecha, horario, solapamiento y
+        // que el negocio no esté suspendido. La función usa el Admin SDK, así
+        // que no pasa por acá.
+        //
+        // El staff sí crea directo, y es a propósito: el panel registra los
+        // "servicio sin turno" (walk-in) del que ya está sentado en la silla.
+        // Es su propia agenda y sus propios precios.
+        allow create: if isBusinessStaff(bizId) || isPlatform();
 
         // Cancelar: el cliente solo puede cambiar el estado a 'cancelada' de un
         // turno propio. Cambiar fecha, precio o profesional es cosa del staff.

@@ -108,57 +108,35 @@ Google.
 
 ---
 
-## ⛔ BLOQUEANTE: plan Blaze
+## ✅ Blaze activo, Functions desplegadas
 
-**Es lo único que impide vender.** Sin Cloud Functions no se pueden asignar
-custom claims, así que **el dueño de una barbería real no puede entrar a su
-panel** — sin claim, Firestore lo trata como cliente. Tampoco puede abrir
-tickets, ni corre la facturación automática, ni se envían recordatorios.
-
-Santiago sí funciona porque su claim se puso a mano con
-`scripts/bootstrap-platform-owner.mjs`.
-
-Verificar si ya está resuelto:
+Desplegadas en `southamerica-east1`: `setBusinessAdmin`, `revokeBusinessAdmin`,
+`applyPendingClaims`, `createAppointment` y `runBilling` (3 AM, hora de Buenos
+Aires). Quedó puesta la política que borra imágenes de contenedor de más de un
+día, para que no se acumule costo de almacenamiento.
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://southamerica-east1-barberos-1d60e.cloudfunctions.net/setBusinessAdmin
+curl -s -o /dev/null -w "%{http_code}
+" https://southamerica-east1-barberos-1d60e.cloudfunctions.net/setBusinessAdmin
 ```
 
-`404` = sigue bloqueado. `400`/`401` = ya está desplegada.
+`400`/`401` = desplegada y validando. `404` = se cayó el deploy.
 
-**Todo el frontend ya está cableado y probado contra el emulador.** Falta el
-deploy, y después tres pasos que NO se pueden hacer antes.
+Del checklist post-Blaze quedan hechos los pasos 1 a 3. **Falta el 4**: sacar el
+fallback de permisos de `AuthContext`. Se dejó a propósito hasta que un dueño
+real entre con claims de verdad — sacarlo antes es quedarse sin red por una
+mejora que no cambia la seguridad (las Rules ya exigen el claim real).
 
-```bash
-cd functions && npm install && cd ..
-firebase deploy --only functions
-firebase deploy --only firestore:indexes
-```
+### ⚠️ Cuentas de prueba y facturación
 
-### Checklist post-Blaze, en este orden
+`runBilling` ya corre. Suma `monthlyFee` cuando se pasa `nextBillingDate` y
+después congela si la deuda es mayor a cero — y congelado significa que el link
+público **deja de tomar turnos**.
 
-1. **Desplegar** (arriba) y verificar que `setBusinessAdmin` deje de dar 404.
-2. **Cerrar la escritura directa de turnos.** En `firestore.rules`, el
-   `allow create` de `appointments` pasa a `if false`: desde ese momento el
-   único que crea turnos es el Admin SDK vía `createAppointment`.
-   **No lo hagas antes del paso 1** — dejarías la reserva rota.
-3. **Sacar el fallback de `BookingPage`.** El bloque `catch (errFn)` que reserva
-   directo si la function no está desplegada existe solo para que publicar en
-   Vercel antes del deploy no rompa nada. Con Blaze activo sobra, y además
-   saltea la validación.
-4. **Sacar el fallback de permisos de `AuthContext`.** El propio archivo lo dice:
-   es transitorio y falsificable desde el browser.
-
-Después del paso 3, en `scripts/auditar-rules-emulador.mjs` el caso
-"cliente reserva con price 0" pasa a esperar `denegado`.
-
-Costo esperado: cercano a $0. La capa gratuita de Blaze es la misma que Spark.
-**Blaze no tiene cargo base mensual**: si la consola pide ~US$10, es la
-retención de verificación del medio de pago de Google Cloud, no una suscripción.
-
-Mientras no esté desplegado, la app **no se rompe**: `applyPendingClaims` falla
-en silencio y el fallback local de `AuthContext` sigue resolviendo permisos.
-Lo que no funciona es el alta de un dueño real.
+Los tres planes tienen abono mayor a cero y **no existe todavía un concepto de
+prueba**. Una cuenta de prueba creada con plan básico acumula $12.000 al mes y
+se congela sola. Hasta que exista el trial, para una cuenta de regalo poné
+`monthlyFee: 0`.
 
 ### Quién puede asignar permisos
 
