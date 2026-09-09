@@ -34,6 +34,8 @@ const EMPTY_FORM = {
   // 'google' = entra con su Gmail. 'password' = le creamos usuario y contraseña,
   // para el barbero que no usa Gmail o no quiere mezclarlo con lo personal.
   accesoPor: 'google',
+  // Vacío = la genera el servidor. Si la escribís, se usa esa.
+  passwordElegida: '',
 };
 
 /** Primer cobro un mes después del alta, para que no arranque con deuda. */
@@ -102,6 +104,11 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     }
 
     if (!form.ownerName.trim()) e.ownerName = 'Poné el nombre del dueño.';
+
+    const pass = form.passwordElegida.trim();
+    if (form.accesoPor === 'password' && pass && pass.length < 6) {
+      e.passwordElegida = 'Si la elegís vos, tiene que tener al menos 6 caracteres.';
+    }
 
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -187,6 +194,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
               businessId,
               name: ownerAdmin.name,
               role: 'owner',
+              password: form.passwordElegida.trim() || null,
             })
           : await setBusinessAdmin({
               email: ownerAdmin.email,
@@ -453,9 +461,32 @@ export default function NewBusinessModal({ onClose, onCreated }) {
             </select>
             <p className="text-xs text-muted" style={{ marginTop: 4 }}>
               {form.accesoPor === 'password'
-                ? 'Le generamos una contraseña al crear la cuenta. Se muestra una sola vez, así que copiala antes de cerrar.'
+                ? 'La contraseña se muestra una sola vez al crear la cuenta, así que copiala antes de cerrar.'
                 : 'Entra con el Gmail de arriba. No hace falta que le pasemos nada.'}
             </p>
+
+            {form.accesoPor === 'password' && (
+              <div style={{ marginTop: 'var(--space-md)' }}>
+                <label className="form-label">Contraseña temporal (opcional)</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  value={form.passwordElegida}
+                  onChange={(e) => set({ passwordElegida: e.target.value })}
+                  placeholder="Dejalo vacío y la generamos nosotros"
+                  style={{ maxWidth: 320, fontFamily: 'monospace' }}
+                />
+                {errors.passwordElegida && (
+                  <p className="text-xs" style={{ color: 'var(--danger)', marginTop: 4 }}>
+                    {errors.passwordElegida}
+                  </p>
+                )}
+                <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                  Mínimo 6 caracteres. Se muestra en texto plano a propósito: la
+                  vas a tener que dictar. Decile que la cambie cuando entre.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Prueba gratis */}

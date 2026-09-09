@@ -248,6 +248,19 @@ export function subscribeAppointments(businessId, cb, onError) {
 }
 
 /**
+ * Turnos de UN profesional. Es lo que ve un barbero: las Rules le permiten
+ * listar solo los suyos, así que la query tiene que traer el filtro o Firestore
+ * rechaza la consulta entera.
+ */
+export function subscribeAppointmentsDeProfesional(businessId, professionalId, cb, onError) {
+  return onSnapshot(
+    query(subCol(businessId, 'appointments'), where('professionalId', '==', professionalId)),
+    (snap) => cb(rows(snap)),
+    onError
+  );
+}
+
+/**
  * Turnos de un cliente puntual. La query DEBE filtrar por userId: las Rules
  * rechazan el listado completo si no sos staff.
  */

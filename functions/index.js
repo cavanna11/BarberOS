@@ -582,7 +582,11 @@ function generarPassword(largo = 12) {
  * plano es una contraseña filtrada esperando su turno.
  */
 exports.createOwnerWithPassword = onCall(async (request) => {
-  const { email, businessId, name = '', role = 'owner', professionalId = null } = request.data || {};
+  const {
+    email, businessId, name = '', role = 'owner', professionalId = null,
+    // Opcional: si viene, se usa esa. Si no, la genera el servidor.
+    password: elegida = null,
+  } = request.data || {};
 
   if (!email || !businessId || !['owner', 'admin'].includes(role)) {
     throw new HttpsError('invalid-argument', 'Faltan email, businessId o role válido.');
@@ -614,7 +618,13 @@ exports.createOwnerWithPassword = onCall(async (request) => {
     if (err.code !== 'auth/user-not-found') throw err;
   }
 
-  const password = generarPassword();
+  // Firebase exige 6 caracteres como mínimo. Se valida acá para que el error
+  // llegue en castellano y no como un código del SDK.
+  if (elegida !== null && String(elegida).length < 6) {
+    throw new HttpsError('invalid-argument', 'La contraseña tiene que tener al menos 6 caracteres.');
+  }
+
+  const password = elegida ? String(elegida) : generarPassword();
   const user = await getAuth().createUser({
     email: normalizedEmail,
     password,
@@ -644,8 +654,11 @@ exports.createOwnerWithPassword = onCall(async (request) => {
  * barbero la pierde y hay que pasarle otra por WhatsApp.
  */
 exports.resetOwnerPassword = onCall(async (request) => {
-  const { email } = request.data || {};
+  const { email, password: elegida = null } = request.data || {};
   if (!email) throw new HttpsError('invalid-argument', 'Falta el email.');
+  if (elegida !== null && String(elegida).length < 6) {
+    throw new HttpsError('invalid-argument', 'La contraseña tiene que tener al menos 6 caracteres.');
+  }
 
   if (!request.auth || request.auth.token.platform !== true) {
     throw new HttpsError('permission-denied', 'Solo la plataforma puede restablecer contraseñas.');
@@ -668,7 +681,7 @@ exports.resetOwnerPassword = onCall(async (request) => {
     throw new HttpsError('permission-denied', 'No se restablece la contraseña de la plataforma desde acá.');
   }
 
-  const password = generarPassword();
+  const password = elegida ? String(elegida) : generarPassword();
   await getAuth().updateUser(user.uid, { password });
 
   // Las sesiones abiertas con la contraseña vieja dejan de valer.

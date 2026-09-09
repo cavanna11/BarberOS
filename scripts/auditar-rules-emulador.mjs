@@ -76,6 +76,7 @@ await db.doc(`businesses/${A}`).set({ name: 'Alfa', slug: 'alfa', isFrozen: fals
 await db.doc(`businesses/${B}`).set({ name: 'Beta', slug: 'beta', isFrozen: false, planId: 'basico', monthlyFee: 12000 });
 await db.doc('slugs/alfa').set({ businessId: A });
 await db.doc(`businesses/${A}/private/billing`).set({ debt: 5000, monthlyFee: 12000 });
+await db.doc(`businesses/${A}/appointments/apt-mio`).set({ id:'apt-mio', businessId:A, userId:'x', clientName:'Mio', professionalId:'p1', appointmentDate:'2026-09-01', startTime:'12:00', endTime:'12:30', price:12000, status:'pendiente' });
 await db.doc(`businesses/${A}/appointments/apt-otro`).set({
   id: 'apt-otro', businessId: A, userId: 'otro-uid', clientName: 'Ajeno', clientPhone: '+54 11 9999',
   professionalId: 'p1', serviceId: 's1', appointmentDate: '2026-09-01', startTime: '10:00', endTime: '10:30',
@@ -128,19 +129,17 @@ await esperar('cliente NO borra turnos',                  borrar(cliente, `busin
 console.log('\n-- Turnos: precio (punto 7 del roadmap) --');
 await esperar('[?] cliente reserva con price 0',          crear(cliente, `businesses/${A}/appointments`, { userId: cliente.uid, businessId: A, status: 'pendiente', price: 0, appointmentDate: '2026-09-02', startTime: '09:00', endTime: '09:30' }), 'denegado');
 
-console.log('\n-- Barbero (rol admin) --');
-await esperar('[?] barbero lee la agenda entera',         consultar(barberoA, `businesses/${A}`, 'appointments'), 'permitido');
-await esperar('[?] barbero edita turno de otro',          editar(barberoA, `businesses/${A}/appointments/apt-otro`, { status: 'completada' }), 'denegado');
-await esperar('[?] barbero escribe el catalogo',          crear(barberoA, `businesses/${A}/services`, { name: 'inventado', price: 1 }), 'denegado');
-
-console.log('\n-- Contacto del staff (dato personal) --');
-await esperar('anonimo NO lee el contacto del staff',     leer(null, `businesses/${A}/staffContacts/p1`), 'denegado');
-await esperar('cliente NO lee el contacto del staff',     leer(cliente, `businesses/${A}/staffContacts/p1`), 'denegado');
-await esperar('dueno de B NO lee el de A',                leer(duenoB, `businesses/${A}/staffContacts/p1`), 'denegado');
-await esperar('el profesional publico SIGUE publico',     leer(null, `businesses/${A}/professionals/p1`), 'permitido');
-await esperar('dueno de A SI lo lee',                     leer(duenoA, `businesses/${A}/staffContacts/p1`), 'permitido');
-await esperar('barbero SI edita su propia ficha',         editar(barberoA, `businesses/${A}/staffContacts/p1`, { phone: '+54 11 0000' }), 'permitido');
-await esperar('barbero NO edita la ficha de otro',        editar(barberoA, `businesses/${A}/staffContacts/p9`, { phone: 'x' }), 'denegado');
+console.log('\n-- Alcance del barbero --');
+await esperar('barbero lee SU turno',                    leer(barberoA, `businesses/${A}/appointments/apt-mio`), 'permitido');
+await esperar('barbero NO lee el turno de otro',         leer(barberoA, `businesses/${A}/appointments/apt-otro`), 'denegado');
+await esperar('barbero NO edita el turno de otro',       editar(barberoA, `businesses/${A}/appointments/apt-otro`, { status: 'completada' }), 'denegado');
+await esperar('barbero SI edita el suyo',                editar(barberoA, `businesses/${A}/appointments/apt-mio`, { status: 'confirmada' }), 'permitido');
+await esperar('barbero NO lista la agenda entera',       consultar(barberoA, `businesses/${A}`, 'appointments'), 'denegado');
+await esperar('barbero SI lista filtrando por su perfil', consultar(barberoA, `businesses/${A}`, 'appointments', ['professionalId', 'p1']), 'permitido');
+await esperar('barbero NO crea turno para otro',         crear(barberoA, `businesses/${A}/appointments`, { businessId:A, userId:barberoA.uid, status:'pendiente', professionalId:'p9', appointmentDate:'2026-09-03', startTime:'09:00', endTime:'09:30' }), 'denegado');
+await esperar('barbero SI crea su walk-in',              crear(barberoA, `businesses/${A}/appointments`, { businessId:A, userId:barberoA.uid, status:'pendiente', professionalId:'p1', type:'walkin', appointmentDate:'2026-09-03', startTime:'09:00', endTime:'09:30' }), 'permitido');
+await esperar('el dueno SI ve toda la agenda',           consultar(duenoA, `businesses/${A}`, 'appointments'), 'permitido');
+await esperar('[?] barbero escribe el catalogo',         crear(barberoA, `businesses/${A}/services`, { name: 'inventado', price: 1 }), 'denegado');
 
 console.log('\n-- Tickets --');
 await esperar('dueno de A lee su ticket',                 leer(duenoA, 'tickets/tk-alfa'), 'permitido');

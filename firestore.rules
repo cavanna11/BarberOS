@@ -50,6 +50,19 @@ service cloud.firestore {
       return inBusiness(bizId) && claims().get('role', '') in ['owner', 'admin'];
     }
 
+    /**
+     * Barbero: staff con rol 'admin', atado a un perfil de profesional. A
+     * diferencia del dueño, solo alcanza SUS turnos.
+     */
+    function esBarbero(bizId) {
+      return inBusiness(bizId) && claims().get('role', '') == 'admin';
+    }
+
+    /** ¿Este turno es del barbero que está llamando? */
+    function esSuTurno() {
+      return resource.data.professionalId == claims().get('professionalId', '');
+    }
+
     // Escribe cosas del negocio: su dueño, o vos preparando la cuenta.
     function canManage(bizId) {
       return isBusinessOwner(bizId) || isPlatform();
@@ -133,9 +146,11 @@ service cloud.firestore {
 
       // ── Turnos ───────────────────────────────────────────────────────────
       match /appointments/{aptId} {
-        // El staff ve la agenda del negocio; el cliente solo sus propios turnos.
-        allow get: if isBusinessStaff(bizId)
+        // El dueño ve toda la agenda; el barbero solo los suyos; el cliente
+        // solo los propios.
+        allow get: if isBusinessOwner(bizId)
                       || isPlatform()
+                      || (esBarbero(bizId) && esSuTurno())
                       || (signedIn() && resource.data.userId == request.auth.uid);
 
         // Listar la agenda completa es solo del staff. El cliente puede listar
@@ -155,8 +170,11 @@ service cloud.firestore {
         // En un `list`, Firestore evalúa esta condición contra cada documento
         // devuelto y exige que la query garantice que todos la cumplen: el
         // where por userId la satisface, y una query sin filtrar la viola.
-        allow list: if isBusinessStaff(bizId)
+        // Al barbero se le aplica el mismo criterio: su query TIENE que llevar
+        // where('professionalId','==',suId). Lo hace BusinessSync.
+        allow list: if isBusinessOwner(bizId)
                        || isPlatform()
+                       || (esBarbero(bizId) && esSuTurno())
                        || (signedIn() && resource.data.userId == request.auth.uid);
 
         // Un cliente NO escribe turnos directo: reserva por la Cloud Function
@@ -167,12 +185,16 @@ service cloud.firestore {
         // El staff sí crea directo, y es a propósito: el panel registra los
         // "servicio sin turno" (walk-in) del que ya está sentado en la silla.
         // Es su propia agenda y sus propios precios.
-        allow create: if isBusinessStaff(bizId) || isPlatform();
+        allow create: if isPlatform()
+                         || isBusinessOwner(bizId)
+                         || (esBarbero(bizId)
+                             && request.resource.data.professionalId == claims().get('professionalId', ''));
 
         // Cancelar: el cliente solo puede cambiar el estado a 'cancelada' de un
         // turno propio. Cambiar fecha, precio o profesional es cosa del staff.
-        allow update: if isBusinessStaff(bizId)
+        allow update: if isBusinessOwner(bizId)
                          || isPlatform()
+                         || (esBarbero(bizId) && esSuTurno())
                          || (
                               signedIn()
                               && resource.data.userId == request.auth.uid

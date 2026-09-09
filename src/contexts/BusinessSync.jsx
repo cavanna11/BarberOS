@@ -7,6 +7,7 @@ import {
   subscribeBusiness,
   subscribeBilling,
   subscribeSubcollection,
+  subscribeAppointmentsDeProfesional,
   getBusinessIdBySlug,
 } from '../lib/repository';
 
@@ -19,6 +20,10 @@ const COLECCIONES = [
   'appointments',
   'admins',
 ];
+
+// Un barbero solo alcanza SUS turnos: las Rules le rechazan la consulta sin
+// filtrar, así que su suscripción a `appointments` va aparte.
+const SIN_APPOINTMENTS = COLECCIONES.filter((c) => c !== 'appointments');
 
 const VACIO = Object.fromEntries(COLECCIONES.map((c) => [c, []]));
 
@@ -189,7 +194,13 @@ export default function BusinessSync() {
       console.error(`[BusinessSync] ${col}:`, err.code, err.message);
     };
 
-    const offs = COLECCIONES.map((col) =>
+    // El barbero (rol 'admin' atado a un profesional) solo puede listar sus
+    // propios turnos. Si pidiera la colección entera, Firestore le rechazaría
+    // la consulta y se quedaría con la agenda vacía.
+    const soloLoSuyo = user?.role === 'admin' && user?.professionalId;
+    const colecciones = soloLoSuyo ? SIN_APPOINTMENTS : COLECCIONES;
+
+    const offs = colecciones.map((col) =>
       subscribeSubcollection(
         businessId,
         col,
@@ -198,12 +209,23 @@ export default function BusinessSync() {
       )
     );
 
+    if (soloLoSuyo) {
+      offs.push(
+        subscribeAppointmentsDeProfesional(
+          businessId,
+          user.professionalId,
+          (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { appointments: filas } }),
+          onError('appointments')
+        )
+      );
+    }
+
     // Al cambiar de negocio, vaciar antes de que lleguen los datos nuevos:
     // así no se ve por un instante el staff del tenant anterior.
     dispatch({ type: 'SET_TENANT_DATA', payload: VACIO });
 
     return () => offs.forEach((off) => off());
-  }, [businessId, user?.isBypass, dispatch]);
+  }, [businessId, user?.isBypass, user?.role, user?.professionalId, dispatch]);
 
   return null;
 }
