@@ -18,18 +18,24 @@ export default function ProfileSettingsPage() {
   const profId = user?.professionalId;
   const professional = professionals.find(p => p.id === profId);
 
-  // Inicializar formulario con datos del profesional
-  const [form, setForm] = useState({
+  // Mismo criterio que SettingsPage: no se guarda una copia del profesional en
+  // el estado, solo LOS CAMBIOS superpuestos sobre el dato vivo. Con una copia,
+  // si el dueño editaba el perfil mientras el barbero lo tenía abierto, Guardar
+  // revertía el cambio del dueño sin avisar.
+  const [cambios, setCambios] = useState({});
+  // El teléfono y el mail no están en el documento del profesional (ese es de
+  // lectura pública): se traen del privado.
+  const [contacto, setContacto] = useState({ phone: '', email: '' });
+
+  const form = {
     name: professional?.name || '',
     specialty: professional?.specialty || '',
-    phone: '',
-    email: '',
-    bio: professional?.bio || ''
-  });
+    bio: professional?.bio || '',
+    ...contacto,
+    ...cambios,
+  };
+  const editar = (patch) => setCambios((c) => ({ ...c, ...patch }));
 
-  // El teléfono y el mail no están en el documento del profesional: ese es de
-  // lectura pública. Se traen del privado, donde cada uno solo puede escribir
-  // su propia ficha.
   useEffect(() => {
     if (!businessId || !profId) return;
     let vigente = true;
@@ -37,7 +43,7 @@ export default function ProfileSettingsPage() {
       .then((c) => {
         if (!vigente) return;
         const mio = c[profId] || {};
-        setForm((f) => ({ ...f, phone: mio.phone || '', email: mio.email || '' }));
+        setContacto({ phone: mio.phone || '', email: mio.email || '' });
       })
       .catch((err) => console.error('[ProfileSettings] No se pudo leer el contacto:', err));
     return () => { vigente = false; };
@@ -90,6 +96,10 @@ export default function ProfileSettingsPage() {
       const { phone, email, ...publico } = form;
       await updateInSubcollection(businessId, 'professionals', profId, { ...publico });
       await saveStaffContact(businessId, profId, { phone, email });
+      // El contacto ya está guardado: pasa a ser el valor de base, y el overlay
+      // de cambios se vacía para que el formulario siga el dato vivo otra vez.
+      setContacto({ phone, email });
+      setCambios({});
       // Los horarios se reemplazan enteros: lo natural es "estos son los que
       // quedan", no ir agregando y borrando día por día.
       await replaceMatching(
@@ -133,7 +143,7 @@ export default function ProfileSettingsPage() {
                 <input
                   className="form-input"
                   value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  onChange={e => editar({ name: e.target.value })}
                   placeholder="Tu nombre"
                 />
               </div>
@@ -143,7 +153,7 @@ export default function ProfileSettingsPage() {
                 <input
                   className="form-input"
                   value={form.specialty}
-                  onChange={e => setForm({ ...form, specialty: e.target.value })}
+                  onChange={e => editar({ specialty: e.target.value })}
                   placeholder="Ej: Barbero Senior / Fade Master"
                 />
               </div>
@@ -154,7 +164,7 @@ export default function ProfileSettingsPage() {
                   <input
                     className="form-input"
                     value={form.phone}
-                    onChange={e => setForm({ ...form, phone: e.target.value })}
+                    onChange={e => editar({ phone: e.target.value })}
                     placeholder="+54 11 ..."
                   />
                 </div>
@@ -163,7 +173,7 @@ export default function ProfileSettingsPage() {
                   <input
                     className="form-input"
                     value={form.email}
-                    onChange={e => setForm({ ...form, email: e.target.value })}
+                    onChange={e => editar({ email: e.target.value })}
                     placeholder="email@correo.com"
                   />
                 </div>
@@ -175,7 +185,7 @@ export default function ProfileSettingsPage() {
                   className="form-input"
                   style={{ minHeight: 100, resize: 'vertical' }}
                   value={form.bio}
-                  onChange={e => setForm({ ...form, bio: e.target.value })}
+                  onChange={e => editar({ bio: e.target.value })}
                   placeholder="Cuéntale a tus clientes sobre tu experiencia..."
                 />
               </div>

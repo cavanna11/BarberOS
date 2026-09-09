@@ -19,11 +19,24 @@ export default function SettingsPage() {
   const { business, businessId } = useCurrentBusiness();
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    ...business,
-    businessHours: business?.businessHours || defaultHours
-  });
   const [saved, setSaved] = useState(false);
+
+  // No se guarda una copia del negocio en el estado, solo LOS CAMBIOS del
+  // usuario superpuestos sobre el dato vivo.
+  //
+  // Con una copia (`useState({...business})`) el formulario quedaba clavado en
+  // el valor del primer render: si el negocio cambiaba por snapshot mientras
+  // estaba abierto —lo edita otro admin, o vos desde el panel global—, Guardar
+  // mandaba el estado viejo y revertía el cambio del otro sin que nadie se
+  // entere. Así, los campos que el usuario no tocó se actualizan solos y los
+  // que tocó ganan.
+  const [cambios, setCambios] = useState({});
+  const form = {
+    ...business,
+    businessHours: business?.businessHours || defaultHours,
+    ...cambios,
+  };
+  const editar = (patch) => setCambios((c) => ({ ...c, ...patch }));
 
   const handleSave = async () => {
     if (!businessId) return;
@@ -40,6 +53,9 @@ export default function SettingsPage() {
       return;
     }
     setGuardando(false);
+    // Guardado: los cambios ya son parte del negocio, así que el overlay se
+    // vacía y el formulario vuelve a seguir el dato vivo.
+    setCambios({});
     // Apply colors
     document.documentElement.style.setProperty('--primary', form.primaryColor);
     document.documentElement.style.setProperty('--secondary', form.secondaryColor || form.primaryColor);
@@ -52,7 +68,7 @@ export default function SettingsPage() {
     const updatedHours = hours.map((h, i) =>
       i === dayIndex ? { ...h, isActive: !h.isActive } : h
     );
-    setForm({ ...form, businessHours: updatedHours });
+    editar({ businessHours: updatedHours });
   };
 
   const updateSchedule = (dayIndex, field, value) => {
@@ -60,7 +76,7 @@ export default function SettingsPage() {
     const updatedHours = hours.map((h, i) =>
       i === dayIndex ? { ...h, [field]: value } : h
     );
-    setForm({ ...form, businessHours: updatedHours });
+    editar({ businessHours: updatedHours });
   };
 
   return (
@@ -78,15 +94,31 @@ export default function SettingsPage() {
             <div className="flex flex-col gap-md">
               <div className="form-group">
                 <label className="form-label">Nombre del negocio</label>
-                <input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+                <input className="form-input" value={form.name} onChange={e => editar({ name: e.target.value })} />
               </div>
+              {/*
+                El slug NO es editable desde acá. `updateBusiness` lo filtra para
+                quien no es plataforma, así que el campo se veía editable, decía
+                "guardado" y no cambiaba nada. Y cambiarlo de verdad tampoco es
+                un `update`: hay que mover /slugs/{viejo} a /slugs/{nuevo} en un
+                batch, o el link público queda roto. Se muestra como dato.
+              */}
               <div className="form-group">
-                <label className="form-label">Slug (URL)</label>
-                <input className="form-input" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} />
+                <label className="form-label">Link público</label>
+                <div
+                  className="form-input"
+                  style={{ background: 'var(--bg-secondary)', fontFamily: 'monospace', fontSize: 13 }}
+                >
+                  /{form.slug}
+                </div>
+                <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                  Para cambiar tu dirección escribinos: hay que redirigir el link
+                  viejo para no dejar afuera a quien ya lo tenga guardado.
+                </p>
               </div>
               <div className="form-group">
                 <label className="form-label">Mensaje de bienvenida</label>
-                <textarea className="form-input" value={form.welcomeMessage || ''} onChange={e => setForm({ ...form, welcomeMessage: e.target.value })} />
+                <textarea className="form-input" value={form.welcomeMessage || ''} onChange={e => editar({ welcomeMessage: e.target.value })} />
               </div>
             </div>
           </div>
@@ -97,15 +129,15 @@ export default function SettingsPage() {
               <div className="form-group">
                 <label className="form-label">Color primario</label>
                 <div className="flex items-center gap-sm">
-                  <input type="color" value={form.primaryColor} onChange={e => setForm({ ...form, primaryColor: e.target.value })} style={{ width: 48, height: 40, border: 'none', cursor: 'pointer' }} />
-                  <input className="form-input" value={form.primaryColor} onChange={e => setForm({ ...form, primaryColor: e.target.value })} style={{ maxWidth: 140 }} />
+                  <input type="color" value={form.primaryColor} onChange={e => editar({ primaryColor: e.target.value })} style={{ width: 48, height: 40, border: 'none', cursor: 'pointer' }} />
+                  <input className="form-input" value={form.primaryColor} onChange={e => editar({ primaryColor: e.target.value })} style={{ maxWidth: 140 }} />
                 </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Color secundario</label>
                 <div className="flex items-center gap-sm">
-                  <input type="color" value={form.secondaryColor} onChange={e => setForm({ ...form, secondaryColor: e.target.value })} style={{ width: 48, height: 40, border: 'none', cursor: 'pointer' }} />
-                  <input className="form-input" value={form.secondaryColor} onChange={e => setForm({ ...form, secondaryColor: e.target.value })} style={{ maxWidth: 140 }} />
+                  <input type="color" value={form.secondaryColor} onChange={e => editar({ secondaryColor: e.target.value })} style={{ width: 48, height: 40, border: 'none', cursor: 'pointer' }} />
+                  <input className="form-input" value={form.secondaryColor} onChange={e => editar({ secondaryColor: e.target.value })} style={{ maxWidth: 140 }} />
                 </div>
               </div>
             </div>
@@ -117,7 +149,7 @@ export default function SettingsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
                 <div className="form-group">
                   <label className="form-label">Moneda</label>
-                  <select className="form-input" value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
+                  <select className="form-input" value={form.currency} onChange={e => editar({ currency: e.target.value })}>
                     <option value="ARS">ARS - Peso Argentino</option>
                     <option value="USD">USD - Dólar</option>
                     <option value="CLP">CLP - Peso Chileno</option>
@@ -127,7 +159,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Intervalo de slots (min)</label>
-                  <select className="form-input" value={form.slotInterval} onChange={e => setForm({ ...form, slotInterval: parseInt(e.target.value) })}>
+                  <select className="form-input" value={form.slotInterval} onChange={e => editar({ slotInterval: parseInt(e.target.value) })}>
                     <option value={15}>15 minutos</option>
                     <option value={30}>30 minutos</option>
                     <option value={45}>45 minutos</option>
@@ -137,7 +169,7 @@ export default function SettingsPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Horas mínimas para cancelar</label>
-                <select className="form-input" value={form.minCancelHours} onChange={e => setForm({ ...form, minCancelHours: parseInt(e.target.value) })}>
+                <select className="form-input" value={form.minCancelHours} onChange={e => editar({ minCancelHours: parseInt(e.target.value) })}>
                   <option value={1}>1 hora</option>
                   <option value={2}>2 horas</option>
                   <option value={4}>4 horas</option>
@@ -147,11 +179,11 @@ export default function SettingsPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Teléfono</label>
-                <input className="form-input" value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                <input className="form-input" value={form.phone || ''} onChange={e => editar({ phone: e.target.value })} />
               </div>
               <div className="form-group">
                 <label className="form-label">Dirección</label>
-                <input className="form-input" value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })} />
+                <input className="form-input" value={form.address || ''} onChange={e => editar({ address: e.target.value })} />
               </div>
             </div>
           </div>
