@@ -79,7 +79,7 @@ await db.doc(`businesses/${A}/private/billing`).set({ debt: 5000, monthlyFee: 12
 await db.doc(`businesses/${A}/appointments/apt-mio`).set({ id:'apt-mio', businessId:A, userId:'x', clientName:'Mio', professionalId:'p1', appointmentDate:'2026-09-01', startTime:'12:00', endTime:'12:30', price:12000, status:'pendiente' });
 await db.doc(`businesses/${A}/appointments/apt-otro`).set({
   id: 'apt-otro', businessId: A, userId: 'otro-uid', clientName: 'Ajeno', clientPhone: '+54 11 9999',
-  professionalId: 'p1', serviceId: 's1', appointmentDate: '2026-09-01', startTime: '10:00', endTime: '10:30',
+  professionalId: 'p9', serviceId: 's1', appointmentDate: '2026-09-01', startTime: '10:00', endTime: '10:30',
   price: 12000, status: 'pendiente' });
 await db.doc(`businesses/${A}/professionals/p1`).set({ name: 'Martin', specialty: 'Barbero', isActive: true });
 await db.doc(`businesses/${A}/staffContacts/p1`).set({ phone: '+54 11 6666-7777', email: 'martin.personal@gmail.com' });

@@ -78,6 +78,8 @@ async function borrarUsuario(email) {
 }
 await borrarUsuario('nuevo@gmail.com');
 await borrarUsuario('sin-gmail@hotmail.com');
+await borrarUsuario('elegida@hotmail.com');
+await borrarUsuario('corta@hotmail.com');
 const pendientes = await db.collection('pendingAdmins').get();
 await Promise.all(pendientes.docs.map((d) => d.ref.delete()));
 
@@ -198,6 +200,19 @@ chequear('NO se restablece la de la plataforma', r.error === 'PERMISSION_DENIED'
 
 r = await llamar('resetOwnerPassword', tDuenoB1, { email: 'sin-gmail@hotmail.com' });
 chequear('un dueno NO restablece contrasenas', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+
+
+r = await llamar('createOwnerWithPassword', tPlataforma, { email: 'elegida@hotmail.com', businessId: B1, name: 'Con clave mia', password: 'BarberOS2026' });
+chequear('acepta la contrasena que elijo yo', r.ok?.password === 'BarberOS2026', JSON.stringify(r));
+
+const login2 = await fetch(`${AUTH}/accounts:signInWithPassword?key=fake-key`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'elegida@hotmail.com', password: 'BarberOS2026', returnSecureToken: true }),
+});
+chequear('y sirve para entrar', Boolean((await login2.json()).idToken), 'no entro');
+
+r = await llamar('createOwnerWithPassword', tPlataforma, { email: 'corta@hotmail.com', businessId: B1, name: 'x', password: '123' });
+chequear('rechaza una contrasena de menos de 6', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
 
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron\n`);
 process.exit(fallaron ? 1 : 0);
