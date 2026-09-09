@@ -267,9 +267,12 @@ export function AuthProvider({ children }) {
         'auth/user-disabled': 'Esta cuenta está deshabilitada.',
         'auth/too-many-requests': 'Demasiados intentos. Esperá unos minutos.',
         'auth/network-request-failed': 'Falló la conexión. Revisá tu internet.',
-        // Aparece si el proveedor de email/contraseña no está habilitado en la
-        // consola de Firebase (Authentication → Sign-in method).
-        'auth/operation-not-allowed': 'El ingreso con contraseña no está habilitado en Firebase.',
+        // Aparece si el proveedor de email/contraseña no está habilitado en
+        // Firebase → Authentication → Sign-in method. Es un error de
+        // configuración nuestro, no algo que la persona pueda resolver: se le
+        // da una salida en vez de un diagnóstico que no le sirve. El detalle
+        // real queda en el console.error de arriba.
+        'auth/operation-not-allowed': 'El ingreso con contraseña todavía no está disponible. Probá con Google, o escribinos.',
       };
       return { success: false, error: mensajes[error.code] || 'No se pudo iniciar sesión.' };
     }

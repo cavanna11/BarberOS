@@ -115,6 +115,10 @@ const FAQ = [
   },
 ];
 
+// Días de prueba que se ofrecen en la landing. Tiene que coincidir con lo que
+// cargues en "Días de prueba sin cargo" al dar de alta la barbería.
+const DIAS_DEMO = 10;
+
 function CTAWhatsApp({ children = 'Hablemos por WhatsApp', clase = 'btn-primary btn-lg' }) {
   return (
     <a href={LINK_WA} target="_blank" rel="noreferrer" className={`btn ${clase}`} style={{ textDecoration: 'none' }}>
@@ -237,9 +241,26 @@ export default function LandingPage() {
         <span className="eyebrow">• Precios</span>
         <h2 className="landing-h2">Sin letra chica</h2>
         <p className="landing-sub">
-          Mes a mes, sin permanencia. La diferencia entre planes es cuántos
-          recordatorios de WhatsApp manda el sistema y la capacidad de tu barbería.
+          Mes a mes, sin permanencia. La diferencia entre planes es la capacidad
+          de tu barbería: cuántos barberos y qué tan lejos llegan las
+          estadísticas.
         </p>
+
+        {/* La prueba sin cargo no se activa sola: la damos nosotros al preparar
+            la cuenta. Por eso el llamado es a escribir, no a un botón de alta. */}
+        <div className="card landing-demo">
+          <h3 style={{ marginBottom: 8 }}>
+            Probala {DIAS_DEMO} días sin pagar nada
+          </h3>
+          <p className="text-secondary" style={{ marginBottom: 16 }}>
+            Te dejamos la cuenta lista con tu equipo, tus servicios y tus
+            horarios cargados. Si a los {DIAS_DEMO} días no te sirve, no hacés
+            nada y se cierra sola. No pedimos tarjeta.
+          </p>
+          <CTAWhatsApp clase="btn-primary">
+            Pedir mi prueba de {DIAS_DEMO} días
+          </CTAWhatsApp>
+        </div>
 
         <div className="landing-grid-3">
           {PLANS.map((plan, i) => (
@@ -252,9 +273,19 @@ export default function LandingPage() {
               </div>
               <p className="landing-price-desc">{plan.description}</p>
               <ul className="landing-price-list">
-                {plan.features.map((feat) => (
-                  <li key={feat}>✓ {feat}</li>
-                ))}
+                {plan.features.map((feat) => {
+                  // Una feature puede venir como texto o como objeto con
+                  // `proximamente`: lo que todavía no anda se marca en vez de
+                  // venderse como disponible.
+                  const texto = typeof feat === 'string' ? feat : feat.texto;
+                  const pronto = typeof feat === 'object' && feat.proximamente;
+                  return (
+                    <li key={texto} style={pronto ? { opacity: 0.7 } : undefined}>
+                      {pronto ? '○' : '✓'} {texto}
+                      {pronto && <span className="badge badge-warning landing-soon">pronto</span>}
+                    </li>
+                  );
+                })}
               </ul>
               <CTAWhatsApp clase={i === 1 ? 'btn-primary btn-full' : 'btn-outline btn-full'}>
                 Lo quiero

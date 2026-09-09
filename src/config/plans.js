@@ -4,6 +4,12 @@
 // Fuente única de verdad. Antes las cuotas y los precios estaban hardcodeados
 // dentro del panel de super-admin; ahora el alta de barbería y el cambio de
 // plan leen de acá, así no se desincronizan.
+//
+// En `features`, una entrada puede ser texto suelto o `{ texto, proximamente }`.
+// Lo segundo se pinta con una etiqueta y sirve para no prometer en la landing
+// lo que todavía no anda: los avisos por WhatsApp esperan la aprobación de Meta
+// y la exportación de clientes no está construida. Vender eso como disponible
+// es la clase de cosa que te hace perder un cliente en la primera semana.
 
 export const PLANS = [
   {
@@ -14,7 +20,7 @@ export const PLANS = [
     description: 'Ideal para barberos independientes o duplas',
     maxBarbers: 2,
     features: [
-      '100 avisos por WhatsApp/mes',
+      { texto: '100 avisos por WhatsApp/mes', proximamente: true },
       'Hasta 2 barberos',
       'Turnos e historial sin límite',
       'Tu link público con tu marca',
@@ -29,7 +35,7 @@ export const PLANS = [
     description: 'El más elegido para barberías en crecimiento',
     maxBarbers: 5,
     features: [
-      '500 avisos por WhatsApp/mes',
+      { texto: '500 avisos por WhatsApp/mes', proximamente: true },
       'Hasta 5 barberos',
       'Turnos e historial sin límite',
       'Tu link público con tu marca',
@@ -46,13 +52,13 @@ export const PLANS = [
     description: 'Para barberías grandes o múltiples sillones',
     maxBarbers: null,
     features: [
-      '2000 avisos por WhatsApp/mes',
+      { texto: '2000 avisos por WhatsApp/mes', proximamente: true },
       'Barberos sin límite',
       'Turnos e historial sin límite',
       'Tu link público con tu marca',
       'Estadísticas y reportes avanzados',
       'Servicios sin turno en vivo (walk-in)',
-      'Exportación de base de clientes',
+      { texto: 'Exportación de base de clientes', proximamente: true },
       'Configuración inicial asistida',
     ],
   },

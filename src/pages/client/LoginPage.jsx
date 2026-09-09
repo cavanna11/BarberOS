@@ -83,8 +83,12 @@ export default function LoginPage() {
         <div style={{ textAlign: 'center', marginBottom: 'var(--space-md)' }}>
           <img src="/img/barberos-logo-full.svg" alt="BarberOS Logo" width="200" height="48" style={{ margin: '0 auto' }} />
         </div>
-        <h1>Reservar turno</h1>
-        <p className="auth-subtitle">Iniciá sesión para continuar</p>
+        <h1>{from ? 'Reservar turno' : 'Iniciar sesión'}</h1>
+        <p className="auth-subtitle">
+          {from
+            ? 'Entrá con tu cuenta para confirmar el turno'
+            : 'Entrá a tu panel, o al link de tu barbería para reservar'}
+        </p>
 
         {error && (
           <div
