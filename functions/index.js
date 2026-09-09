@@ -227,6 +227,23 @@ exports.applyPendingClaims = onCall(async (request) => {
 // ============================================================================
 
 /**
+ * Suma un mes a 'YYYY-MM-DD' sin saltearse meses.
+ *
+ * `d.setMonth(d.getMonth() + 1)` parece lo natural y está mal: el 31 de enero
+ * más un mes da "31 de febrero", que JS normaliza al 3 de marzo. Un negocio que
+ * vence el 31 se saltearía febrero entero. Acá el día se recorta al último del
+ * mes destino (31/01 → 28/02), que es lo que espera cualquiera que cobra.
+ */
+function sumarUnMes(fechaISO) {
+  const [y, m, d] = fechaISO.split('-').map(Number);
+  const anio = m === 12 ? y + 1 : y;
+  const mes = m === 12 ? 1 : m + 1;
+  const ultimoDia = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+  const dia = Math.min(d, ultimoDia);
+  return `${anio}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
+/**
  * Cobro mensual y suspensión por deuda. Todos los días a las 3 AM.
  *
  * Reemplaza al motor que hoy corre en el browser: ese solo se ejecuta cuando
@@ -236,55 +253,274 @@ exports.applyPendingClaims = onCall(async (request) => {
 exports.runBilling = onSchedule(
   { schedule: '0 3 * * *', timeZone: 'America/Argentina/Buenos_Aires' },
   async () => {
-    const today = new Date().toISOString().split('T')[0];
+    // La fecha del negocio, no la del servidor: a las 3 AM de Buenos Aires en
+    // UTC ya es otro día parte del año.
+    const today = hoyEnArgentina();
     const businesses = await db.collection('businesses').get();
-    const batch = db.batch();
-    let touched = 0;
 
-    for (const doc of businesses.docs) {
+    // Una sola lectura por lote en vez de un get() por negocio adentro del
+    // loop: con 200 barberías eran 200 viajes en serie.
+    const billingRefs = businesses.docs.map((d) => db.doc(`businesses/${d.id}/private/billing`));
+    const billingSnaps = [];
+    for (let i = 0; i < billingRefs.length; i += 300) {
+      const trozo = billingRefs.slice(i, i + 300);
+      if (trozo.length) billingSnaps.push(...(await db.getAll(...trozo)));
+    }
+
+    // Firestore corta un batch en 500 operaciones y falla el batch ENTERO al
+    // pasarse: con un solo batch, a partir de ~250 negocios no se cobraba nada
+    // y encima el error no decía cuál era el problema real.
+    const LIMITE = 450;
+    const escrituras = [];
+
+    businesses.docs.forEach((doc, i) => {
       const biz = doc.data();
-      const billingRef = db.doc(`businesses/${doc.id}/private/billing`);
-      const billingSnap = await billingRef.get();
-      const billing = billingSnap.exists ? billingSnap.data() : {};
+      const billingSnap = billingSnaps[i];
+      const billing = billingSnap && billingSnap.exists ? billingSnap.data() : {};
 
       let debt = billing.debt || 0;
       let nextBillingDate = billing.nextBillingDate;
       let changed = false;
 
       if (!nextBillingDate) {
-        const d = new Date();
-        d.setMonth(d.getMonth() + 1);
-        nextBillingDate = d.toISOString().split('T')[0];
+        nextBillingDate = sumarUnMes(today);
         changed = true;
       }
 
-      // Si pasaron varios vencimientos sin pago, se acumulan todos.
-      while (today > nextBillingDate) {
+      // Si pasaron varios vencimientos sin pago, se acumulan todos. El tope de
+      // vueltas es una red por si nextBillingDate viniera corrupto: sin él, un
+      // valor raro deja la función girando hasta el timeout.
+      let vueltas = 0;
+      while (today > nextBillingDate && vueltas < 120) {
         debt += billing.monthlyFee || 0;
-        const d = new Date(nextBillingDate + 'T00:00:00');
-        d.setMonth(d.getMonth() + 1);
-        nextBillingDate = d.toISOString().split('T')[0];
+        nextBillingDate = sumarUnMes(nextBillingDate);
         changed = true;
+        vueltas++;
+      }
+      if (vueltas >= 120) {
+        console.error(`[billing] ${doc.id}: nextBillingDate sospechoso (${billing.nextBillingDate}), se corta.`);
       }
 
       if (changed) {
-        batch.set(billingRef, { debt, nextBillingDate }, { merge: true });
-        touched++;
+        escrituras.push({ ref: billingSnap.ref, datos: { debt, nextBillingDate }, merge: true });
       }
 
       // `isFrozen` vive en el documento público porque las Rules y la página de
       // reservas lo necesitan para bloquear el link.
       const shouldFreeze = debt > 0;
       if (Boolean(biz.isFrozen) !== shouldFreeze) {
-        batch.update(doc.ref, { isFrozen: shouldFreeze });
-        touched++;
+        escrituras.push({ ref: doc.ref, datos: { isFrozen: shouldFreeze }, merge: true });
+      }
+    });
+
+    for (let i = 0; i < escrituras.length; i += LIMITE) {
+      const batch = db.batch();
+      for (const e of escrituras.slice(i, i + LIMITE)) {
+        batch.set(e.ref, e.datos, { merge: true });
+      }
+      await batch.commit();
+    }
+
+    console.log(`[billing] ${today}: ${escrituras.length} cambios sobre ${businesses.size} negocios.`);
+  }
+);
+
+// ============================================================================
+// 4. RESERVA DE TURNOS
+// ============================================================================
+// Por qué existe: hasta acá el turno lo escribía el browser directo a Firestore
+// y las Rules solo miraban userId, businessId y status. Todo lo demás venía del
+// cliente y se le creía. Verificado contra el emulador, se podía crear un turno
+// con price 0, con fecha en 2020, con un profesional inexistente y —lo peor—
+// en una barbería SUSPENDIDA por falta de pago, que es justamente la palanca de
+// cobro.
+//
+// El motor de disponibilidad vive en el browser y ahí seguirá (es lo que pinta
+// la grilla), pero no puede ser la única autoridad: cualquiera con la consola
+// abierta lo saltea. Acá se revalida todo del lado del servidor.
+//
+// El precio y la duración NUNCA se aceptan del cliente: salen del documento del
+// servicio.
+
+/** '09:30' → 570. Igual que utils/dateUtils.js en el front. */
+function timeToMinutes(t) {
+  const [h, m] = String(t).split(':').map(Number);
+  return h * 60 + m;
+}
+
+/** 570 → '09:30'. */
+function minutesToTime(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * 0=Lunes … 6=Domingo. OJO: NO es la convención de JS (0=Domingo).
+ * Tiene que coincidir clavado con getLocalDayOfWeek de utils/dateUtils.js, que
+ * hace el mismo remapeo — si no, los horarios cargados no matchean ningún día.
+ * Se toma el mediodía UTC para que el string de fecha no se corra de día.
+ */
+function diaDeLaSemana(fechaISO) {
+  const d = new Date(`${fechaISO}T12:00:00Z`).getUTCDay();
+  return d === 0 ? 6 : d - 1;
+}
+
+const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+const FORMATO_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Hoy en Buenos Aires, como 'YYYY-MM-DD'. No sirve el hoy del servidor (UTC). */
+function hoyEnArgentina() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+exports.createAppointment = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión para reservar.');
+  }
+
+  const {
+    businessId, professionalId, serviceId, appointmentDate, startTime,
+    clientName = '', clientPhone = '', clientEmail = '', notes = '',
+  } = request.data || {};
+
+  if (!businessId || !professionalId || !serviceId || !appointmentDate || !startTime) {
+    throw new HttpsError('invalid-argument', 'Faltan datos del turno.');
+  }
+  if (!FORMATO_FECHA.test(appointmentDate) || !FORMATO_HORA.test(startTime)) {
+    throw new HttpsError('invalid-argument', 'Fecha u hora con formato inválido.');
+  }
+  if (appointmentDate < hoyEnArgentina()) {
+    throw new HttpsError('invalid-argument', 'No se puede reservar en una fecha pasada.');
+  }
+
+  const bizRef = db.doc(`businesses/${businessId}`);
+  const [bizSnap, srvSnap, profSnap] = await Promise.all([
+    bizRef.get(),
+    db.doc(`businesses/${businessId}/services/${serviceId}`).get(),
+    db.doc(`businesses/${businessId}/professionals/${professionalId}`).get(),
+  ]);
+
+  if (!bizSnap.exists) throw new HttpsError('not-found', 'La barbería no existe.');
+  const negocio = bizSnap.data();
+
+  // La suspensión por deuda tiene que cortar la reserva, no solo esconder la UI.
+  if (negocio.isFrozen === true) {
+    throw new HttpsError('failed-precondition', 'Esta barbería no está tomando turnos en este momento.');
+  }
+  if (!srvSnap.exists || srvSnap.data().isActive === false) {
+    throw new HttpsError('not-found', 'El servicio no existe o no está disponible.');
+  }
+  if (!profSnap.exists || profSnap.data().isActive === false) {
+    throw new HttpsError('not-found', 'El profesional no existe o no está disponible.');
+  }
+
+  const servicio = srvSnap.data();
+  const duracion = Number(servicio.durationMinutes);
+  const precio = Number(servicio.price);
+  if (!Number.isFinite(duracion) || duracion <= 0) {
+    throw new HttpsError('failed-precondition', 'El servicio no tiene una duración válida.');
+  }
+
+  // ¿Este profesional hace este servicio?
+  const vinculo = await db.collection(`businesses/${businessId}/professionalServices`)
+    .where('professionalId', '==', professionalId)
+    .where('serviceId', '==', serviceId)
+    .limit(1).get();
+  if (vinculo.empty) {
+    throw new HttpsError('failed-precondition', 'Ese profesional no realiza el servicio elegido.');
+  }
+
+  // ── El turno tiene que caer dentro del horario ────────────────────────────
+  const dow = diaDeLaSemana(appointmentDate);
+  const inicio = timeToMinutes(startTime);
+  const fin = inicio + duracion;
+
+  const horarios = await db.collection(`businesses/${businessId}/schedules`)
+    .where('professionalId', '==', professionalId)
+    .where('dayOfWeek', '==', dow)
+    .limit(1).get();
+  const horario = horarios.empty ? null : horarios.docs[0].data();
+  if (!horario || horario.isActive === false || !horario.startTime || !horario.endTime) {
+    throw new HttpsError('failed-precondition', 'El profesional no trabaja ese día.');
+  }
+
+  let desde = timeToMinutes(horario.startTime);
+  let hasta = timeToMinutes(horario.endTime);
+
+  // El horario del negocio recorta el del profesional, igual que en el motor
+  // del front.
+  const diaNegocio = (negocio.businessHours || []).find((b) => b.dayOfWeek === dow);
+  if (diaNegocio) {
+    if (diaNegocio.isActive === false) {
+      throw new HttpsError('failed-precondition', 'La barbería no abre ese día.');
+    }
+    if (diaNegocio.startTime && diaNegocio.endTime) {
+      desde = Math.max(desde, timeToMinutes(diaNegocio.startTime));
+      hasta = Math.min(hasta, timeToMinutes(diaNegocio.endTime));
+    }
+  }
+
+  if (inicio < desde || fin > hasta) {
+    throw new HttpsError('failed-precondition', 'Ese horario está fuera del horario de atención.');
+  }
+
+  if (horario.breakStart && horario.breakEnd) {
+    const dStart = timeToMinutes(horario.breakStart), dEnd = timeToMinutes(horario.breakEnd);
+    if (inicio < dEnd && fin > dStart) {
+      throw new HttpsError('failed-precondition', 'Ese horario cae en el descanso del profesional.');
+    }
+  }
+
+  // ── Solapamiento, en transacción ──────────────────────────────────────────
+  // Va en transacción y no en un get suelto porque dos personas mirando la
+  // misma grilla pueden apretar "confirmar" con milisegundos de diferencia: sin
+  // esto, los dos leen "libre" y los dos escriben.
+  const agenda = db.collection(`businesses/${businessId}/appointments`);
+  const ref = agenda.doc();
+
+  await db.runTransaction(async (tx) => {
+    const delDia = await tx.get(
+      agenda.where('appointmentDate', '==', appointmentDate)
+            .where('professionalId', '==', professionalId)
+    );
+
+    for (const d of delDia.docs) {
+      const a = d.data();
+      if (a.status !== 'pendiente' && a.status !== 'confirmada') continue;
+      const aIni = timeToMinutes(a.startTime);
+      const aFin = a.endTime ? timeToMinutes(a.endTime) : aIni;
+      if (inicio < aFin && fin > aIni) {
+        throw new HttpsError('already-exists', 'Ese horario ya fue tomado. Elegí otro.');
       }
     }
 
-    if (touched > 0) await batch.commit();
-    console.log(`[billing] ${today}: ${touched} cambios sobre ${businesses.size} negocios.`);
-  }
-);
+    tx.set(ref, {
+      id: ref.id,
+      businessId,
+      userId: request.auth.uid,
+      professionalId,
+      serviceId,
+      appointmentDate,
+      startTime,
+      endTime: minutesToTime(fin),
+      // Del servicio, no del cliente.
+      price: precio,
+      durationMinutes: duracion,
+      serviceName: servicio.name || '',
+      clientName: String(clientName).slice(0, 120),
+      clientPhone: String(clientPhone).slice(0, 40),
+      clientEmail: String(clientEmail).slice(0, 120),
+      notes: String(notes).slice(0, 500),
+      status: 'pendiente',
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { status: 'created', id: ref.id, price: precio, endTime: minutesToTime(fin) };
+});
 
 // ============================================================================
 // 3. RECORDATORIOS DE WHATSAPP (esqueleto)

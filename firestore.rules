@@ -199,8 +199,13 @@ service cloud.firestore {
                      || (signedIn() && resource.data.businessId == claims().get('businessId', ''));
 
       // Lo abre la barbería (o vos en su nombre, al preparar la cuenta).
+      //
+      // El `!= ''` no sobra: el default de claims().get() para alguien SIN claim
+      // es la cadena vacía, así que un cliente cualquiera mandando
+      // businessId: '' cumplía la igualdad y podía crear tickets basura.
       allow create: if isPlatform()
                        || (signedIn()
+                           && claims().get('businessId', '') != ''
                            && request.resource.data.businessId == claims().get('businessId', ''));
 
       // Cerrar, reabrir, marcar leído. Nadie borra tickets: quedan de historial.

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useBooking } from '../../contexts/BookingContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
-import { createAppointment } from '../../lib/repository';
+import { createAppointment as createAppointmentDirecto } from '../../lib/repository';
+import { createAppointment as createAppointmentValidado, esFunctionNoDesplegada } from '../../lib/functions';
 import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/availabilityEngine';
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
 
@@ -374,7 +375,10 @@ export default function BookingPage() {
     return appointments.some(app => 
       app.userId === user.id && 
       app.appointmentDate === date &&
-      app.status !== 'cancelado'
+      // El estado es 'cancelada'. Con 'cancelado' (que no existe) la comparación
+      // nunca era falsa, así que un turno ya cancelado seguía bloqueando la
+      // reserva de otro el mismo día.
+      app.status !== 'cancelada'
     );
   }, [user, date, appointments]);
 
@@ -454,7 +458,35 @@ export default function BookingPage() {
     try {
       // El turno se escribe en Firestore: desde este momento lo ve el barbero
       // en su panel, en su propio dispositivo.
-      const id = await createAppointment(businessId, datos);
+      //
+      // Va por la Cloud Function, que revalida todo del lado del servidor: el
+      // motor de disponibilidad de acá arriba pinta la grilla, pero cualquiera
+      // con la consola abierta lo saltea. El precio sale del servicio, no de
+      // este formulario.
+      //
+      // El fallback existe SOLO hasta que se despliegue Blaze: sin él, publicar
+      // esta versión dejaría la reserva rota hasta el deploy. Sacarlo apenas
+      // `setBusinessAdmin` deje de devolver 404 (ver CLAUDE.md).
+      let id;
+      try {
+        const res = await createAppointmentValidado({
+          businessId,
+          professionalId,
+          serviceId,
+          appointmentDate: date,
+          startTime: timeSlot.startTime,
+          clientName: user.name,
+          clientPhone: personalInfo.phone,
+          clientEmail: user.email,
+        });
+        id = res.id;
+        datos.price = res.price;
+        datos.endTime = res.endTime;
+      } catch (errFn) {
+        if (!esFunctionNoDesplegada(errFn)) throw errFn;
+        console.warn('[BookingPage] Functions sin desplegar: se reserva sin validación de servidor.');
+        id = await createAppointmentDirecto(businessId, datos);
+      }
       dispatch({ type: 'RESET' });
       navigate(`/${slug}/confirmacion`, {
         state: { appointment: { ...datos, id, businessId, status: 'pendiente' } },

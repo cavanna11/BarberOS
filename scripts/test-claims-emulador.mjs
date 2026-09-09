@@ -4,7 +4,9 @@
 // Correr con los emuladores arriba:
 //   node test-claims.mjs
 
-import admin from 'firebase-admin';
+import { initializeApp } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
 process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
@@ -14,9 +16,9 @@ const REGION = 'southamerica-east1';
 const FN = (n) => `http://127.0.0.1:5001/${PROJECT}/${REGION}/${n}`;
 const AUTH = `http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1`;
 
-admin.initializeApp({ projectId: PROJECT });
-const db = admin.firestore();
-const auth = admin.auth();
+initializeApp({ projectId: PROJECT });
+const db = getFirestore();
+const auth = getAuth();
 
 // ── helpers ────────────────────────────────────────────────────────────────
 

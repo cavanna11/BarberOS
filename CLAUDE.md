@@ -126,14 +126,31 @@ curl -s -o /dev/null -w "%{http_code}\n" https://southamerica-east1-barberos-1d6
 
 `404` = sigue bloqueado. `400`/`401` = ya está desplegada.
 
-**El cableado del frontend ya está hecho y probado.** `NewBusinessModal`,
-`AdminsPage` y `AuthContext` ya llaman a las functions vía `src/lib/functions.js`.
-Falta solo el deploy:
+**Todo el frontend ya está cableado y probado contra el emulador.** Falta el
+deploy, y después tres pasos que NO se pueden hacer antes.
 
 ```bash
 cd functions && npm install && cd ..
 firebase deploy --only functions
+firebase deploy --only firestore:indexes
 ```
+
+### Checklist post-Blaze, en este orden
+
+1. **Desplegar** (arriba) y verificar que `setBusinessAdmin` deje de dar 404.
+2. **Cerrar la escritura directa de turnos.** En `firestore.rules`, el
+   `allow create` de `appointments` pasa a `if false`: desde ese momento el
+   único que crea turnos es el Admin SDK vía `createAppointment`.
+   **No lo hagas antes del paso 1** — dejarías la reserva rota.
+3. **Sacar el fallback de `BookingPage`.** El bloque `catch (errFn)` que reserva
+   directo si la function no está desplegada existe solo para que publicar en
+   Vercel antes del deploy no rompa nada. Con Blaze activo sobra, y además
+   saltea la validación.
+4. **Sacar el fallback de permisos de `AuthContext`.** El propio archivo lo dice:
+   es transitorio y falsificable desde el browser.
+
+Después del paso 3, en `scripts/auditar-rules-emulador.mjs` el caso
+"cliente reserva con price 0" pasa a esperar `denegado`.
 
 Costo esperado: cercano a $0. La capa gratuita de Blaze es la misma que Spark.
 **Blaze no tiene cargo base mensual**: si la consola pide ~US$10, es la
@@ -162,6 +179,39 @@ Para verificarlo sin tocar producción (20 casos, incluidos todos los rechazos):
 firebase emulators:start --only auth,firestore,functions
 node scripts/test-claims-emulador.mjs
 ```
+
+Y para las Security Rules, 40 casos de aislamiento (dos barberías, dueño,
+barbero, cliente, anónimo) contra el emulador:
+
+```bash
+node scripts/auditar-rules-emulador.mjs
+```
+
+Pasan 38. Los 2 que "fallan" son a propósito: el precio del turno (lo resuelve
+`createAppointment`, y el caso queda esperando `denegado` recién después del
+paso 3 del checklist) y el alcance del barbero, que sigue sin decidirse.
+
+
+### Validación de turnos (`createAppointment`)
+
+El motor de disponibilidad del browser pinta la grilla, pero no puede ser la
+única autoridad: con la consola abierta se saltea. Verificado contra el
+emulador, escribiendo directo a Firestore se podía crear un turno con `price: 0`,
+con fecha en 2020, con un profesional inexistente y **en una barbería suspendida
+por deuda** — que es justamente la palanca de cobro.
+
+`createAppointment` revalida todo del lado del servidor. El precio y la duración
+salen del documento del servicio, nunca del cliente. El solapamiento se chequea
+dentro de una transacción, porque dos personas mirando la misma grilla pueden
+confirmar con milisegundos de diferencia.
+
+```bash
+node scripts/test-reservas-emulador.mjs
+```
+
+18 casos: precio falsificado, fecha pasada, profesional y servicio inexistentes,
+servicio que ese profesional no hace, fuera de horario, en el descanso, día que
+no trabaja, doble reserva, negocio suspendido y sin sesión.
 
 ---
 
@@ -252,6 +302,10 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
   Firestore: no es sesión de Firebase, las Rules lo rechazan.
 - **La consola del navegador acumula errores entre navegaciones.** Antes de
   diagnosticar, recargar limpio.
+- **La carpeta está anidada: `codesSYNC/BarberOS/BarberOS`.** `firebase.json`
+  vive en la de adentro. Corrido desde la de afuera, cualquier `firebase deploy`
+  falla con *"Not in a Firebase app directory"*. Verificá con `ls firebase.json`
+  antes de desplegar.
 - **Los reemplazos por script fallan con CRLF.** Varios archivos tienen finales
   de línea Windows; usar la herramienta Edit o verificar siempre el resultado.
 - **En Rules, `request.query.limit` es `null` si la query no puso límite**, y
@@ -279,17 +333,6 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
   `src/lib/firebase.js` la consola puede mostrar errores de la versión anterior
   (se reconocen por el `?t=` en la URL del stack). Abrir pestaña nueva antes de
   diagnosticar; `vite.config.js` sí reinicia el server solo.
-
----
-
-## ⚠️ Reglas cambiadas y sin desplegar
-
-`firestore.rules` tiene el arreglo del listado de `appointments` (ver Trampas).
-**Producción todavía corre la versión vieja.** No necesita Blaze:
-
-```bash
-firebase deploy --only firestore:rules
-```
 
 ---
 
@@ -337,10 +380,20 @@ curl -s "https://barberos.sacia.tech$B" | grep -c "TEXTO_A_BUSCAR"
    `FloatingActionWidget.jsx` (generados por Antigravity, sin auditar)
 6. Monitoreo global de turnos: hoy la pestaña del panel global solo muestra el
    negocio activo. Necesita `collectionGroup` + regla nueva.
-7. Validar el precio del turno en las Rules — hoy se puede crear con `price: 0`.
-   Irrelevante mientras se cobre en el local, **crítico con señas de Mercado Pago**
-8. Subir logo por barbería (Firebase Storage)
-9. PWA
+7. ~~Validar el precio del turno~~ — **resuelto por `createAppointment`**, que
+   además valida fecha, profesional, servicio, horario, solapamiento y negocio
+   suspendido. Queda pendiente solo cerrar el `allow create` directo: es el
+   paso 2 del checklist post-Blaze
+8. Alcance del barbero. La landing promete "cada barbero ve solo sus propios
+   turnos", pero eso lo hace **solo la UI**: las Rules dan a cualquier
+   `isBusinessStaff` lectura y escritura sobre toda la agenda del negocio.
+   Verificado: un barbero puede editar el turno de otro. No es fuga entre
+   barberías y el empleado es de confianza, pero no es lo que se promete.
+   Apretarlo exige revisar antes qué vistas del panel necesitan la agenda
+   completa (`DashboardPage` calcula estadísticas sobre todos los turnos), así
+   que no es un cambio de una línea
+9. Subir logo por barbería (Firebase Storage)
+10. PWA
 
 ---
 

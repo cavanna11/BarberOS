@@ -70,6 +70,24 @@ export function revokeBusinessAdmin({ email, businessId }) {
 }
 
 /**
+ * Reserva un turno con validación del lado del servidor.
+ *
+ * El precio y la hora de fin NO se mandan: los calcula la función a partir del
+ * documento del servicio. Tampoco se manda el estado. Todo lo que el cliente
+ * podía falsificar escribiendo directo a Firestore se decide del lado del
+ * servidor: negocio suspendido, fecha pasada, profesional que no hace ese
+ * servicio, horario fuera de agenda y solapamiento con otro turno.
+ *
+ * Devuelve { status: 'created', id, price, endTime }.
+ */
+export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '' }) {
+  return llamar('createAppointment', {
+    businessId, professionalId, serviceId, appointmentDate, startTime,
+    clientName, clientPhone, clientEmail, notes,
+  });
+}
+
+/**
  * Reclama el permiso que quedó pendiente para el mail de la sesión actual.
  * Se llama una vez después del login. Devuelve `{ status: 'none' }` si no había
  * nada pendiente, que es el caso normal y no es un error.
