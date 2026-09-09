@@ -1,7 +1,7 @@
 // ============================================
 // Motor de Disponibilidad
 // ============================================
-import { timeToMinutes, addMinutes, getLocalDayOfWeek, isToday } from './dateUtils';
+import { timeToMinutes, getLocalDayOfWeek, isToday } from './dateUtils';
 
 /**
  * Calcula los slots disponibles para un profesional+servicio en una fecha.

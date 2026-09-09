@@ -4,7 +4,7 @@ import { PLANS, DEFAULT_PLAN_ID, getPlan, DEFAULT_BUSINESS_HOURS } from '../../c
 import { isPlatformOwner } from '../../config/platform';
 import { slugify, isReservedSlug } from '../../utils/slug';
 import { createBusiness, isSlugAvailable } from '../../lib/repository';
-import { setBusinessAdmin } from '../../lib/functions';
+import { setBusinessAdmin, createOwnerWithPassword } from '../../lib/functions';
 
 // Onboarding manual: el cliente se contacta, se cierra la venta, y la cuenta se
 // prepara desde acá. No hay registro self-service a propósito.
@@ -31,6 +31,9 @@ const EMPTY_FORM = {
   whatsapp: '',
   // 0 = cuenta que se cobra desde el arranque. Mayor a 0 = cuenta de prueba.
   trialDays: 0,
+  // 'google' = entra con su Gmail. 'password' = le creamos usuario y contraseña,
+  // para el barbero que no usa Gmail o no quiere mezclarlo con lo personal.
+  accesoPor: 'google',
 };
 
 /** Primer cobro un mes después del alta, para que no arranque con deuda. */
@@ -176,18 +179,26 @@ export default function NewBusinessModal({ onClose, onCreated }) {
       // así que si esto falla el negocio queda creado igual — pero el dueño no
       // va a poder entrar, y eso hay que decirlo en la pantalla de entrega en
       // vez de dejar que lo descubra el cliente.
-      let claims = { ok: false, status: null, error: null };
+      let claims = { ok: false, status: null, error: null, password: null };
       try {
-        const res = await setBusinessAdmin({
-          email: ownerAdmin.email,
-          businessId,
-          role: 'owner',
-          name: ownerAdmin.name,
-        });
-        claims = { ok: true, status: res?.status ?? null, error: null };
+        const res = form.accesoPor === 'password'
+          ? await createOwnerWithPassword({
+              email: ownerAdmin.email,
+              businessId,
+              name: ownerAdmin.name,
+              role: 'owner',
+            })
+          : await setBusinessAdmin({
+              email: ownerAdmin.email,
+              businessId,
+              role: 'owner',
+              name: ownerAdmin.name,
+            });
+        // La contraseña llega UNA sola vez: Firebase guarda el hash, no el texto.
+        claims = { ok: true, status: res?.status ?? null, error: null, password: res?.password ?? null };
       } catch (err) {
         console.error('[NewBusinessModal] No se pudieron asignar los permisos:', err);
-        claims = { ok: false, status: null, error: err.message };
+        claims = { ok: false, status: null, error: err.message, password: null };
       }
 
       setCreated({ business: { ...business, id: businessId, ...billing }, ownerAdmin, claims });
@@ -236,6 +247,29 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 Entra en <strong>/login</strong> con Google usando{' '}
                 <strong>{created.ownerAdmin.email}</strong>
               </div>
+              {created.claims?.password && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: '10px 12px',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--primary)',
+                    borderRadius: 8,
+                  }}
+                >
+                  <div className="text-xs text-muted" style={{ marginBottom: 4 }}>
+                    CONTRASEÑA — se muestra una sola vez
+                  </div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 18, letterSpacing: 1 }}>
+                    {created.claims.password}
+                  </div>
+                  <p className="text-xs text-muted" style={{ marginTop: 6, marginBottom: 0 }}>
+                    Copiala ahora: no queda guardada en ningún lado. Si se pierde
+                    hay que generar otra.
+                  </p>
+                </div>
+              )}
+
               {created.claims?.ok && created.claims.status === 'pending' && (
                 <p className="text-xs text-muted" style={{ marginTop: 4 }}>
                   Esa cuenta nunca entró a BarberOS. El permiso queda anotado y se
@@ -403,6 +437,25 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 </div>
               </label>
             ))}
+          </div>
+
+          {/* Cómo entra el dueño */}
+          <div className="form-group" style={{ marginTop: 'var(--space-md)' }}>
+            <label className="form-label">Cómo entra al panel</label>
+            <select
+              className="form-input"
+              value={form.accesoPor}
+              onChange={(e) => set({ accesoPor: e.target.value })}
+              style={{ maxWidth: 320 }}
+            >
+              <option value="google">Con su cuenta de Google</option>
+              <option value="password">Con usuario y contraseña que le damos</option>
+            </select>
+            <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+              {form.accesoPor === 'password'
+                ? 'Le generamos una contraseña al crear la cuenta. Se muestra una sola vez, así que copiala antes de cerrar.'
+                : 'Entra con el Gmail de arriba. No hace falta que le pasemos nada.'}
+            </p>
           </div>
 
           {/* Prueba gratis */}

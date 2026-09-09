@@ -403,7 +403,7 @@ export default function BookingPage() {
       slotInterval: business.slotInterval,
       businessHours: business.businessHours,
     });
-  }, [professionalId, serviceId, date, schedules, appointments, business]);
+  }, [professionalId, serviceId, date, schedules, appointments, services, professionalServices, business]);
 
   if (blockedReason) {
     return <BookingUnavailable reason={blockedReason} business={business} />;

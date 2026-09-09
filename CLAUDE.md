@@ -127,6 +127,26 @@ fallback de permisos de `AuthContext`. Se dejó a propósito hasta que un dueño
 real entre con claims de verdad — sacarlo antes es quedarse sin red por una
 mejora que no cambia la seguridad (las Rules ya exigen el claim real).
 
+### Entrar sin Gmail
+
+En el alta se elige **cómo entra el dueño**: con su cuenta de Google, o con un
+usuario y contraseña que genera la plataforma. Lo segundo es para el barbero que
+no usa Gmail o no quiere mezclarlo con lo personal.
+
+`createOwnerWithPassword` crea la cuenta y devuelve la contraseña **una sola
+vez**: Firebase guarda el hash, no el texto. Si se pierde, se genera otra con
+`resetOwnerPassword` (que además corta las sesiones abiertas con la vieja).
+
+Crear cuentas es exclusivo de la plataforma. Un dueño puede dar de alta barberos
+con `setBusinessAdmin`, pero no fabricar usuarios.
+
+**Requiere habilitar el proveedor** en Firebase → Authentication → Sign-in
+method → Email/Password. Sin eso, el login con contraseña falla con
+`auth/operation-not-allowed` aunque la cuenta exista.
+
+Los permisos no cambian en nada: son los mismos custom claims, y no saben con
+qué proveedor entró la persona.
+
 ### Cuentas de prueba
 
 En el alta hay un campo **"Días de prueba sin cargo"**. Con un valor mayor a

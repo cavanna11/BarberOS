@@ -88,6 +88,23 @@ export function createAppointment({ businessId, professionalId, serviceId, appoi
 }
 
 /**
+ * Crea la cuenta de un dueño con email y contraseña, y le asigna los permisos.
+ * Para el barbero que no usa Gmail o no quiere mezclarlo con lo personal.
+ *
+ * Devuelve `{ status: 'created', email, password }`. **La contraseña viene una
+ * sola vez**: Firebase guarda solo su hash, así que si se pierde hay que
+ * generar otra con `resetOwnerPassword`.
+ */
+export function createOwnerWithPassword({ email, businessId, name = '', role = 'owner', professionalId = null }) {
+  return llamar('createOwnerWithPassword', { email, businessId, name, role, professionalId });
+}
+
+/** Genera una contraseña nueva para quien perdió la suya. Corta sus sesiones abiertas. */
+export function resetOwnerPassword({ email }) {
+  return llamar('resetOwnerPassword', { email });
+}
+
+/**
  * Reclama el permiso que quedó pendiente para el mail de la sesión actual.
  * Se llama una vez después del login. Devuelve `{ status: 'none' }` si no había
  * nada pendiente, que es el caso normal y no es un error.

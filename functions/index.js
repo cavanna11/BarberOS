@@ -549,6 +549,135 @@ exports.createAppointment = onCall(async (request) => {
 });
 
 // ============================================================================
+// 5. ALTA CON CONTRASEÑA
+// ============================================================================
+// El login con Google alcanza para quien ya tiene Gmail, pero deja afuera al
+// barbero que no lo usa o no quiere mezclarlo con lo personal. Como el
+// onboarding es manual, la plataforma le crea la cuenta y le entrega una
+// contraseña.
+//
+// Solo el Admin SDK puede crear un usuario sin que la persona se registre sola,
+// así que esto no puede vivir en el browser.
+
+const { randomBytes } = require('crypto');
+
+// Sin caracteres que se confunden al dictarlos por teléfono o WhatsApp:
+// nada de O/0, l/1/I. La contraseña se va a leer en voz alta más de una vez.
+const ALFABETO = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** Contraseña aleatoria de 12 caracteres, con entropía de crypto y no de Math.random. */
+function generarPassword(largo = 12) {
+  const bytes = randomBytes(largo);
+  let out = '';
+  for (let i = 0; i < largo; i++) out += ALFABETO[bytes[i] % ALFABETO.length];
+  return out;
+}
+
+/**
+ * Crea la cuenta de un dueño con email y contraseña, y le asigna los claims.
+ *
+ * Devuelve la contraseña UNA sola vez: no queda guardada en ningún lado (Firebase
+ * solo guarda su hash), así que si se pierde hay que generar otra con
+ * `resetOwnerPassword`. Eso es a propósito — una contraseña recuperable en texto
+ * plano es una contraseña filtrada esperando su turno.
+ */
+exports.createOwnerWithPassword = onCall(async (request) => {
+  const { email, businessId, name = '', role = 'owner', professionalId = null } = request.data || {};
+
+  if (!email || !businessId || !['owner', 'admin'].includes(role)) {
+    throw new HttpsError('invalid-argument', 'Faltan email, businessId o role válido.');
+  }
+
+  // Crear cuentas es de la plataforma, no del tenant: el dueño de una barbería
+  // puede dar de alta barberos (setBusinessAdmin) pero no fabricar usuarios.
+  if (!request.auth || request.auth.token.platform !== true) {
+    throw new HttpsError('permission-denied', 'Solo la plataforma puede crear cuentas.');
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+
+  const businessSnap = await db.doc(`businesses/${businessId}`).get();
+  if (!businessSnap.exists) {
+    throw new HttpsError('not-found', `El negocio ${businessId} no existe.`);
+  }
+
+  // Si ya existe, no se le pisa la contraseña: puede ser alguien que ya venía
+  // entrando con Google, y cambiársela en silencio lo dejaría afuera.
+  try {
+    await getAuth().getUserByEmail(normalizedEmail);
+    throw new HttpsError(
+      'already-exists',
+      'Ya existe una cuenta con ese mail. Usá "Agregar administrador" para darle acceso, o restablecele la contraseña.'
+    );
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    if (err.code !== 'auth/user-not-found') throw err;
+  }
+
+  const password = generarPassword();
+  const user = await getAuth().createUser({
+    email: normalizedEmail,
+    password,
+    displayName: name || undefined,
+    emailVerified: true, // la cuenta la crea la plataforma, no hay mail que verificar
+  });
+
+  await getAuth().setCustomUserClaims(user.uid, { businessId, role, professionalId });
+
+  await db.doc(`businesses/${businessId}/admins/${normalizedEmail}`).set({
+    email: normalizedEmail,
+    name,
+    role,
+    businessId,
+    professionalId,
+    addedAt: FieldValue.serverTimestamp(),
+  });
+
+  // Por si quedó un permiso anotado de antes: ya no hace falta, se aplicó acá.
+  await db.doc(`pendingAdmins/${normalizedEmail}`).delete().catch(() => {});
+
+  return { status: 'created', uid: user.uid, email: normalizedEmail, password };
+});
+
+/**
+ * Genera una contraseña nueva para alguien que ya tiene cuenta. Para cuando el
+ * barbero la pierde y hay que pasarle otra por WhatsApp.
+ */
+exports.resetOwnerPassword = onCall(async (request) => {
+  const { email } = request.data || {};
+  if (!email) throw new HttpsError('invalid-argument', 'Falta el email.');
+
+  if (!request.auth || request.auth.token.platform !== true) {
+    throw new HttpsError('permission-denied', 'Solo la plataforma puede restablecer contraseñas.');
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+
+  let user;
+  try {
+    user = await getAuth().getUserByEmail(normalizedEmail);
+  } catch (err) {
+    if (err.code === 'auth/user-not-found') {
+      throw new HttpsError('not-found', 'No hay ninguna cuenta con ese mail.');
+    }
+    throw err;
+  }
+
+  // No se le tocan los claims: esto cambia la llave, no el permiso.
+  if (user.customClaims?.platform === true) {
+    throw new HttpsError('permission-denied', 'No se restablece la contraseña de la plataforma desde acá.');
+  }
+
+  const password = generarPassword();
+  await getAuth().updateUser(user.uid, { password });
+
+  // Las sesiones abiertas con la contraseña vieja dejan de valer.
+  await getAuth().revokeRefreshTokens(user.uid);
+
+  return { status: 'reset', email: normalizedEmail, password };
+});
+
+// ============================================================================
 // 3. RECORDATORIOS DE WHATSAPP (esqueleto)
 // ============================================================================
 // Se activa cuando Meta aprueba el número y las plantillas. El token va como

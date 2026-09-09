@@ -40,7 +40,9 @@ function loadData() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return JSON.parse(saved);
-  } catch (e) {}
+  } catch {
+    // localStorage puede fallar (modo privado, JSON corrupto). Se arranca vacío.
+  }
   return null;
 }
 
@@ -68,7 +70,9 @@ function saveData(state) {
     const aGuardar = { ...state };
     for (const clave of NO_PERSISTIR) delete aGuardar[clave];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(aGuardar));
-  } catch (e) {}
+  } catch {
+    // Sin persistencia se pierde al recargar; no es crítico.
+  }
 }
 
 const _saved = loadData();

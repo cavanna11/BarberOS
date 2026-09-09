@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import {
   signInWithPopup,
+  signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
   getIdTokenResult,
@@ -243,6 +244,38 @@ export function AuthProvider({ children }) {
   };
 
   /**
+   * Login con email y contraseña, para las cuentas que crea la plataforma desde
+   * `/super-admin`. El resto del modelo no cambia: los permisos siguen siendo
+   * los custom claims del token, que no saben ni les importa con qué proveedor
+   * entró la persona.
+   */
+  const loginWithPassword = async (email, password) => {
+    try {
+      const { user: fbUser } = await signInWithEmailAndPassword(auth, email.trim(), password);
+      let { claims } = await getIdTokenResult(fbUser);
+      if (!claims.platform && !claims.businessId) {
+        claims = await reclamarPendientes(fbUser, claims);
+      }
+      const user = buildUser(fbUser, claims);
+      dispatch({ type: 'LOGIN', payload: user });
+      return { success: true, user };
+    } catch (error) {
+      console.error('[auth] Error de login con contraseña:', error);
+      const mensajes = {
+        'auth/invalid-credential': 'El mail o la contraseña no coinciden.',
+        'auth/invalid-email': 'Ese mail no parece válido.',
+        'auth/user-disabled': 'Esta cuenta está deshabilitada.',
+        'auth/too-many-requests': 'Demasiados intentos. Esperá unos minutos.',
+        'auth/network-request-failed': 'Falló la conexión. Revisá tu internet.',
+        // Aparece si el proveedor de email/contraseña no está habilitado en la
+        // consola de Firebase (Authentication → Sign-in method).
+        'auth/operation-not-allowed': 'El ingreso con contraseña no está habilitado en Firebase.',
+      };
+      return { success: false, error: mensajes[error.code] || 'No se pudo iniciar sesión.' };
+    }
+  };
+
+  /**
    * Login sin verificar nada, para probar roles en local.
    * Ojo: NO crea una sesión de Firebase, así que en cuanto los datos estén en
    * Firestore este usuario no va a poder leer nada (las Rules lo van a
@@ -305,7 +338,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ ...state, loginWithGoogle, loginBypass, logout, refreshClaims, dispatch }}
+      value={{ ...state, loginWithGoogle, loginWithPassword, loginBypass, logout, refreshClaims, dispatch }}
     >
       {children}
     </AuthContext.Provider>

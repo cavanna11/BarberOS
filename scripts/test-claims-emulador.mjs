@@ -77,6 +77,7 @@ async function borrarUsuario(email) {
   try { await auth.deleteUser((await auth.getUserByEmail(email)).uid); } catch { /* no existía */ }
 }
 await borrarUsuario('nuevo@gmail.com');
+await borrarUsuario('sin-gmail@hotmail.com');
 const pendientes = await db.collection('pendingAdmins').get();
 await Promise.all(pendientes.docs.map((d) => d.ref.delete()));
 
@@ -160,6 +161,43 @@ chequear('dueño revoca a su barbero', r.ok?.status === 'revoked', JSON.stringif
 chequear('al barbero le quedaron los claims vacíos',
   Object.keys((await auth.getUser(uidBarbero)).customClaims || {}).length === 0,
   JSON.stringify((await auth.getUser(uidBarbero)).customClaims));
+
+console.log('');
+console.log('Alta con usuario y contrasena:');
+
+r = await llamar('createOwnerWithPassword', tPlataforma, { email: 'sin-gmail@hotmail.com', businessId: B1, name: 'Sin Gmail' });
+chequear('la plataforma crea la cuenta con contrasena', r.ok?.status === 'created', JSON.stringify(r));
+chequear('devuelve una contrasena usable', typeof r.ok?.password === 'string' && r.ok.password.length >= 12, JSON.stringify(r.ok?.password));
+
+const guardada = r.ok?.password;
+const creado = await auth.getUserByEmail('sin-gmail@hotmail.com');
+chequear('le quedaron los claims del negocio',
+  creado.customClaims?.businessId === B1 && creado.customClaims?.role === 'owner',
+  JSON.stringify(creado.customClaims));
+
+// Esa contrasena tiene que servir para entrar de verdad.
+const login = await fetch(`${AUTH}/accounts:signInWithPassword?key=fake-key`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'sin-gmail@hotmail.com', password: guardada, returnSecureToken: true }),
+});
+const jLogin = await login.json();
+chequear('entra con esa contrasena', Boolean(jLogin.idToken), JSON.stringify(jLogin.error?.message));
+
+r = await llamar('createOwnerWithPassword', tPlataforma, { email: 'sin-gmail@hotmail.com', businessId: B1, name: 'Otra vez' });
+chequear('no pisa una cuenta que ya existe', r.error === 'ALREADY_EXISTS', JSON.stringify(r));
+
+r = await llamar('createOwnerWithPassword', tDuenoB1, { email: 'colado@hotmail.com', businessId: B1, name: 'x' });
+chequear('un dueno NO puede fabricar cuentas', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+
+r = await llamar('resetOwnerPassword', tPlataforma, { email: 'sin-gmail@hotmail.com' });
+chequear('la plataforma restablece la contrasena', typeof r.ok?.password === 'string', JSON.stringify(r));
+chequear('la contrasena nueva es distinta', r.ok?.password !== guardada, 'salio la misma');
+
+r = await llamar('resetOwnerPassword', tPlataforma, { email: 'plataforma@sacia.tech' });
+chequear('NO se restablece la de la plataforma', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+
+r = await llamar('resetOwnerPassword', tDuenoB1, { email: 'sin-gmail@hotmail.com' });
+chequear('un dueno NO restablece contrasenas', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
 
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron\n`);
 process.exit(fallaron ? 1 : 0);
