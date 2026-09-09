@@ -366,8 +366,13 @@ curl -s "https://barberos.sacia.tech$B" | grep -c "TEXTO_A_BUSCAR"
 1. **Activar Blaze y desplegar Cloud Functions** ← desbloquea la venta.
    El código ya está cableado y probado: falta solo el deploy.
 2. **Trámite de Meta para WhatsApp** — tarda 1-2 semanas, arrancar en paralelo
-3. Verificar que `barberos.sacia.tech` esté en Firebase → Authentication →
-   Settings → Dominios autorizados
+3. **⛔ CONFIRMADO ROTO: `barberos.sacia.tech` NO está en los dominios
+   autorizados de Firebase Auth.** Nadie puede iniciar sesión en producción —
+   el login falla con `auth/unauthorized-domain`. Firebase trae `localhost` y
+   `*.firebaseapp.com` por defecto, pero un dominio propio hay que agregarlo a
+   mano, y nunca se hizo. Por eso no se notaba: siempre se probó en localhost.
+   Se arregla en Authentication → Settings → Authorized domains → Add domain.
+   No hay comando de CLI para esto, es sí o sí por consola
 4. Sacar el SDK de Firebase del camino crítico de la landing. **El split por
    rutas ya está hecho** (`vite.config.js` tiene `manualChunks` y cada página es
    su propio chunk): lo que falta es otra cosa. Hoy quien entra a ver precios
