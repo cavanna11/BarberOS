@@ -375,42 +375,66 @@ curl -s "https://barberos.sacia.tech$B" | grep -c "TEXTO_A_BUSCAR"
 
 ## Próximos pasos, en orden
 
-1. **Activar Blaze y desplegar Cloud Functions** ← desbloquea la venta.
-   El código ya está cableado y probado: falta solo el deploy.
-2. **Trámite de Meta para WhatsApp** — tarda 1-2 semanas, arrancar en paralelo
-3. **⛔ CONFIRMADO ROTO: `barberos.sacia.tech` NO está en los dominios
-   autorizados de Firebase Auth.** Nadie puede iniciar sesión en producción —
-   el login falla con `auth/unauthorized-domain`. Firebase trae `localhost` y
-   `*.firebaseapp.com` por defecto, pero un dominio propio hay que agregarlo a
-   mano, y nunca se hizo. Por eso no se notaba: siempre se probó en localhost.
-   Se arregla en Authentication → Settings → Authorized domains → Add domain.
-   No hay comando de CLI para esto, es sí o sí por consola
-4. Sacar el SDK de Firebase del camino crítico de la landing. **El split por
-   rutas ya está hecho** (`vite.config.js` tiene `manualChunks` y cada página es
-   su propio chunk): lo que falta es otra cosa. Hoy quien entra a ver precios
-   baja 265 kB gzip, de los cuales 164 kB son Firebase, que la landing no usa.
-   Sin él serían 101 kB — 62% menos. No es cambiar un import: `App.jsx` importa
-   `LoginPage` eager y los tres contexts importan firebase a nivel de módulo,
-   así que hay que desmontar los providers de la raíz y montarlos dentro de las
-   rutas de app. Toca `main.jsx`, `App.jsx` y los contexts.
-5. Revisar `src/components/landing/HeroMotionMockup.jsx` y
-   `FloatingActionWidget.jsx` (generados por Antigravity, sin auditar)
-6. Monitoreo global de turnos: hoy la pestaña del panel global solo muestra el
-   negocio activo. Necesita `collectionGroup` + regla nueva.
-7. ~~Validar el precio del turno~~ — **resuelto por `createAppointment`**, que
-   además valida fecha, profesional, servicio, horario, solapamiento y negocio
-   suspendido. Queda pendiente solo cerrar el `allow create` directo: es el
-   paso 2 del checklist post-Blaze
-8. Alcance del barbero. La landing promete "cada barbero ve solo sus propios
+### Manual, en consola — nadie más lo puede hacer
+
+1. **Dominio autorizado.** `barberos.sacia.tech` tiene que estar en Firebase →
+   Authentication → Settings → Authorized domains. Sin eso el login en
+   producción falla con `auth/unauthorized-domain`. Firebase trae `localhost` y
+   `*.firebaseapp.com` por defecto; un dominio propio va a mano. No hay comando
+   de CLI: es sí o sí por consola.
+2. **Habilitar Email/Password** en Authentication → Sign-in method, para que
+   funcionen las cuentas con contraseña. El código ya está; sin el proveedor
+   habilitado devuelve `auth/operation-not-allowed`.
+3. **Trámite de Meta para WhatsApp** — tarda 1-2 semanas, conviene arrancarlo en
+   paralelo con lo demás.
+
+### Producto — hace falta decidir antes de programar
+
+4. **Alcance del barbero.** La landing promete "cada barbero ve solo sus propios
    turnos", pero eso lo hace **solo la UI**: las Rules dan a cualquier
-   `isBusinessStaff` lectura y escritura sobre toda la agenda del negocio.
-   Verificado: un barbero puede editar el turno de otro. No es fuga entre
-   barberías y el empleado es de confianza, pero no es lo que se promete.
-   Apretarlo exige revisar antes qué vistas del panel necesitan la agenda
-   completa (`DashboardPage` calcula estadísticas sobre todos los turnos), así
-   que no es un cambio de una línea
-9. Subir logo por barbería (Firebase Storage)
-10. PWA
+   `isBusinessStaff` lectura y escritura sobre toda la agenda. Verificado: un
+   barbero puede editar el turno de otro. No es fuga entre barberías y el
+   empleado es de confianza, pero no es lo que se vende. Apretarlo exige revisar
+   primero qué vistas necesitan la agenda completa (`DashboardPage` calcula
+   estadísticas sobre todos los turnos), así que no es un cambio de una línea.
+   La otra salida válida es corregir la promesa.
+
+### Técnico, cuando haya tiempo
+
+5. Sacar el SDK de Firebase del camino crítico de la landing. **El split por
+   rutas ya está hecho**: lo que falta es otra cosa. Hoy quien entra a ver
+   precios baja 265 kB gzip, de los cuales 164 kB son Firebase, que la landing
+   no usa. Sin él serían 101 kB — 62% menos. `App.jsx` importa `LoginPage` eager
+   y los tres contexts importan firebase a nivel de módulo, así que hay que
+   desmontar los providers de la raíz y montarlos dentro de las rutas de app.
+6. Revisar `src/components/landing/HeroMotionMockup.jsx` y
+   `FloatingActionWidget.jsx` (generados por Antigravity, sin auditar).
+7. Monitoreo global de turnos: hoy la pestaña del panel global solo muestra el
+   negocio activo. Necesita `collectionGroup` + regla nueva.
+8. Sacar el fallback de permisos de `AuthContext` (paso 4 del checklist
+   post-Blaze). Se dejó hasta ver a un dueño real entrando con claims.
+9. Los 3 errores de lint que quedan son `react-refresh/only-export-components`
+   en los contexts: mover los hooks a otro archivo toca todos los imports y no
+   cambia el comportamiento. Con eso el lint queda en cero y se puede poner CI.
+10. Borrado en cascada al eliminar un negocio (`deleteBusinessRecord` deja
+    huérfanas las subcolecciones y los claims de los admins).
+11. Subir logo por barbería (Firebase Storage).
+12. PWA.
+
+---
+
+## Cómo probar sin tocar producción
+
+```bash
+firebase emulators:start --only auth,firestore,functions
+node scripts/test-claims-emulador.mjs      # permisos y cuentas con contraseña
+node scripts/test-reservas-emulador.mjs    # validación de turnos
+node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
+node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
+```
+
+Hoy: 30, 18, 11 y 46 de 47. El único que falla es el alcance del barbero, que
+es la decisión de producto del punto 4.
 
 ---
 
