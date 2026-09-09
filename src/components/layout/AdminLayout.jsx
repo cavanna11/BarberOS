@@ -26,6 +26,26 @@ const ROLE_LABELS = {
   admin: { text: 'Peluquero', color: 'var(--success)' },
 };
 
+// Mismo número que la landing y el widget flotante. Si cambia, cambia en los tres.
+const LINK_SOPORTE = 'https://wa.me/5492257529684?text=' +
+  encodeURIComponent('Hola! Te escribo por mi cuenta de BarberOS.');
+
+/**
+ * Días que faltan para que termine la prueba. Negativo si ya venció, null si la
+ * cuenta no es de prueba.
+ *
+ * Se compara en 'YYYY-MM-DD' y no con Date para no arrastrar la zona horaria del
+ * browser: si el barbero tiene el reloj en otro huso, un turno de diferencia no
+ * puede cambiarle el cartel.
+ */
+function diasDePruebaRestantes(trialEndsAt) {
+  if (!trialEndsAt) return null;
+  const hoy = new Date();
+  const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+  const ms = new Date(`${trialEndsAt}T00:00:00`) - new Date(`${hoyISO}T00:00:00`);
+  return Math.round(ms / 86400000);
+}
+
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
@@ -89,6 +109,56 @@ export default function AdminLayout() {
 
       {/* Main Content */}
       <main className="admin-main">
+        {/* Prueba gratis: los días que quedan, y qué hacer cuando se termina. */}
+        {(() => {
+          const dias = diasDePruebaRestantes(business?.trialEndsAt);
+          if (dias === null) return null;
+          const vencida = dias < 0;
+          return (
+            <div
+              className={vencida ? 'notice notice-danger' : 'notice notice-info'}
+              style={{
+                borderRadius: 0,
+                borderLeft: 'none',
+                borderTop: 'none',
+                borderRight: 'none',
+                borderBottomWidth: '2px',
+                borderBottomStyle: 'solid',
+                padding: '8px 16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>
+                {vencida ? (
+                  <>
+                    <strong>Se terminó tu prueba.</strong> Para seguir usando la
+                    agenda, escribinos y activamos tu plan.
+                  </>
+                ) : dias === 0 ? (
+                  <><strong>Hoy es el último día de prueba.</strong> Escribinos para seguir.</>
+                ) : (
+                  <>
+                    Estás usando una <strong>cuenta de prueba</strong>: te
+                    {dias === 1 ? ' queda 1 día' : ` quedan ${dias} días`}.
+                  </>
+                )}
+              </span>
+              <a
+                href={LINK_SOPORTE}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: 'inherit', fontWeight: 700, whiteSpace: 'nowrap' }}
+              >
+                Hablar por WhatsApp →
+              </a>
+            </div>
+          );
+        })()}
+
         {/* Aviso permanente: si sos dueño de la plataforma, estás editando la
             cuenta de un cliente. Sin esto es fácil tocar el negocio equivocado. */}
         {platformOwner && business && (

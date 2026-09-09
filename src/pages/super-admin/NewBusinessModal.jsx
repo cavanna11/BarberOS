@@ -29,12 +29,21 @@ const EMPTY_FORM = {
   welcomeMessage: 'Reservá tu turno en segundos',
   instagram: '',
   whatsapp: '',
+  // 0 = cuenta que se cobra desde el arranque. Mayor a 0 = cuenta de prueba.
+  trialDays: 0,
 };
 
 /** Primer cobro un mes después del alta, para que no arranque con deuda. */
 function nextMonthISO() {
   const d = new Date();
   d.setMonth(d.getMonth() + 1);
+  return d.toISOString().split('T')[0];
+}
+
+/** Hoy más N días, como 'YYYY-MM-DD'. */
+function enDiasISO(dias) {
+  const d = new Date();
+  d.setDate(d.getDate() + Number(dias));
   return d.toISOString().split('T')[0];
 }
 
@@ -102,6 +111,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
 
     const plan = getPlan(form.planId);
     const now = new Date().toISOString();
+    const trialDays = Number(form.trialDays) || 0;
 
     // El id lo asigna Firestore al crear el documento.
     const business = {
@@ -130,6 +140,9 @@ export default function NewBusinessModal({ onClose, onCreated }) {
       planId: plan.id,
       whatsappQuota: plan.whatsappQuota,
       isFrozen: false,
+      // Va en el documento público para que el panel pueda mostrar los días que
+      // quedan sin una lectura extra. No es dato sensible.
+      trialEndsAt: trialDays > 0 ? enDiasISO(trialDays) : null,
       businessHours: DEFAULT_BUSINESS_HOURS.map((h) => ({ ...h })),
     };
 
@@ -140,7 +153,9 @@ export default function NewBusinessModal({ onClose, onCreated }) {
       monthlyFee: plan.monthlyFee,
       debt: 0,
       lastPaymentDate: null,
-      nextBillingDate: nextMonthISO(),
+      // Con prueba, el primer vencimiento cae el día que termina: runBilling no
+      // cobra hasta entonces y al día siguiente congela sola la cuenta.
+      nextBillingDate: trialDays > 0 ? enDiasISO(trialDays) : nextMonthISO(),
     };
 
     const ownerAdmin = {
@@ -237,6 +252,15 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 a aparecer vacío.
                 <br />
                 {created.claims?.error}
+              </div>
+            )}
+
+            {created.business.trialEndsAt && (
+              <div className="notice notice-info">
+                <strong>Cuenta de prueba</strong> hasta el{' '}
+                <strong>{created.business.trialEndsAt}</strong>. Hasta esa fecha no
+                se le cobra nada. Al día siguiente se genera el vencimiento y, si
+                no paga, la cuenta se suspende sola.
               </div>
             )}
 
@@ -379,6 +403,31 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 </div>
               </label>
             ))}
+          </div>
+
+          {/* Prueba gratis */}
+          <div className="form-group" style={{ marginTop: 'var(--space-md)' }}>
+            <label className="form-label">Días de prueba sin cargo</label>
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              max="365"
+              value={form.trialDays}
+              onChange={(e) => set({ trialDays: e.target.value })}
+              style={{ maxWidth: 160 }}
+            />
+            <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+              {Number(form.trialDays) > 0 ? (
+                <>
+                  No se le cobra hasta el <strong>{enDiasISO(Number(form.trialDays))}</strong>.
+                  Ese día se genera el primer vencimiento y, si no paga, la cuenta
+                  se suspende sola y el link deja de tomar turnos.
+                </>
+              ) : (
+                <>0 = se cobra desde el arranque, con el primer vencimiento a un mes.</>
+              )}
+            </p>
           </div>
 
           {/* Contacto */}

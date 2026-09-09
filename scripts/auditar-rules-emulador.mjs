@@ -80,6 +80,8 @@ await db.doc(`businesses/${A}/appointments/apt-otro`).set({
   id: 'apt-otro', businessId: A, userId: 'otro-uid', clientName: 'Ajeno', clientPhone: '+54 11 9999',
   professionalId: 'p1', serviceId: 's1', appointmentDate: '2026-09-01', startTime: '10:00', endTime: '10:30',
   price: 12000, status: 'pendiente' });
+await db.doc(`businesses/${A}/professionals/p1`).set({ name: 'Martin', specialty: 'Barbero', isActive: true });
+await db.doc(`businesses/${A}/staffContacts/p1`).set({ phone: '+54 11 6666-7777', email: 'martin.personal@gmail.com' });
 await db.doc('tickets/tk-alfa').set({ businessId: A, subject: 'Alfa', status: 'abierto' });
 await db.doc('tickets/tk-beta').set({ businessId: B, subject: 'Beta', status: 'abierto' });
 
@@ -130,6 +132,15 @@ console.log('\n-- Barbero (rol admin) --');
 await esperar('[?] barbero lee la agenda entera',         consultar(barberoA, `businesses/${A}`, 'appointments'), 'permitido');
 await esperar('[?] barbero edita turno de otro',          editar(barberoA, `businesses/${A}/appointments/apt-otro`, { status: 'completada' }), 'denegado');
 await esperar('[?] barbero escribe el catalogo',          crear(barberoA, `businesses/${A}/services`, { name: 'inventado', price: 1 }), 'denegado');
+
+console.log('\n-- Contacto del staff (dato personal) --');
+await esperar('anonimo NO lee el contacto del staff',     leer(null, `businesses/${A}/staffContacts/p1`), 'denegado');
+await esperar('cliente NO lee el contacto del staff',     leer(cliente, `businesses/${A}/staffContacts/p1`), 'denegado');
+await esperar('dueno de B NO lee el de A',                leer(duenoB, `businesses/${A}/staffContacts/p1`), 'denegado');
+await esperar('el profesional publico SIGUE publico',     leer(null, `businesses/${A}/professionals/p1`), 'permitido');
+await esperar('dueno de A SI lo lee',                     leer(duenoA, `businesses/${A}/staffContacts/p1`), 'permitido');
+await esperar('barbero SI edita su propia ficha',         editar(barberoA, `businesses/${A}/staffContacts/p1`, { phone: '+54 11 0000' }), 'permitido');
+await esperar('barbero NO edita la ficha de otro',        editar(barberoA, `businesses/${A}/staffContacts/p9`, { phone: 'x' }), 'denegado');
 
 console.log('\n-- Tickets --');
 await esperar('dueno de A lee su ticket',                 leer(duenoA, 'tickets/tk-alfa'), 'permitido');

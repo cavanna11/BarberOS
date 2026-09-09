@@ -1,6 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { updateInSubcollection, replaceMatching } from '../../lib/repository';
+import {
+  updateInSubcollection,
+  replaceMatching,
+  getStaffContacts,
+  saveStaffContact,
+} from '../../lib/repository';
 import { useTenant } from '../../hooks/useTenantData';
 import { getDayName, generateId } from '../../utils/dateUtils';
 
@@ -17,10 +22,26 @@ export default function ProfileSettingsPage() {
   const [form, setForm] = useState({
     name: professional?.name || '',
     specialty: professional?.specialty || '',
-    phone: professional?.phone || '',
-    email: professional?.email || '',
+    phone: '',
+    email: '',
     bio: professional?.bio || ''
   });
+
+  // El teléfono y el mail no están en el documento del profesional: ese es de
+  // lectura pública. Se traen del privado, donde cada uno solo puede escribir
+  // su propia ficha.
+  useEffect(() => {
+    if (!businessId || !profId) return;
+    let vigente = true;
+    getStaffContacts(businessId)
+      .then((c) => {
+        if (!vigente) return;
+        const mio = c[profId] || {};
+        setForm((f) => ({ ...f, phone: mio.phone || '', email: mio.email || '' }));
+      })
+      .catch((err) => console.error('[ProfileSettings] No se pudo leer el contacto:', err));
+    return () => { vigente = false; };
+  }, [businessId, profId]);
 
   // Inicializar horarios del profesional
   const profSchedules = schedules.filter(s => s.professionalId === profId);
@@ -65,7 +86,10 @@ export default function ProfileSettingsPage() {
     if (!businessId || !profId) return;
     setGuardando(true);
     try {
-      await updateInSubcollection(businessId, 'professionals', profId, { ...form });
+      // El contacto va aparte: el documento del profesional es público.
+      const { phone, email, ...publico } = form;
+      await updateInSubcollection(businessId, 'professionals', profId, { ...publico });
+      await saveStaffContact(businessId, profId, { phone, email });
       // Los horarios se reemplazan enteros: lo natural es "estos son los que
       // quedan", no ir agregando y borrando día por día.
       await replaceMatching(

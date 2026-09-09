@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTenant } from '../../hooks/useTenantData';
 import {
   addToSubcollection,
   updateInSubcollection,
   removeFromSubcollection,
   replaceMatching,
+  getStaffContacts,
+  saveStaffContact,
+  removeStaffContact,
 } from '../../lib/repository';
 import { getDayName, generateId } from '../../utils/dateUtils';
 
@@ -17,6 +20,18 @@ export default function ProfessionalsPage() {
   const [form, setForm]               = useState({ name: '', specialty: '', phone: '', email: '', bio: '' });
   const [editSchedules, setEditSchedules] = useState([]);
   const [editServices, setEditServices]   = useState([]); // serviceIds seleccionados
+
+  // El teléfono y el mail del staff NO viven en el documento del profesional:
+  // ese es de lectura pública. Se traen aparte, del documento privado.
+  const [contactos, setContactos] = useState({});
+  useEffect(() => {
+    if (!businessId) return;
+    let vigente = true;
+    getStaffContacts(businessId)
+      .then((c) => { if (vigente) setContactos(c); })
+      .catch((err) => console.error('[ProfessionalsPage] No se pudo leer el contacto del staff:', err));
+    return () => { vigente = false; };
+  }, [businessId]);
 
   const activeServices = services.filter(s => s.isActive);
 
@@ -40,7 +55,8 @@ export default function ProfessionalsPage() {
   // ── Abrir modal EDITAR ─────────────────────────────────────────────────────
   const openEdit = (prof) => {
     setEditing(prof);
-    setForm({ name: prof.name, specialty: prof.specialty || '', phone: prof.phone || '', email: prof.email || '', bio: prof.bio || '' });
+    const contacto = contactos[prof.id] || {};
+    setForm({ name: prof.name, specialty: prof.specialty || '', phone: contacto.phone || '', email: contacto.email || '', bio: prof.bio || '' });
     const profSchedules = schedules.filter(s => s.professionalId === prof.id);
     setEditSchedules(Array.from({ length: 7 }, (_, i) => {
       const existing = profSchedules.find(s => s.dayOfWeek === i);
@@ -70,18 +86,26 @@ export default function ProfessionalsPage() {
 
     setGuardando(true);
     try {
+      // Se parte en dos a propósito: el documento del profesional es de lectura
+      // pública (lo necesita la página de reservas), así que el teléfono y el
+      // mail personales van al documento privado del negocio.
+      const { phone, email, ...publico } = form;
+
       const profId = editing
         ? editing.id
         : await addToSubcollection(businessId, 'professionals', {
-            ...form,
+            ...publico,
             avatarUrl: null,
             displayOrder: professionals.length + 1,
             isActive: true,
           });
 
       if (editing) {
-        await updateInSubcollection(businessId, 'professionals', profId, { ...form });
+        await updateInSubcollection(businessId, 'professionals', profId, { ...publico });
       }
+
+      await saveStaffContact(businessId, profId, { phone, email });
+      setContactos((prev) => ({ ...prev, [profId]: { phone, email } }));
 
       // Horarios y servicios asignados se reemplazan enteros: lo natural acá es
       // "estos son los que quedan", no ir agregando y borrando de a uno.
@@ -122,7 +146,9 @@ export default function ProfessionalsPage() {
       // Firestore no borra en cascada: hay que limpiar lo que cuelga del profesional.
       await replaceMatching(businessId, 'schedules', 'professionalId', id, []);
       await replaceMatching(businessId, 'professionalServices', 'professionalId', id, []);
+      await removeStaffContact(businessId, id);
       await removeFromSubcollection(businessId, 'professionals', id);
+      setContactos((prev) => { const { [id]: _, ...resto } = prev; return resto; });
     } catch (err) {
       console.error('[ProfessionalsPage] No se pudo eliminar:', err);
       alert('No se pudo eliminar: ' + err.message);

@@ -89,7 +89,7 @@ service cloud.firestore {
       );
 
       // Facturación: solo la plataforma. Ni el dueño la lee.
-      match /private/{docId} {
+      match /private/billing {
         allow read, write: if isPlatform();
       }
 
@@ -99,6 +99,21 @@ service cloud.firestore {
       match /professionals/{profId} {
         allow read: if true;
         allow write: if canManage(bizId);
+      }
+
+      // Teléfono y mail personales del staff, en subcolección aparte.
+      //
+      // NO van dentro de /professionals porque ese documento es de lectura
+      // pública: la página de reservas necesita nombre, especialidad y foto
+      // antes del login. Con el contacto adentro, cualquiera con el link (o
+      // adivinando el slug) se bajaba los teléfonos y mails del equipo.
+      // Verificado contra el emulador: sin login se leían enteros.
+      //
+      // El dueño gestiona a todo su equipo; un barbero solo su propia ficha.
+      match /staffContacts/{profId} {
+        allow read: if isBusinessStaff(bizId) || isPlatform();
+        allow write: if canManage(bizId)
+                        || (isBusinessStaff(bizId) && claims().get('professionalId', '') == profId);
       }
 
       match /services/{srvId} {

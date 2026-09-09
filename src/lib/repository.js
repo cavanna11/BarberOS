@@ -286,6 +286,33 @@ export async function cancelAppointment(businessId, id, motivo = '') {
 }
 
 // ============================================================================
+// CONTACTO DEL STAFF
+// ============================================================================
+// El documento de un profesional es de LECTURA PÚBLICA: la página de reservas
+// necesita nombre, especialidad y foto antes del login. Por eso el teléfono y
+// el mail personales no van ahí — irían de regalo a cualquiera con el link.
+//
+// Van en un único documento privado del negocio, indexado por professionalId.
+// Se lee bajo demanda desde el panel y no por suscripción: lo consultan dos
+// pantallas y casi nunca cambia, así que un listener permanente sería pagar de
+// más por dato que casi nadie mira.
+
+/** { [professionalId]: { phone, email } }. Vacío si nunca se cargó nada. */
+export async function getStaffContacts(businessId) {
+  const snap = await getDocs(subCol(businessId, 'staffContacts'));
+  return Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+}
+
+export async function saveStaffContact(businessId, professionalId, { phone = '', email = '' }) {
+  await setDoc(doc(db, 'businesses', businessId, 'staffContacts', professionalId), { phone, email });
+}
+
+/** Firestore no borra en cascada: al eliminar un profesional hay que sacarlo. */
+export async function removeStaffContact(businessId, professionalId) {
+  await deleteDoc(doc(db, 'businesses', businessId, 'staffContacts', professionalId));
+}
+
+// ============================================================================
 // ADMINS DEL NEGOCIO
 // ============================================================================
 

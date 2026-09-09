@@ -250,79 +250,105 @@ function sumarUnMes(fechaISO) {
  * alguien abre la app, así que una cuenta impaga podía seguir funcionando
  * indefinidamente si nadie entraba al panel.
  */
+/**
+ * El cuerpo de la facturación, aparte del disparador.
+ *
+ * Se exporta para poder probarlo: una `onSchedule` no se puede invocar por HTTP
+ * como un callable, y el emulador la ignora salvo que corras también el de
+ * pubsub. Separarla deja que scripts/test-billing-emulador.mjs la llame directo.
+ */
+async function procesarFacturacion() {
+  // La fecha del negocio, no la del servidor: a las 3 AM de Buenos Aires en
+  // UTC ya es otro día parte del año.
+  const today = hoyEnArgentina();
+  const businesses = await db.collection('businesses').get();
+
+  // Una sola lectura por lote en vez de un get() por negocio adentro del
+  // loop: con 200 barberías eran 200 viajes en serie.
+  const billingRefs = businesses.docs.map((d) => db.doc(`businesses/${d.id}/private/billing`));
+  const billingSnaps = [];
+  for (let i = 0; i < billingRefs.length; i += 300) {
+    const trozo = billingRefs.slice(i, i + 300);
+    if (trozo.length) billingSnaps.push(...(await db.getAll(...trozo)));
+  }
+
+  // Firestore corta un batch en 500 operaciones y falla el batch ENTERO al
+  // pasarse: con un solo batch, a partir de ~250 negocios no se cobraba nada
+  // y encima el error no decía cuál era el problema real.
+  const LIMITE = 450;
+  const escrituras = [];
+
+  let enPrueba = 0;
+
+  businesses.docs.forEach((doc, i) => {
+    const biz = doc.data();
+
+    // Cuenta de prueba: ni se cobra ni se congela hasta que termine. El
+    // primer vencimiento se fija en trialEndsAt al darla de alta, así que al
+    // día siguiente de vencer entra a cobrarse sola por el camino normal y
+    // queda congelada — que es justamente lo que corta la prueba.
+    if (biz.trialEndsAt && today <= biz.trialEndsAt) {
+      enPrueba++;
+      return;
+    }
+
+    const billingSnap = billingSnaps[i];
+    const billing = billingSnap && billingSnap.exists ? billingSnap.data() : {};
+
+    let debt = billing.debt || 0;
+    let nextBillingDate = billing.nextBillingDate;
+    let changed = false;
+
+    if (!nextBillingDate) {
+      nextBillingDate = sumarUnMes(today);
+      changed = true;
+    }
+
+    // Si pasaron varios vencimientos sin pago, se acumulan todos. El tope de
+    // vueltas es una red por si nextBillingDate viniera corrupto: sin él, un
+    // valor raro deja la función girando hasta el timeout.
+    let vueltas = 0;
+    while (today > nextBillingDate && vueltas < 120) {
+      debt += billing.monthlyFee || 0;
+      nextBillingDate = sumarUnMes(nextBillingDate);
+      changed = true;
+      vueltas++;
+    }
+    if (vueltas >= 120) {
+      console.error(`[billing] ${doc.id}: nextBillingDate sospechoso (${billing.nextBillingDate}), se corta.`);
+    }
+
+    if (changed) {
+      escrituras.push({ ref: billingSnap.ref, datos: { debt, nextBillingDate }, merge: true });
+    }
+
+    // `isFrozen` vive en el documento público porque las Rules y la página de
+    // reservas lo necesitan para bloquear el link.
+    const shouldFreeze = debt > 0;
+    if (Boolean(biz.isFrozen) !== shouldFreeze) {
+      escrituras.push({ ref: doc.ref, datos: { isFrozen: shouldFreeze }, merge: true });
+    }
+  });
+
+  for (let i = 0; i < escrituras.length; i += LIMITE) {
+    const batch = db.batch();
+    for (const e of escrituras.slice(i, i + LIMITE)) {
+      batch.set(e.ref, e.datos, { merge: true });
+    }
+    await batch.commit();
+  }
+
+  console.log(
+    `[billing] ${today}: ${escrituras.length} cambios sobre ${businesses.size} negocios` +
+    (enPrueba ? `, ${enPrueba} en período de prueba.` : '.')
+  );
+}
+
+exports.procesarFacturacion = procesarFacturacion;
+
 exports.runBilling = onSchedule(
   { schedule: '0 3 * * *', timeZone: 'America/Argentina/Buenos_Aires' },
-  async () => {
-    // La fecha del negocio, no la del servidor: a las 3 AM de Buenos Aires en
-    // UTC ya es otro día parte del año.
-    const today = hoyEnArgentina();
-    const businesses = await db.collection('businesses').get();
-
-    // Una sola lectura por lote en vez de un get() por negocio adentro del
-    // loop: con 200 barberías eran 200 viajes en serie.
-    const billingRefs = businesses.docs.map((d) => db.doc(`businesses/${d.id}/private/billing`));
-    const billingSnaps = [];
-    for (let i = 0; i < billingRefs.length; i += 300) {
-      const trozo = billingRefs.slice(i, i + 300);
-      if (trozo.length) billingSnaps.push(...(await db.getAll(...trozo)));
-    }
-
-    // Firestore corta un batch en 500 operaciones y falla el batch ENTERO al
-    // pasarse: con un solo batch, a partir de ~250 negocios no se cobraba nada
-    // y encima el error no decía cuál era el problema real.
-    const LIMITE = 450;
-    const escrituras = [];
-
-    businesses.docs.forEach((doc, i) => {
-      const biz = doc.data();
-      const billingSnap = billingSnaps[i];
-      const billing = billingSnap && billingSnap.exists ? billingSnap.data() : {};
-
-      let debt = billing.debt || 0;
-      let nextBillingDate = billing.nextBillingDate;
-      let changed = false;
-
-      if (!nextBillingDate) {
-        nextBillingDate = sumarUnMes(today);
-        changed = true;
-      }
-
-      // Si pasaron varios vencimientos sin pago, se acumulan todos. El tope de
-      // vueltas es una red por si nextBillingDate viniera corrupto: sin él, un
-      // valor raro deja la función girando hasta el timeout.
-      let vueltas = 0;
-      while (today > nextBillingDate && vueltas < 120) {
-        debt += billing.monthlyFee || 0;
-        nextBillingDate = sumarUnMes(nextBillingDate);
-        changed = true;
-        vueltas++;
-      }
-      if (vueltas >= 120) {
-        console.error(`[billing] ${doc.id}: nextBillingDate sospechoso (${billing.nextBillingDate}), se corta.`);
-      }
-
-      if (changed) {
-        escrituras.push({ ref: billingSnap.ref, datos: { debt, nextBillingDate }, merge: true });
-      }
-
-      // `isFrozen` vive en el documento público porque las Rules y la página de
-      // reservas lo necesitan para bloquear el link.
-      const shouldFreeze = debt > 0;
-      if (Boolean(biz.isFrozen) !== shouldFreeze) {
-        escrituras.push({ ref: doc.ref, datos: { isFrozen: shouldFreeze }, merge: true });
-      }
-    });
-
-    for (let i = 0; i < escrituras.length; i += LIMITE) {
-      const batch = db.batch();
-      for (const e of escrituras.slice(i, i + LIMITE)) {
-        batch.set(e.ref, e.datos, { merge: true });
-      }
-      await batch.commit();
-    }
-
-    console.log(`[billing] ${today}: ${escrituras.length} cambios sobre ${businesses.size} negocios.`);
-  }
+  procesarFacturacion
 );
 
 // ============================================================================

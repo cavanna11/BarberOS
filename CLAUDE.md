@@ -127,16 +127,28 @@ fallback de permisos de `AuthContext`. Se dejó a propósito hasta que un dueño
 real entre con claims de verdad — sacarlo antes es quedarse sin red por una
 mejora que no cambia la seguridad (las Rules ya exigen el claim real).
 
-### ⚠️ Cuentas de prueba y facturación
+### Cuentas de prueba
 
-`runBilling` ya corre. Suma `monthlyFee` cuando se pasa `nextBillingDate` y
-después congela si la deuda es mayor a cero — y congelado significa que el link
-público **deja de tomar turnos**.
+En el alta hay un campo **"Días de prueba sin cargo"**. Con un valor mayor a
+cero, el negocio queda con `trialEndsAt` y el primer vencimiento cae ese mismo
+día. Mientras dure, `runBilling` no le suma deuda ni lo suspende. Al día
+siguiente entra a cobrarse por el camino normal y, si no paga, **se suspende
+sola y el link deja de tomar turnos** — que es justamente lo que corta la
+prueba.
 
-Los tres planes tienen abono mayor a cero y **no existe todavía un concepto de
-prueba**. Una cuenta de prueba creada con plan básico acumula $12.000 al mes y
-se congela sola. Hasta que exista el trial, para una cuenta de regalo poné
-`monthlyFee: 0`.
+El panel muestra un banner con los días restantes y, al vencer, uno que invita a
+escribir por WhatsApp.
+
+Con 0 días la cuenta se cobra desde el arranque, con el primer vencimiento a un
+mes. **Nunca des una cuenta de regalo sin días de prueba**: con cualquiera de los
+tres planes acumula deuda al mes y se congela sola.
+
+```bash
+node scripts/test-billing-emulador.mjs
+```
+
+11 casos: cobro, acumulación de varios vencimientos, suspensión, reactivación al
+saldar, prueba vigente y prueba vencida.
 
 ### Quién puede asignar permisos
 
@@ -240,6 +252,8 @@ src/
 /businesses/{id}                  → marca, horarios, isFrozen  ⚠️ pública
   /private/billing                → deuda, abono           🔒 solo plataforma
   /professionals /services /schedules /professionalServices   ⚠️ públicas
+  /staffContacts/{profId}         🔒 teléfono y mail del staff — NO va en
+                                     /professionals, que es de lectura pública
   /appointments                   🔒 staff + dueño del turno
   /admins/{email}                 🔒 registro para UI, NO otorga permiso
 /tickets/{id}                     🔒 su barbería + plataforma
