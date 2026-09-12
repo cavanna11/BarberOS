@@ -217,7 +217,21 @@ function TimeSlotGrid({ slots, selectedSlot, onSelect, date }) {
 }
 
 // ---- PERSONAL INFO (solo teléfono — nombre y email vienen de Google) ----
+
+/**
+ * ¿Parece un teléfono? Se cuentan solo los dígitos: "+54 9 11 1234-5678" y
+ * "1123456789" son los dos válidos. Entre 10 y 13 cubre un número argentino
+ * con o sin código de país. La function lo vuelve a validar del lado del
+ * servidor; esto es para que el error se vea antes de mandar.
+ */
+function telefonoValido(tel) {
+  const digitos = String(tel || '').replace(/\D/g, '');
+  return digitos.length >= 10 && digitos.length <= 13;
+}
+
 function PersonalInfoStep({ user, phone, onPhoneChange }) {
+  const tocado = phone.length > 0;
+  const valido = telefonoValido(phone);
   return (
     <div>
       <h2 className="booking-step-title">Tu número de teléfono</h2>
@@ -241,11 +255,21 @@ function PersonalInfoStep({ user, phone, onPhoneChange }) {
           <input
             className="form-input"
             type="tel"
+            inputMode="tel"
             value={phone}
             onChange={e => onPhoneChange(e.target.value)}
             placeholder="+54 11 1234-5678"
             autoFocus
+            style={tocado && !valido ? { borderColor: 'var(--danger)' } : undefined}
           />
+          {tocado && !valido && (
+            <p className="text-xs" style={{ color: 'var(--danger)', marginTop: 4 }}>
+              Ingresá el número con código de área, por ejemplo 11 1234-5678.
+            </p>
+          )}
+          <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+            Es por donde te va a contactar la barbería si hace falta.
+          </p>
         </div>
       </div>
     </div>
@@ -415,7 +439,7 @@ export default function BookingPage() {
       case 2: return !!serviceId;
       case 3: return !!date && !hasAppointmentToday;
       case 4: return !!timeSlot;
-      case 5: return !!personalInfo.phone;
+      case 5: return telefonoValido(personalInfo.phone);
       default: return false;
     }
   };

@@ -8,6 +8,7 @@ import {
   subscribeBilling,
   subscribeSubcollection,
   subscribeAppointmentsDeProfesional,
+  subscribeMyAppointments,
   getBusinessIdBySlug,
 } from '../lib/repository';
 
@@ -21,9 +22,9 @@ const COLECCIONES = [
   'admins',
 ];
 
-// Un barbero solo alcanza SUS turnos: las Rules le rechazan la consulta sin
-// filtrar, así que su suscripción a `appointments` va aparte.
-const SIN_APPOINTMENTS = COLECCIONES.filter((c) => c !== 'appointments');
+// Lo que puede leer cualquiera sin estar logueado: lo que la página de reservas
+// necesita para armar la grilla.
+const PUBLICAS = ['professionals', 'services', 'schedules', 'professionalServices'];
 
 const VACIO = Object.fromEntries(COLECCIONES.map((c) => [c, []]));
 
@@ -184,8 +185,15 @@ export default function BusinessSync() {
   // se cobraría una vez por componente montado.
   const businessId = state.currentBusinessId;
 
+  // Se leen como primitivos y no como `user` entero: el objeto cambia de
+  // identidad en cada LOGIN aunque no cambie nada, y eso re-suscribiría todo.
+  const uid = user?.id ?? null;
+  const rol = user?.role ?? null;
+  const profId = user?.professionalId ?? null;
+  const esBypass = Boolean(user?.isBypass);
+
   useEffect(() => {
-    if (!businessId || user?.isBypass) {
+    if (!businessId || esBypass) {
       dispatch({ type: 'SET_TENANT_DATA', payload: VACIO });
       return;
     }
@@ -194,30 +202,37 @@ export default function BusinessSync() {
       console.error(`[BusinessSync] ${col}:`, err.code, err.message);
     };
 
-    // El barbero (rol 'admin' atado a un profesional) solo puede listar sus
-    // propios turnos. Si pidiera la colección entera, Firestore le rechazaría
-    // la consulta y se quedaría con la agenda vacía.
-    const soloLoSuyo = user?.role === 'admin' && user?.professionalId;
-    const colecciones = soloLoSuyo ? SIN_APPOINTMENTS : COLECCIONES;
+    // Qué colecciones pedir depende de quién mira. Pedir una que las Rules van
+    // a rechazar no es inocuo: la consulta falla, el dato queda vacío y encima
+    // ensucia la consola con un permission-denied por cada pantalla.
+    //
+    //   plataforma / dueño → todo, sin filtrar
+    //   barbero            → todo menos la agenda; la suya filtrada por perfil
+    //   cliente            → las públicas + SUS turnos filtrados por uid
+    //   anónimo            → solo las públicas
+    //
+    // El caso del cliente es el que estuvo roto: se le pedía la agenda entera,
+    // las Rules la rechazaban (bien, es la regla que cierra la filtración de
+    // datos), y "Mis citas" quedaba vacío para todos. subscribeMyAppointments
+    // existía en el repositorio y nadie la llamaba.
+    const esStaffCompleto = esPlataforma || rol === 'owner';
+    const esBarbero = rol === 'admin' && Boolean(profId);
+    const esCliente = Boolean(uid) && !esStaffCompleto && !esBarbero;
+
+    const cb = (col) => (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { [col]: filas } });
+
+    const colecciones = esStaffCompleto ? COLECCIONES
+      : esBarbero ? COLECCIONES.filter((c) => c !== 'appointments')
+      : PUBLICAS;
 
     const offs = colecciones.map((col) =>
-      subscribeSubcollection(
-        businessId,
-        col,
-        (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { [col]: filas } }),
-        onError(col)
-      )
+      subscribeSubcollection(businessId, col, cb(col), onError(col))
     );
 
-    if (soloLoSuyo) {
-      offs.push(
-        subscribeAppointmentsDeProfesional(
-          businessId,
-          user.professionalId,
-          (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { appointments: filas } }),
-          onError('appointments')
-        )
-      );
+    if (esBarbero) {
+      offs.push(subscribeAppointmentsDeProfesional(businessId, profId, cb('appointments'), onError('appointments')));
+    } else if (esCliente) {
+      offs.push(subscribeMyAppointments(businessId, uid, cb('appointments'), onError('appointments')));
     }
 
     // Al cambiar de negocio, vaciar antes de que lleguen los datos nuevos:
@@ -225,7 +240,7 @@ export default function BusinessSync() {
     dispatch({ type: 'SET_TENANT_DATA', payload: VACIO });
 
     return () => offs.forEach((off) => off());
-  }, [businessId, user?.isBypass, user?.role, user?.professionalId, dispatch]);
+  }, [businessId, esBypass, uid, rol, profId, esPlataforma, dispatch]);
 
   return null;
 }

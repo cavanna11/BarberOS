@@ -5,7 +5,8 @@
 //
 // Cubre exactamente los vectores que antes pasaban escribiendo directo a
 // Firestore: precio falsificado, fecha pasada, profesional inexistente, negocio
-// suspendido, horario fuera de agenda y doble reserva.
+// suspendido, horario fuera de agenda, doble reserva, teléfono inválido y más
+// de un turno por día del mismo cliente.
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
@@ -47,6 +48,7 @@ const chequear = (desc, cond, detalle) => {
   if (cond) { ok++; console.log(`  ok    ${desc}`); }
   else { mal++; console.log(`  FALLA ${desc}\n        ${detalle}`); }
 };
+const titulo = (t) => console.log('\n' + t);
 
 // ── escenario ──────────────────────────────────────────────────────────────
 const BID = 'biz-test';
@@ -71,10 +73,14 @@ await db.doc(`businesses/${BID}/schedules/sch-1`).set({
 for (const d of (await db.collection(`businesses/${BID}/appointments`).get()).docs) await d.ref.delete();
 
 const cliente = await usuario('cliente@gmail.com');
-const base = { businessId: BID, professionalId: PROF, serviceId: SRV, appointmentDate: FECHA, startTime: '10:00' };
+const base = {
+  businessId: BID, professionalId: PROF, serviceId: SRV,
+  appointmentDate: FECHA, startTime: '10:00',
+  clientPhone: '+54 9 11 1234-5678',
+};
 
-console.log('\nCamino feliz:');
-let r = await reservar(cliente, { ...base, clientName: 'Cliente', clientPhone: '+54 11 1234' });
+titulo('Camino feliz:');
+let r = await reservar(cliente, { ...base, clientName: 'Cliente' });
 chequear('reserva válida', r.ok?.status === 'created', JSON.stringify(r));
 chequear('el precio lo pone el servidor (12000)', r.ok?.price === 12000, JSON.stringify(r.ok));
 chequear('el fin lo calcula el servidor (10:30)', r.ok?.endTime === '10:30', JSON.stringify(r.ok));
@@ -83,8 +89,10 @@ const guardado = r.ok?.id ? (await db.doc(`businesses/${BID}/appointments/${r.ok
 chequear('nace en estado pendiente', guardado.status === 'pendiente', JSON.stringify(guardado.status));
 chequear('el userId es el de la sesión', guardado.userId === cliente.uid, JSON.stringify(guardado.userId));
 
-console.log('\nLo que antes se colaba escribiendo directo a Firestore:');
-r = await reservar(cliente, { ...base, startTime: '11:00', price: 0 });
+titulo('Lo que antes se colaba escribiendo directo a Firestore:');
+// Otro cliente: el primero ya tiene su turno del día y un-por-día lo pararía antes.
+const c2 = await usuario('c2@gmail.com');
+r = await reservar(c2, { ...base, startTime: '11:00', price: 0 });
 chequear('price 0 se ignora, manda el del servicio', r.ok?.price === 12000, JSON.stringify(r));
 
 r = await reservar(cliente, { ...base, appointmentDate: '2020-01-01' });
@@ -99,7 +107,7 @@ chequear('servicio inexistente, rechazado', r.error === 'NOT_FOUND', JSON.string
 r = await reservar(cliente, { ...base, serviceId: SRV_HUERFANO, startTime: '15:00' });
 chequear('servicio que ese profesional no hace, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 
-console.log('\nHorario:');
+titulo('Horario:');
 r = await reservar(cliente, { ...base, startTime: '08:00' });
 chequear('antes de abrir, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 r = await reservar(cliente, { ...base, startTime: '17:45' });
@@ -109,19 +117,37 @@ chequear('cae en el descanso, rechazado', r.error === 'FAILED_PRECONDITION', JSO
 r = await reservar(cliente, { ...base, appointmentDate: '2027-03-01' });
 chequear('día que no trabaja, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 
-console.log('\nDoble reserva:');
-r = await reservar(cliente, { ...base, startTime: '10:15' });
+titulo('Teléfono:');
+const c3 = await usuario('c3@gmail.com');
+r = await reservar(c3, { ...base, startTime: '15:00', clientPhone: '123' });
+chequear('teléfono corto, rechazado', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+r = await reservar(c3, { ...base, startTime: '15:00', clientPhone: 'hola' });
+chequear('teléfono sin dígitos, rechazado', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+r = await reservar(c3, { ...base, startTime: '15:00', clientPhone: '' });
+chequear('teléfono vacío, rechazado', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+r = await reservar(c3, { ...base, startTime: '15:00', clientPhone: '1123456789' });
+chequear('10 dígitos sin código de país, permitido', r.ok?.status === 'created', JSON.stringify(r));
+
+titulo('Un turno por día:');
+// `cliente` ya reservó a las 10:00. Otro el mismo día, en otro horario libre:
+r = await reservar(cliente, { ...base, startTime: '16:00' });
+chequear('segundo turno el mismo día, rechazado', r.error === 'ALREADY_EXISTS', JSON.stringify(r));
+
+titulo('Doble reserva (otro cliente, sin turno ese día):');
+const c4 = await usuario('c4@gmail.com');
+r = await reservar(c4, { ...base, startTime: '10:15' });
 chequear('se solapa con el de las 10:00, rechazado', r.error === 'ALREADY_EXISTS', JSON.stringify(r));
-r = await reservar(cliente, { ...base, startTime: '10:30' });
+r = await reservar(c4, { ...base, startTime: '10:30' });
 chequear('pegado al anterior (10:30), permitido', r.ok?.status === 'created', JSON.stringify(r));
 
-console.log('\nNegocio suspendido por deuda:');
+titulo('Negocio suspendido por deuda:');
 await db.doc(`businesses/${BID}`).update({ isFrozen: true });
-r = await reservar(cliente, { ...base, startTime: '16:00' });
+const c5 = await usuario('c5@gmail.com');
+r = await reservar(c5, { ...base, startTime: '16:00' });
 chequear('barbería suspendida, no toma turnos', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 await db.doc(`businesses/${BID}`).update({ isFrozen: false });
 
-console.log('\nSin sesión:');
+titulo('Sin sesión:');
 r = await reservar(null, { ...base, startTime: '16:30' });
 chequear('anónimo, rechazado', r.error === 'UNAUTHENTICATED', JSON.stringify(r));
 

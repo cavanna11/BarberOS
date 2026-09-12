@@ -422,6 +422,15 @@ exports.createAppointment = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'No se puede reservar en una fecha pasada.');
   }
 
+  // El teléfono es lo único que le pedimos al cliente además del turno: es por
+  // donde lo va a contactar el barbero. Vale la pena que sea un número.
+  // Se aceptan espacios, guiones y paréntesis, y se cuentan solo los dígitos:
+  // "+54 9 11 1234-5678" y "1123456789" son los dos válidos.
+  const digitos = String(clientPhone).replace(/\D/g, '');
+  if (digitos.length < 10 || digitos.length > 13) {
+    throw new HttpsError('invalid-argument', 'Ingresá un teléfono válido, con código de área.');
+  }
+
   const bizRef = db.doc(`businesses/${businessId}`);
   const [bizSnap, srvSnap, profSnap] = await Promise.all([
     bizRef.get(),
@@ -508,6 +517,18 @@ exports.createAppointment = onCall(async (request) => {
   const ref = agenda.doc();
 
   await db.runTransaction(async (tx) => {
+    // Un turno activo por cliente por día en esta barbería. El front también lo
+    // mira (hasAppointmentToday), pero eso se saltea con la consola abierta —
+    // y de hecho estuvo roto un tiempo porque la lista de turnos del cliente
+    // llegaba vacía. Acá es donde tiene que valer.
+    const propios = await tx.get(
+      agenda.where('userId', '==', request.auth.uid)
+            .where('appointmentDate', '==', appointmentDate)
+    );
+    if (propios.docs.some((d) => ['pendiente', 'confirmada'].includes(d.data().status))) {
+      throw new HttpsError('already-exists', 'Ya tenés un turno ese día. Si querés cambiarlo, cancelá el anterior primero.');
+    }
+
     const delDia = await tx.get(
       agenda.where('appointmentDate', '==', appointmentDate)
             .where('professionalId', '==', professionalId)
