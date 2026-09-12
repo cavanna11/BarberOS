@@ -111,13 +111,13 @@ Google.
 ## ✅ Blaze activo, Functions desplegadas
 
 Desplegadas en `southamerica-east1`: `setBusinessAdmin`, `revokeBusinessAdmin`,
-`applyPendingClaims`, `createAppointment` y `runBilling` (3 AM, hora de Buenos
-Aires). Quedó puesta la política que borra imágenes de contenedor de más de un
+`applyPendingClaims`, `createAppointment`, `createOwnerWithPassword`,
+`resetOwnerPassword`, `setPlatformModerator` y `runBilling` (3 AM, hora de
+Buenos Aires). Quedó puesta la política que borra imágenes de contenedor de más de un
 día, para que no se acumule costo de almacenamiento.
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}
-" https://southamerica-east1-barberos-1d60e.cloudfunctions.net/setBusinessAdmin
+curl -s -o /dev/null -w "%{http_code}\n" https://southamerica-east1-barberos-1d60e.cloudfunctions.net/setBusinessAdmin
 ```
 
 `400`/`401` = desplegada y validando. `404` = se cayó el deploy.
