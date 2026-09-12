@@ -58,9 +58,12 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false })
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
-  const platformOwner = isPlatformOwner(user?.email);
+  // Por el claim (user.isPlatformTeam), no por la lista de mails de
+  // config/platform.js: esa lista es comodidad de UI y no sabe de moderadores.
+  const platformOwner = user?.isPlatformOwner || isPlatformOwner(user?.email);
+  const platformTeam = user?.isPlatformTeam || platformOwner;
 
-  if (superAdminOnly && !platformOwner) {
+  if (superAdminOnly && !platformTeam) {
     return <Navigate to="/" replace />;
   }
 
@@ -103,7 +106,7 @@ function PublicOnlyRoute({ children }) {
   const { isAuthenticated, user, loading } = useAuth();
   if (loading) return <SessionLoading />;
   if (isAuthenticated) {
-    if (isPlatformOwner(user?.email)) {
+    if (user?.isPlatformTeam || isPlatformOwner(user?.email)) {
       return <Navigate to="/super-admin" replace />;
     }
     if (user?.role === 'owner' || user?.role === 'admin') {
@@ -126,7 +129,7 @@ function EntryRoute() {
   const { isAuthenticated, user, loading } = useAuth();
 
   if (loading) return <SessionLoading />;
-  if (isAuthenticated && isPlatformOwner(user?.email)) {
+  if (isAuthenticated && (user?.isPlatformTeam || isPlatformOwner(user?.email))) {
     return <Navigate to="/super-admin" replace />;
   }
   if (isAuthenticated && (user?.role === 'owner' || user?.role === 'admin')) {

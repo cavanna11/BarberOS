@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBusiness } from '../../contexts/BusinessContext';
+import { useAuth } from '../../contexts/AuthContext';
+import TeamPanel from './TeamPanel';
 import { PLANS, OVERAGE_COST_USD, findPlanByQuota } from '../../config/plans';
 import { formatPrice, formatDate } from '../../utils/dateUtils';
 import {
@@ -40,6 +42,13 @@ export default function SuperAdminDashboard() {
   const { businesses, whatsappConfig, whatsappLogs, appointments, professionals, services } = state;
 
   const [activeTab, setActiveTab] = useState('resumen');
+
+  // Un moderador entra al panel para VER y para atender soporte. Todo lo que
+  // mueve plata, cuentas o suspensiones queda escondido. Esto es UI: la
+  // barrera real son las Rules y las Cloud Functions, que le rechazan esas
+  // operaciones aunque se las mande a mano.
+  const { user } = useAuth();
+  const soloLectura = Boolean(user?.isModerator);
   const [searchTerm, setSearchTerm] = useState('');
   const [showNewBusiness, setShowNewBusiness] = useState(false);
 
@@ -289,13 +298,18 @@ export default function SuperAdminDashboard() {
           <span className="text-secondary text-sm">Control de establecimientos, facturación y automatización.</span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            onClick={() => setShowNewBusiness(true)}
-            className="btn btn-primary"
-            style={{ fontSize: 13, padding: '9px 16px' }}
-          >
-            + Nueva barbería
-          </button>
+          {soloLectura && (
+            <span className="badge badge-warning">Moderador · solo lectura y soporte</span>
+          )}
+          {!soloLectura && (
+            <button
+              onClick={() => setShowNewBusiness(true)}
+              className="btn btn-primary"
+              style={{ fontSize: 13, padding: '9px 16px' }}
+            >
+              + Nueva barbería
+            </button>
+          )}
           {/* Se quitó "Vaciar base": los datos ya no están en este navegador.
               Borrar la base ahora afecta a clientes reales y se hace desde la
               consola de Firebase, a conciencia — no con un botón al lado del
@@ -326,6 +340,7 @@ export default function SuperAdminDashboard() {
         >
           Monitoreo de Turnos ({appointments?.length || 0})
         </button>
+        {!soloLectura && (<>
         <button 
           onClick={() => setActiveTab('whatsapp')}
           className={`btn ${activeTab === 'whatsapp' ? 'btn-primary' : 'btn-outline'}`}
@@ -340,6 +355,7 @@ export default function SuperAdminDashboard() {
         >
           Historial Mensajes ({totalMsgs})
         </button>
+        </>)}
         <button
           onClick={() => setActiveTab('soporte')}
           className={`btn ${activeTab === 'soporte' ? 'btn-primary' : 'btn-outline'}`}
@@ -347,10 +363,21 @@ export default function SuperAdminDashboard() {
         >
           Soporte
         </button>
+        {!soloLectura && (
+          <button
+            onClick={() => setActiveTab('equipo')}
+            className={`btn ${activeTab === 'equipo' ? 'btn-primary' : 'btn-outline'}`}
+            style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            Equipo
+          </button>
+        )}
       </div>
 
+      {activeTab === 'equipo' && !soloLectura && <TeamPanel />}
+
       {/* Base vacía: lo único que tiene sentido hacer es dar de alta el primer cliente */}
-      {totalBusinesses === 0 && activeTab !== 'soporte' && (
+      {totalBusinesses === 0 && activeTab !== 'soporte' && activeTab !== 'equipo' && (
         <div className="card empty-state" style={{ padding: 'var(--space-2xl)' }}>
           <div className="empty-state-icon">💈</div>
           <h3 style={{ marginBottom: 8 }}>Todavía no hay ninguna barbería</h3>
@@ -719,6 +746,7 @@ export default function SuperAdminDashboard() {
                     >
                       🔗 Ver link público
                     </a>
+                    {!soloLectura && (<>
                     <button
                       onClick={() => handleToggleFreeze(b.id)}
                       className={`btn ${b.isFrozen ? 'btn-success' : 'btn-danger'}`}
@@ -747,6 +775,7 @@ export default function SuperAdminDashboard() {
                     >
                       ✏️ Editar Saldo
                     </button>
+                    </>)}
                   </div>
                 </div>
               );

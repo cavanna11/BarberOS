@@ -135,6 +135,12 @@ export function AuthProvider({ children }) {
     const match = authorizedAdmins.find((a) => a.email.toLowerCase() === email);
     const platformOwner = claims.platform === true || (!hasClaims && isPlatformOwner(email));
 
+    // Moderador: equipo de soporte de la plataforma. Entra al panel global, ve
+    // todo y atiende tickets, pero no toca plata, cuentas ni suspensiones. Va
+    // como `platform: 'moderator'` y no como `true`, así todo lo que exige
+    // `platform === true` lo deja afuera por defecto.
+    const moderator = claims.platform === 'moderator';
+
     return {
       id: fbUser.uid,
       email: fbUser.email,
@@ -142,14 +148,19 @@ export function AuthProvider({ children }) {
       avatarUrl: fbUser.photoURL,
       role: platformOwner
         ? 'owner'
-        : (hasClaims ? claims.role : match?.role) || 'client',
-      businessId: platformOwner
+        : moderator
+          ? 'moderator'
+          : (hasClaims ? claims.role : match?.role) || 'client',
+      businessId: platformOwner || moderator
         ? null
         : (hasClaims ? claims.businessId : match?.businessId) || null,
-      professionalId: platformOwner
+      professionalId: platformOwner || moderator
         ? null
         : (hasClaims ? claims.professionalId : match?.professionalId) || null,
       isPlatformOwner: platformOwner,
+      isModerator: moderator,
+      // Dueño o moderador: quien puede entrar al panel global.
+      isPlatformTeam: platformOwner || moderator,
       // Con qué se resolvieron los permisos. Útil para saber si el bootstrap
       // de claims ya surtió efecto.
       permissionSource: hasClaims ? 'claims' : 'local',

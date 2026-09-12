@@ -127,6 +127,25 @@ fallback de permisos de `AuthContext`. Se dejó a propósito hasta que un dueño
 real entre con claims de verdad — sacarlo antes es quedarse sin red por una
 mejora que no cambia la seguridad (las Rules ya exigen el claim real).
 
+### Moderadores
+
+Equipo de soporte con acceso al panel global. Un moderador **ve todo y atiende
+tickets**; **no** da de alta cuentas, no registra pagos, no cambia planes, no
+suspende, no nombra moderadores y no lee el contacto personal del staff.
+
+Lleva el claim `platform: 'moderator'` y NO `platform: true` a propósito: todo
+lo que exige `platform === true` —Rules y functions— lo deja afuera por defecto,
+y lo que puede hacer se le concede explícitamente con `esEquipoPlataforma()`.
+Es la diferencia entre "tiene lo que se le dio" y "tiene todo salvo lo que se le
+sacó".
+
+Se nombran desde `/super-admin` → **Equipo** (pestaña que solo ve el dueño).
+`setPlatformModerator` los crea, los quita (y les corta las sesiones), y usa el
+mismo mecanismo de pendientes que los admins de barbería para quien nunca entró.
+
+En el frontend: `user.isModerator`, `user.isPlatformTeam` (dueño o moderador).
+El panel esconde lo que no puede hacer; la barrera real son las Rules.
+
 ### Entrar sin Gmail
 
 En el alta se elige **cómo entra el dueño**: con su cuenta de Google, o con un
@@ -359,6 +378,13 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
   llevaba nombre y teléfono de todos los turnos del negocio, y "Mis Citas"
   fallaba para todos. Para listados de a-uno-mismo la condición va sobre
   `resource.data`, no sobre la forma de la query.
+- **Que una regla permita la consulta correcta no prueba que la app la haga.**
+  `subscribeMyAppointments` existió desde el principio, la auditoría probó que
+  las Rules la permiten, y nadie la llamaba: `BusinessSync` pedía la agenda
+  entera para el cliente, las Rules se la negaban, y "Mis citas" estuvo vacío
+  para todos hasta que un usuario real lo notó. Ahora la suscripción se arma por
+  rol (dueño todo, barbero lo suyo, cliente lo suyo, anónimo lo público). Si
+  agregás una regla con `resource.data`, revisá quién hace la consulta.
 - **Los turnos guardan la fecha en `appointmentDate`, NO en `date`.** Todo el
   código lo usa así (`BookingPage`, `AppointmentsPage`, `DashboardPage`,
   `MyAppointments`, `availabilityEngine`). Sembrar datos de prueba con `date`
@@ -465,8 +491,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: 30, 18, 11 y 46 de 47. El único que falla es el alcance del barbero, que
-es la decisión de producto del punto 4.
+Hoy: claims 45, reservas 23, facturación 11, rules 61. Todo en verde.
 
 ---
 

@@ -52,7 +52,7 @@ export default function BusinessSync() {
   const primerSegmento = pathname.split('/')[1] || '';
   const slug = RUTAS_RESERVADAS.has(primerSegmento) ? null : primerSegmento;
 
-  const esPlataforma = user?.isPlatformOwner === true;
+  const esPlataforma = user?.isPlatformTeam === true;
   const businessIdPropio = user?.businessId || null;
 
   // Evita re-suscribirse en loop cuando el slug resuelve al mismo negocio.

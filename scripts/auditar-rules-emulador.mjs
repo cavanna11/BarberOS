@@ -53,7 +53,8 @@ const borrar = (u, path) => fetch(`${DOCS}/${path}`, { method: 'DELETE', headers
 async function consultar(u, padre, col, where) {
   const q = { structuredQuery: { from: [{ collectionId: col }] } };
   if (where) q.structuredQuery.where = { fieldFilter: { field: { fieldPath: where[0] }, op: 'EQUAL', value: val(where[1]) } };
-  return fetch(`${DOCS}/${padre}:runQuery`, { method: 'POST', headers: cab(u), body: JSON.stringify(q) });
+  const url = padre ? `${DOCS}/${padre}:runQuery` : `${DOCS}:runQuery`;
+  return fetch(url, { method: 'POST', headers: cab(u), body: JSON.stringify(q) });
 }
 
 // ── aserciones ─────────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ const duenoA   = await usuario('duenoa@gmail.com',   { businessId: A, role: 'own
 const barberoA = await usuario('barberoa@gmail.com', { businessId: A, role: 'admin', professionalId: 'p1' });
 const duenoB   = await usuario('duenob@gmail.com',   { businessId: B, role: 'owner', professionalId: null });
 const cliente  = await usuario('cliente@gmail.com',  null);
+const moderador = await usuario('mod@sacia.tech', { platform: 'moderator' });
 
 console.log('\n-- Aislamiento entre barberias --');
 await esperar('dueno de B NO escribe servicios de A',     crear(duenoB, `businesses/${A}/services`, { name: 'x', price: 1 }), 'denegado');
@@ -140,6 +142,22 @@ await esperar('barbero NO crea turno para otro',         crear(barberoA, `busine
 await esperar('barbero SI crea su walk-in',              crear(barberoA, `businesses/${A}/appointments`, { businessId:A, userId:barberoA.uid, status:'pendiente', professionalId:'p1', type:'walkin', appointmentDate:'2026-09-03', startTime:'09:00', endTime:'09:30' }), 'permitido');
 await esperar('el dueno SI ve toda la agenda',           consultar(duenoA, `businesses/${A}`, 'appointments'), 'permitido');
 await esperar('[?] barbero escribe el catalogo',         crear(barberoA, `businesses/${A}/services`, { name: 'inventado', price: 1 }), 'denegado');
+
+console.log('\n-- Moderador: ve y atiende, no toca plata ni cuentas --');
+await esperar('moderador lista los negocios',            consultar(moderador, '', 'businesses'), 'permitido');
+await esperar('moderador lee la facturacion',            leer(moderador, `businesses/${A}/private/billing`), 'permitido');
+await esperar('moderador NO escribe la facturacion',     editar(moderador, `businesses/${A}/private/billing`, { debt: 0 }), 'denegado');
+await esperar('moderador NO suspende un negocio',        editar(moderador, `businesses/${A}`, { isFrozen: true }), 'denegado');
+await esperar('moderador NO crea negocios',              crear(moderador, 'businesses', { name: 'x', slug: 'x' }), 'denegado');
+await esperar('moderador NO edita el catalogo',          crear(moderador, `businesses/${A}/services`, { name: 'x', price: 1 }), 'denegado');
+await esperar('moderador lee un ticket',                 leer(moderador, 'tickets/tk-alfa'), 'permitido');
+await esperar('moderador lista todos los tickets',       consultar(moderador, '', 'tickets'), 'permitido');
+await esperar('moderador cierra un ticket',              editar(moderador, 'tickets/tk-alfa', { status: 'cerrado' }), 'permitido');
+await esperar('moderador NO lee la config de plataforma', leer(moderador, 'platform/whatsapp'), 'denegado');
+await esperar('moderador lee la agenda de un negocio',   consultar(moderador, `businesses/${A}`, 'appointments'), 'permitido');
+await esperar('moderador NO edita un turno',             editar(moderador, `businesses/${A}/appointments/apt-otro`, { status: 'completada' }), 'denegado');
+await esperar('moderador lee los admins de un negocio',  consultar(moderador, `businesses/${A}`, 'admins'), 'permitido');
+await esperar('moderador NO lee el contacto del staff',  leer(moderador, `businesses/${A}/staffContacts/p1`), 'denegado');
 
 console.log('\n-- Tickets --');
 await esperar('dueno de A lee su ticket',                 leer(duenoA, 'tickets/tk-alfa'), 'permitido');

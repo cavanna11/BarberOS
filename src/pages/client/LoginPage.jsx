@@ -24,7 +24,7 @@ export default function LoginPage() {
   const from = origen && origen !== '/' && origen !== '/login' ? origen : null;
 
   const redirectAfterLogin = (user) => {
-    if (user.isPlatformOwner || isPlatformOwner(user.email)) {
+    if (user.isPlatformTeam || isPlatformOwner(user.email)) {
       navigate('/super-admin');
     } else if (user.role === 'owner' || user.role === 'admin') {
       navigate('/admin');

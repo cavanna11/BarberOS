@@ -210,16 +210,20 @@ exports.applyPendingClaims = onCall(async (request) => {
   const pending = await pendingRef.get();
   if (!pending.exists) return { status: 'none' };
 
-  const { businessId, role, professionalId = null } = pending.data();
-  await getAuth().setCustomUserClaims(request.auth.uid, {
-    businessId,
-    role,
-    professionalId,
-  });
+  const datos = pending.data();
+
+  // El pendiente puede ser de dos formas: permiso de barbería (businessId +
+  // role) o moderador de la plataforma (platform: 'moderator'). Se aplica el
+  // que corresponda, nunca una mezcla.
+  const claims = datos.platform === 'moderator'
+    ? { platform: 'moderator' }
+    : { businessId: datos.businessId, role: datos.role, professionalId: datos.professionalId ?? null };
+
+  await getAuth().setCustomUserClaims(request.auth.uid, claims);
   await pendingRef.delete();
 
   // El frontend tiene que refrescar el token para ver los claims nuevos.
-  return { status: 'applied', businessId, role };
+  return { status: 'applied', ...claims };
 });
 
 // ============================================================================
@@ -709,6 +713,99 @@ exports.resetOwnerPassword = onCall(async (request) => {
   await getAuth().revokeRefreshTokens(user.uid);
 
   return { status: 'reset', email: normalizedEmail, password };
+});
+
+// ============================================================================
+// 6. EQUIPO DE LA PLATAFORMA
+// ============================================================================
+// El dueño de la plataforma puede sumar moderadores: gente de soporte que entra
+// al panel global, ve todo y atiende tickets, pero no toca plata, cuentas ni
+// suspensiones. Lo que puede hacer lo definen las Rules y el frontend; acá solo
+// se pone o se saca el claim.
+//
+// El claim es `platform: 'moderator'` y NO `platform: true` a propósito: todo lo
+// que exige `platform === true` —en las Rules y en estas mismas functions— lo
+// deja afuera por defecto. Es la diferencia entre "tiene lo que se le concedió"
+// y "tiene todo salvo lo que se le sacó".
+
+/** Solo el dueño de la plataforma. Un moderador no puede nombrar moderadores. */
+function assertPlatformOwner(request) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
+  }
+  if (request.auth.token.platform !== true) {
+    throw new HttpsError('permission-denied', 'Solo el dueño de la plataforma.');
+  }
+}
+
+/**
+ * Nombra a alguien moderador, o le saca el rol. Devuelve 'applied' si la cuenta
+ * ya existía, o 'pending' si nunca entró (se aplica en su primer login, igual
+ * que los permisos de barbería).
+ */
+exports.setPlatformModerator = onCall(async (request) => {
+  assertPlatformOwner(request);
+
+  const { email, enabled = true, name = '' } = request.data || {};
+  if (!email) throw new HttpsError('invalid-argument', 'Falta el email.');
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+
+  // Nadie se toca a sí mismo desde acá: sacarse el claim de dueño por error
+  // dejaría el panel global sin nadie que pueda entrar.
+  if (normalizedEmail === String(request.auth.token.email || '').toLowerCase()) {
+    throw new HttpsError('failed-precondition', 'No podés cambiar tu propio rol.');
+  }
+
+  let user = null;
+  try {
+    user = await getAuth().getUserByEmail(normalizedEmail);
+  } catch (err) {
+    if (err.code !== 'auth/user-not-found') throw err;
+  }
+
+  // Un dueño de plataforma no se degrada a moderador por acá. Si algún día hay
+  // más de uno, se decide a mano.
+  if (user?.customClaims?.platform === true) {
+    throw new HttpsError('permission-denied', 'Esa cuenta ya es dueña de la plataforma.');
+  }
+
+  const registro = db.doc(`platform/team/members/${normalizedEmail}`);
+
+  if (!enabled) {
+    await registro.delete().catch(() => {});
+    await db.doc(`pendingAdmins/${normalizedEmail}`).delete().catch(() => {});
+    if (!user) return { status: 'not-found' };
+    // Se le vacían los claims enteros: un moderador no tiene otro rol que
+    // conservar. Y se le cortan las sesiones, si no sigue entrando una hora.
+    await getAuth().setCustomUserClaims(user.uid, {});
+    await getAuth().revokeRefreshTokens(user.uid);
+    return { status: 'revoked' };
+  }
+
+  // Registro para la UI del panel (la lista de "Equipo" sale de acá).
+  await registro.set({
+    email: normalizedEmail,
+    name,
+    role: 'moderator',
+    addedAt: FieldValue.serverTimestamp(),
+  });
+
+  if (!user) {
+    // Nunca entró: queda anotado y applyPendingClaims lo aplica en su primer
+    // login. Se reutiliza el mismo mecanismo que los admins de barbería.
+    await db.doc(`pendingAdmins/${normalizedEmail}`).set({
+      platform: 'moderator',
+      email: normalizedEmail,
+      name,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return { status: 'pending', message: 'Se aplicará en su primer login.' };
+  }
+
+  // Si administraba una barbería, esto lo reemplaza: una cuenta tiene UN rol.
+  await getAuth().setCustomUserClaims(user.uid, { platform: 'moderator' });
+  return { status: 'applied', uid: user.uid };
 });
 
 // ============================================================================

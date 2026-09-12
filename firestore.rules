@@ -33,8 +33,25 @@ service cloud.firestore {
       return request.auth.token;
     }
 
+    /** El dueño de la plataforma. Puede todo. */
     function isPlatform() {
       return signedIn() && claims().get('platform', false) == true;
+    }
+
+    /**
+     * Moderador: el equipo de soporte. Lleva `platform: 'moderator'` y NO
+     * `platform: true` a propósito — así todas las reglas que exigen isPlatform()
+     * lo dejan afuera por defecto, y lo que puede hacer se le concede acá
+     * abajo explícitamente: leer, y atender tickets. Nunca plata, cuentas ni
+     * suspensiones.
+     */
+    function esModerador() {
+      return signedIn() && claims().get('platform', false) == 'moderator';
+    }
+
+    /** Dueño o moderador: quien puede ENTRAR al panel global. */
+    function esEquipoPlataforma() {
+      return isPlatform() || esModerador();
     }
 
     // Pertenece a este negocio (con cualquier rol de staff)
@@ -74,7 +91,7 @@ service cloud.firestore {
     // Documento: /slugs/{slug} = { businessId: 'biz-x' }
     match /slugs/{slug} {
       allow get: if true;
-      allow list: if isPlatform();
+      allow list: if esEquipoPlataforma();
       allow write: if isPlatform();
     }
 
@@ -88,7 +105,7 @@ service cloud.firestore {
       allow get: if true;
 
       // Nadie lista todos los negocios salvo el panel global.
-      allow list: if isPlatform();
+      allow list: if esEquipoPlataforma();
 
       // Solo vos das de alta o borrás cuentas: es una operación comercial.
       allow create, delete: if isPlatform();
@@ -103,7 +120,8 @@ service cloud.firestore {
 
       // Facturación: solo la plataforma. Ni el dueño la lee.
       match /private/billing {
-        allow read, write: if isPlatform();
+        allow read: if esEquipoPlataforma();
+        allow write: if isPlatform();
       }
 
       // ── Staff, catálogo y horarios ───────────────────────────────────────
@@ -149,7 +167,7 @@ service cloud.firestore {
         // El dueño ve toda la agenda; el barbero solo los suyos; el cliente
         // solo los propios.
         allow get: if isBusinessOwner(bizId)
-                      || isPlatform()
+                      || esEquipoPlataforma()
                       || (esBarbero(bizId) && esSuTurno())
                       || (signedIn() && resource.data.userId == request.auth.uid);
 
@@ -173,7 +191,7 @@ service cloud.firestore {
         // Al barbero se le aplica el mismo criterio: su query TIENE que llevar
         // where('professionalId','==',suId). Lo hace BusinessSync.
         allow list: if isBusinessOwner(bizId)
-                       || isPlatform()
+                       || esEquipoPlataforma()
                        || (esBarbero(bizId) && esSuTurno())
                        || (signedIn() && resource.data.userId == request.auth.uid);
 
@@ -213,13 +231,13 @@ service cloud.firestore {
       // Function `setBusinessAdmin`. Se puede escribir acá sin que eso otorgue
       // acceso por sí solo.
       match /admins/{adminId} {
-        allow read: if isBusinessStaff(bizId) || isPlatform();
+        allow read: if isBusinessStaff(bizId) || esEquipoPlataforma();
         allow write: if canManage(bizId);
       }
 
       // Log de notificaciones enviadas. Lo escribe el backend, no el browser.
       match /notifications/{notifId} {
-        allow read: if isBusinessStaff(bizId) || isPlatform();
+        allow read: if isBusinessStaff(bizId) || esEquipoPlataforma();
         allow write: if false;
       }
     }
@@ -233,8 +251,8 @@ service cloud.firestore {
     // `resource.data.businessId`, así que la query del cliente TIENE que llevar
     // where('businessId','==',suId) — si no, Firestore rechaza toda la consulta.
     match /tickets/{ticketId} {
-      allow get: if isPlatform() || inBusiness(resource.data.businessId);
-      allow list: if isPlatform()
+      allow get: if esEquipoPlataforma() || inBusiness(resource.data.businessId);
+      allow list: if esEquipoPlataforma()
                      || (signedIn() && resource.data.businessId == claims().get('businessId', ''));
 
       // Lo abre la barbería (o vos en su nombre, al preparar la cuenta).
@@ -242,23 +260,23 @@ service cloud.firestore {
       // El `!= ''` no sobra: el default de claims().get() para alguien SIN claim
       // es la cadena vacía, así que un cliente cualquiera mandando
       // businessId: '' cumplía la igualdad y podía crear tickets basura.
-      allow create: if isPlatform()
+      allow create: if esEquipoPlataforma()
                        || (signedIn()
                            && claims().get('businessId', '') != ''
                            && request.resource.data.businessId == claims().get('businessId', ''));
 
       // Cerrar, reabrir, marcar leído. Nadie borra tickets: quedan de historial.
-      allow update: if isPlatform() || inBusiness(resource.data.businessId);
+      allow update: if esEquipoPlataforma() || inBusiness(resource.data.businessId);
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isPlatform()
+        allow read: if esEquipoPlataforma()
                        || inBusiness(get(/databases/$(database)/documents/tickets/$(ticketId)).data.businessId);
 
         // El autor no se acepta del cliente: se compara contra su propio uid.
         allow create: if signedIn()
                          && request.resource.data.authorId == request.auth.uid
-                         && (isPlatform()
+                         && (esEquipoPlataforma()
                              || inBusiness(get(/databases/$(database)/documents/tickets/$(ticketId)).data.businessId));
 
         // Un mensaje enviado no se edita ni se borra.
@@ -280,6 +298,13 @@ service cloud.firestore {
     // secret de las Cloud Functions. Ver FIREBASE_SETUP.md.
     match /platform/{docId} {
       allow read, write: if isPlatform();
+    }
+
+    // Equipo de la plataforma (moderadores). Lo escribe solo la Cloud Function
+    // setPlatformModerator con el Admin SDK; el panel lo lee para listar.
+    match /platform/team/members/{email} {
+      allow read: if esEquipoPlataforma();
+      allow write: if false;
     }
 
     // Todo lo que no esté declarado arriba queda cerrado.

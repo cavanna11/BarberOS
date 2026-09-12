@@ -352,6 +352,16 @@ export async function removeAdminRecord(businessId, email) {
 }
 
 // ============================================================================
+// EQUIPO DE LA PLATAFORMA
+// ============================================================================
+// Moderadores: gente de soporte con acceso al panel global. Lo escribe solo la
+// Cloud Function setPlatformModerator; acá solo se lee.
+
+export function subscribePlatformTeam(cb, onError) {
+  return onSnapshot(collection(db, 'platform', 'team', 'members'), (snap) => cb(rows(snap)), onError);
+}
+
+// ============================================================================
 // TICKETS DE SOPORTE
 // ============================================================================
 // Colección de primer nivel para que el panel global los liste todos sin

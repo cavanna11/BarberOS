@@ -108,6 +108,17 @@ export function resetOwnerPassword({ email, password = null }) {
 }
 
 /**
+ * Nombra a alguien moderador de la plataforma (o le saca el rol con
+ * `enabled: false`). Solo el dueño de la plataforma puede llamarla.
+ *
+ * Devuelve 'applied' si la cuenta ya existía, 'pending' si nunca entró (se
+ * aplica en su primer login), 'revoked' o 'not-found' al quitar.
+ */
+export function setPlatformModerator({ email, enabled = true, name = '' }) {
+  return llamar('setPlatformModerator', { email, enabled, name });
+}
+
+/**
  * Reclama el permiso que quedó pendiente para el mail de la sesión actual.
  * Se llama una vez después del login. Devuelve `{ status: 'none' }` si no había
  * nada pendiente, que es el caso normal y no es un error.

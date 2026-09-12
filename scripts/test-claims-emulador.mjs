@@ -80,6 +80,9 @@ await borrarUsuario('nuevo@gmail.com');
 await borrarUsuario('sin-gmail@hotmail.com');
 await borrarUsuario('elegida@hotmail.com');
 await borrarUsuario('corta@hotmail.com');
+await borrarUsuario('moderador@sacia.tech');
+await borrarUsuario('nunca-entro@sacia.tech');
+for (const d of (await db.collection('platform/team/members').get()).docs) await d.ref.delete();
 const pendientes = await db.collection('pendingAdmins').get();
 await Promise.all(pendientes.docs.map((d) => d.ref.delete()));
 
@@ -213,6 +216,39 @@ chequear('y sirve para entrar', Boolean((await login2.json()).idToken), 'no entr
 
 r = await llamar('createOwnerWithPassword', tPlataforma, { email: 'corta@hotmail.com', businessId: B1, name: 'x', password: '123' });
 chequear('rechaza una contrasena de menos de 6', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+
+
+console.log('');
+console.log('Moderadores de la plataforma:');
+const uidMod = await crearUsuario('moderador@sacia.tech', null);
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'moderador@sacia.tech', name: 'Mod' });
+chequear('la plataforma nombra un moderador', r.ok?.status === 'applied', JSON.stringify(r));
+chequear('le queda platform: moderator (NO true)',
+  (await auth.getUser(uidMod)).customClaims?.platform === 'moderator', JSON.stringify((await auth.getUser(uidMod)).customClaims));
+chequear('queda en platform/team/members', (await db.doc('platform/team/members/moderador@sacia.tech').get()).exists, 'no esta');
+
+const tMod = await idToken(uidMod);
+r = await llamar('setPlatformModerator', tMod, { email: 'otro-mod@sacia.tech' });
+chequear('un moderador NO nombra moderadores', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+r = await llamar('setBusinessAdmin', tMod, { email: 'x@gmail.com', businessId: B1, role: 'owner' });
+chequear('un moderador NO asigna duenos', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+r = await llamar('createOwnerWithPassword', tMod, { email: 'y@gmail.com', businessId: B1 });
+chequear('un moderador NO crea cuentas', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'plataforma@sacia.tech' });
+chequear('NO se cambia a si misma', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await llamar('setPlatformModerator', tDuenoB1, { email: 'z@gmail.com' });
+chequear('un dueno de barberia NO nombra moderadores', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'nunca-entro@sacia.tech' });
+chequear('alguien que nunca entro queda pendiente', r.ok?.status === 'pending', JSON.stringify(r));
+const uidNuevoMod = await crearUsuario('nunca-entro@sacia.tech', null);
+r = await llamar('applyPendingClaims', await idToken(uidNuevoMod), {});
+chequear('y en su primer login le toma el rol', r.ok?.status === 'applied' && r.ok?.platform === 'moderator', JSON.stringify(r));
+
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'moderador@sacia.tech', enabled: false });
+chequear('la plataforma le quita el rol', r.ok?.status === 'revoked', JSON.stringify(r));
+chequear('le quedan los claims vacios', Object.keys((await auth.getUser(uidMod)).customClaims || {}).length === 0, '');
 
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron\n`);
 process.exit(fallaron ? 1 : 0);
