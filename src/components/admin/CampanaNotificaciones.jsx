@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNotifications } from '../../hooks/useTenantData';
+import { useNotifications, usePlatformNotifications } from '../../hooks/useTenantData';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
-import { markNotificationRead } from '../../lib/repository';
+import { markNotificationRead, markPlatformNotificationRead } from '../../lib/repository';
 import { activarPush, estadoPush, ponerBadge } from '../../lib/push';
 import { Link } from 'react-router-dom';
 
@@ -17,7 +17,7 @@ import { Link } from 'react-router-dom';
  * aviso por mensaje sale del mismo trigger.
  */
 
-const ICONO = { nuevo_turno: '📅', turno_cancelado: '❌' };
+const ICONO = { nuevo_turno: '📅', turno_cancelado: '❌', ticket_nuevo: '💬', ticket_mensaje: '💬', cuenta_suspendida: '🔴' };
 
 function hace(ts) {
   const d = ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null;
@@ -30,10 +30,19 @@ function hace(ts) {
   return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
 }
 
-export default function CampanaNotificaciones() {
+/**
+ * `modo`: 'negocio' (panel de la barbería) o 'plataforma' (panel global).
+ * Cambia de dónde salen las notificaciones, dónde se marca leída, dónde se
+ * registra el push y a qué pantalla lleva cada aviso.
+ */
+export default function CampanaNotificaciones({ modo = 'negocio' }) {
+  const plataforma = modo === 'plataforma';
   const { user } = useAuth();
   const { businessId } = useCurrentBusiness();
-  const notificaciones = useNotifications();
+  const delNegocio = useNotifications();
+  const deLaPlataforma = usePlatformNotifications();
+  const notificaciones = plataforma ? deLaPlataforma : delNegocio;
+  const marcarLeida = (id) => (plataforma ? markPlatformNotificationRead(id, uid) : markNotificationRead(businessId, id, uid));
   const navigate = useNavigate();
   const [abierta, setAbierta] = useState(false);
   const [permiso, setPermiso] = useState(() => (typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'));
@@ -76,10 +85,11 @@ export default function CampanaNotificaciones() {
   const pedirPermiso = async () => {
     try {
       const r = await activarPush({
-        businessId,
+        plataforma,
+        businessId: plataforma ? null : businessId,
         uid,
         professionalId: user?.professionalId || null,
-        role: user?.role === 'owner' ? 'owner' : 'admin',
+        role: plataforma ? 'platform' : user?.role === 'owner' ? 'owner' : 'admin',
       });
       setPush(r.estado);
     } catch (err) {
@@ -91,14 +101,14 @@ export default function CampanaNotificaciones() {
 
   const abrir = async (n) => {
     setAbierta(false);
-    if (!n.leidaPor?.[uid] && businessId && uid) {
-      markNotificationRead(businessId, n.id, uid).catch((err) => console.error('[Campana] No se pudo marcar leída:', err));
+    if (!n.leidaPor?.[uid] && uid && (plataforma || businessId)) {
+      marcarLeida(n.id).catch((err) => console.error('[Campana] No se pudo marcar leída:', err));
     }
-    navigate('/admin/citas');
+    navigate(n.url || (plataforma ? '/super-admin?tab=soporte' : '/admin/citas'));
   };
 
   const marcarTodas = () => {
-    noLeidas.forEach((n) => markNotificationRead(businessId, n.id, uid).catch(() => {}));
+    noLeidas.forEach((n) => marcarLeida(n.id).catch(() => {}));
   };
 
   return (
@@ -128,7 +138,7 @@ export default function CampanaNotificaciones() {
             </button>
           )}
           {push === 'ios-sin-instalar' && (
-            <Link className="campana-permiso" to="/admin/instalar" onClick={() => setAbierta(false)} style={{ display: 'block', textDecoration: 'none' }}>
+            <Link className="campana-permiso" to={plataforma ? '/admin/instalar' : '/admin/instalar'} onClick={() => setAbierta(false)} style={{ display: 'block', textDecoration: 'none' }}>
               📲 Instalá la app en tu iPhone para recibir avisos →
             </Link>
           )}
@@ -140,7 +150,9 @@ export default function CampanaNotificaciones() {
 
           {notificaciones.length === 0 ? (
             <div className="campana-vacia">
-              Cuando un cliente reserve o cancele un turno, te avisamos acá.
+              {plataforma
+                ? 'Cuando entre un ticket, una barbería responda, o una cuenta se suspenda por deuda, te avisamos acá.'
+                : 'Cuando un cliente reserve o cancele un turno, te avisamos acá.'}
             </div>
           ) : (
             <ul className="campana-lista">

@@ -17,7 +17,7 @@
 // quien activa los avisos, no toda la app.
 
 import app from './firebase';
-import { saveDevice, removeDevice } from './repository';
+import { saveDevice, removeDevice, savePlatformDevice, removePlatformDevice } from './repository';
 
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || '';
 const TOKEN_KEY = 'barberos:pushToken';
@@ -80,7 +80,7 @@ async function registrarServiceWorker() {
  * handler de click: iOS y Chrome ignoran el pedido si no viene de un gesto.
  * Devuelve { ok, estado, mensaje }.
  */
-export async function activarPush({ businessId, uid, professionalId = null, role = 'admin' }) {
+export async function activarPush({ businessId = null, uid, professionalId = null, role = 'admin', plataforma = false }) {
   const s = estadoPush();
   if (['ios-sin-instalar', 'sin-soporte', 'sin-vapid', 'bloqueado'].includes(s.estado)) {
     return { ok: false, estado: s.estado };
@@ -95,14 +95,7 @@ export async function activarPush({ businessId, uid, professionalId = null, role
   const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
   if (!token) return { ok: false, estado: 'sin-token' };
 
-  await saveDevice(businessId, token, {
-    uid,
-    professionalId,
-    role,
-    plataforma: esIOS() ? 'ios' : esAndroid() ? 'android' : 'desktop',
-    instalada: esAppInstalada(),
-    userAgent: (navigator.userAgent || '').slice(0, 200),
-  });
+  await guardar({ plataforma, businessId, token, uid, professionalId, role });
   try { localStorage.setItem(TOKEN_KEY, token); } catch { /* sin storage */ }
   return { ok: true, estado: 'activo' };
 }
@@ -111,7 +104,7 @@ export async function activarPush({ businessId, uid, professionalId = null, role
  * Si este dispositivo ya estaba activado, refresca el registro (el token
  * puede rotar) sin pedir nada. Llamar al entrar al panel.
  */
-export async function refrescarPush({ businessId, uid, professionalId = null, role = 'admin' }) {
+export async function refrescarPush({ businessId = null, uid, professionalId = null, role = 'admin', plataforma = false }) {
   if (estadoPush().estado !== 'activo') return;
   try {
     const { getMessaging, getToken } = await import('firebase/messaging');
@@ -119,13 +112,8 @@ export async function refrescarPush({ businessId, uid, professionalId = null, ro
     const token = await getToken(getMessaging(app), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     if (!token) return;
     const viejo = localStorage.getItem(TOKEN_KEY);
-    if (viejo && viejo !== token) await removeDevice(businessId, viejo).catch(() => {});
-    await saveDevice(businessId, token, {
-      uid, professionalId, role,
-      plataforma: esIOS() ? 'ios' : esAndroid() ? 'android' : 'desktop',
-      instalada: esAppInstalada(),
-      userAgent: (navigator.userAgent || '').slice(0, 200),
-    });
+    if (viejo && viejo !== token) await borrar({ plataforma, businessId, token: viejo }).catch(() => {});
+    await guardar({ plataforma, businessId, token, uid, professionalId, role });
     localStorage.setItem(TOKEN_KEY, token);
   } catch (err) {
     console.warn('[push] No se pudo refrescar el registro:', err);
@@ -133,15 +121,31 @@ export async function refrescarPush({ businessId, uid, professionalId = null, ro
 }
 
 /** Da de baja este dispositivo (por ejemplo, al cerrar sesión). */
-export async function desactivarPush(businessId) {
+export async function desactivarPush(businessId = null, { plataforma = false } = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
   if (!token) return;
-  try { await removeDevice(businessId, token); } catch { /* ya no estaba */ }
+  try { await borrar({ plataforma, businessId, token }); } catch { /* ya no estaba */ }
   try {
     const { getMessaging, deleteToken } = await import('firebase/messaging');
     await deleteToken(getMessaging(app));
   } catch { /* nada */ }
   localStorage.removeItem(TOKEN_KEY);
+}
+
+// Dónde se guarda el token: en el negocio (staff) o en la colección del
+// equipo de la plataforma (panel global).
+function guardar({ plataforma, businessId, token, uid, professionalId, role }) {
+  const datos = {
+    uid, professionalId, role,
+    plataforma: esIOS() ? 'ios' : esAndroid() ? 'android' : 'desktop',
+    instalada: esAppInstalada(),
+    userAgent: (navigator.userAgent || '').slice(0, 200),
+  };
+  return plataforma ? savePlatformDevice(token, datos) : saveDevice(businessId, token, datos);
+}
+
+function borrar({ plataforma, businessId, token }) {
+  return plataforma ? removePlatformDevice(token) : removeDevice(businessId, token);
 }
 
 /** Numerito sobre el ícono de la app instalada (Android e iOS instalada). */

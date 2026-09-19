@@ -199,6 +199,17 @@ await esperar('nadie lista los tokens',                   consultar(duenoA, `bus
 await db.doc(`businesses/${A}/devices/tok-dueno`).set({ uid: duenoA.uid, role: 'owner', token: 'tok-dueno' });
 await esperar('barbero NO lee el token del dueno',        leer(barberoA, `businesses/${A}/devices/tok-dueno`), 'denegado');
 await esperar('dueno borra SU dispositivo',               borrar(duenoA, `businesses/${A}/devices/tok-dueno`), 'permitido');
+
+console.log('\n-- Notificaciones de la plataforma --');
+await db.doc('platform/notifications/items/pn-1').set({ type: 'ticket_nuevo', title: 'x', leidaPor: {} });
+await esperar('plataforma lista sus notificaciones',       consultar(plat, 'platform/notifications', 'items'), 'permitido');
+await esperar('moderador tambien',                         consultar(moderador, 'platform/notifications', 'items'), 'permitido');
+await esperar('moderador marca leida',                     editar(moderador, 'platform/notifications/items/pn-1', { leidaPor: { [moderador.uid]: true } }), 'permitido');
+await esperar('dueno de barberia NO las lee',              leer(duenoA, 'platform/notifications/items/pn-1'), 'denegado');
+await esperar('nadie las crea desde el browser',           crear(plat, 'platform/notifications/items', { title: 'x' }), 'denegado');
+await esperar('plataforma registra SU dispositivo',        crear(plat, 'platformDevices', { uid: plat.uid, role: 'platform', token: 't' }), 'permitido');
+await esperar('dueno de barberia NO registra ahi',         crear(duenoA, 'platformDevices', { uid: duenoA.uid, role: 'platform', token: 't' }), 'denegado');
+await esperar('nadie lista los tokens de la plataforma',   consultar(plat, '', 'platformDevices'), 'denegado');
 await esperar('barbero NO crea turno para otro',         crear(barberoA, `businesses/${A}/appointments`, { businessId:A, userId:barberoA.uid, status:'pendiente', professionalId:'p9', appointmentDate:'2026-09-03', startTime:'09:00', endTime:'09:30' }), 'denegado');
 await esperar('barbero SI crea su walk-in',              crear(barberoA, `businesses/${A}/appointments`, { businessId:A, userId:barberoA.uid, status:'pendiente', professionalId:'p1', type:'walkin', appointmentDate:'2026-09-03', startTime:'09:00', endTime:'09:30' }), 'permitido');
 await esperar('el dueno SI ve toda la agenda',           consultar(duenoA, `businesses/${A}`, 'appointments'), 'permitido');

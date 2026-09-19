@@ -10,6 +10,7 @@ import {
   subscribeAppointmentsDeProfesional,
   subscribeMyAppointments,
   subscribeNotifications,
+  subscribePlatformNotifications,
   getBusinessIdBySlug,
 } from '../lib/repository';
 
@@ -95,6 +96,12 @@ export default function BusinessSync() {
         });
       };
 
+      // La campanita del panel global.
+      const desuscribirNotifs = subscribePlatformNotifications(
+        (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { platformNotifications: filas } }),
+        onError
+      );
+
       const desuscribirLista = subscribeAllBusinesses((lista) => {
         negocios = lista;
 
@@ -128,6 +135,7 @@ export default function BusinessSync() {
       }, onError);
 
       return () => {
+        desuscribirNotifs();
         desuscribirLista();
         for (const off of subsBilling.values()) off();
       };

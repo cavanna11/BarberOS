@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import CampanaNotificaciones from '../admin/CampanaNotificaciones';
+import { refrescarPush, desactivarPush } from '../../lib/push';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -18,9 +20,16 @@ const navItems = [
 export default function SuperAdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
+
+  // Push del equipo de la plataforma: se renueva al entrar si estaba activo.
+  useEffect(() => {
+    if (!user?.id) return;
+    refrescarPush({ plataforma: true, uid: user.id, role: 'platform' });
+  }, [user?.id]);
   const navigate = useNavigate();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await desactivarPush(null, { plataforma: true }).catch(() => {});
     logout();
     navigate('/login');
   };
@@ -80,6 +89,7 @@ export default function SuperAdminLayout() {
             </button>
           </div>
           <div className="admin-topbar-right">
+            <CampanaNotificaciones modo="plataforma" />
             <div className="flex items-center gap-sm">
               {user?.avatarUrl
                 ? <img src={user.avatarUrl} alt={user.name} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />

@@ -43,6 +43,12 @@ export function useProfessionalServices() {
   return state.professionalServices || [];
 }
 
+/** Notificaciones del panel global (tickets, suspensiones). */
+export function usePlatformNotifications() {
+  const { state } = useBusiness();
+  return state.platformNotifications || [];
+}
+
 /** Notificaciones del staff (las escribe un trigger de Functions). */
 export function useNotifications() {
   const { state } = useBusiness();

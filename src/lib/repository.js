@@ -322,6 +322,16 @@ export async function markNotificationRead(businessId, id, uid) {
   });
 }
 
+// Las de la plataforma (panel global): tickets y suspensiones.
+export function subscribePlatformNotifications(cb, onError) {
+  const q = query(collection(db, 'platform', 'notifications', 'items'), orderBy('createdAt', 'desc'), limit(60));
+  return onSnapshot(q, (snap) => cb(rows(snap)), onError);
+}
+
+export async function markPlatformNotificationRead(id, uid) {
+  await updateDoc(doc(db, 'platform', 'notifications', 'items', id), { [`leidaPor.${uid}`]: true });
+}
+
 // ── Dispositivos con push ───────────────────────────────────────────────────
 // Un documento por token de FCM: /businesses/{id}/devices/{token}. El trigger
 // de Functions les manda el push (al dueño todo; al barbero, lo suyo).
@@ -336,6 +346,15 @@ export async function saveDevice(businessId, token, datos) {
 
 export async function removeDevice(businessId, token) {
   await deleteDoc(doc(db, 'businesses', businessId, 'devices', token));
+}
+
+// Los del equipo de la plataforma van en una colección propia.
+export async function savePlatformDevice(token, datos) {
+  await setDoc(doc(db, 'platformDevices', token), { ...datos, token, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export async function removePlatformDevice(token) {
+  await deleteDoc(doc(db, 'platformDevices', token));
 }
 
 // ============================================================================

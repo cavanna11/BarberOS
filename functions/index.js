@@ -302,6 +302,7 @@ async function procesarFacturacion() {
   // y encima el error no decía cuál era el problema real.
   const LIMITE = 450;
   const escrituras = [];
+  const suspendidos = [];
 
   let enPrueba = 0;
 
@@ -352,6 +353,7 @@ async function procesarFacturacion() {
     const shouldFreeze = debt > 0;
     if (Boolean(biz.isFrozen) !== shouldFreeze) {
       escrituras.push({ ref: doc.ref, datos: { isFrozen: shouldFreeze }, merge: true });
+      if (shouldFreeze) suspendidos.push({ id: doc.id, name: biz.name || doc.id, debt });
     }
   });
 
@@ -367,6 +369,19 @@ async function procesarFacturacion() {
     `[billing] ${today}: ${escrituras.length} cambios sobre ${businesses.size} negocios` +
     (enPrueba ? `, ${enPrueba} en período de prueba.` : '.')
   );
+
+  // Que la plataforma se entere de cada cuenta que se cortó por deuda: es
+  // el momento de escribirle al dueño, no de descubrirlo en el panel días
+  // después.
+  for (const s of suspendidos) {
+    await notificarPlataforma({
+      type: 'cuenta_suspendida',
+      title: 'Cuenta suspendida por deuda',
+      body: `${s.name} quedó suspendida. Debe $${Number(s.debt).toLocaleString('es-AR')}.`,
+      businessId: s.id,
+      url: '/super-admin?tab=tenants',
+    }).catch((err) => console.error('[billing] No se pudo avisar la suspensión:', err.message));
+  }
 }
 
 exports.procesarFacturacion = procesarFacturacion;
@@ -774,6 +789,92 @@ exports.onTurnoCancelado = onDocumentUpdated('businesses/{bizId}/appointments/{a
     professionalId: ahora.professionalId || null,
     appointmentId: event.params.aptId,
     appointmentDate: ahora.appointmentDate || null,
+  });
+});
+
+// ============================================================================
+// 4c. NOTIFICACIONES A LA PLATAFORMA
+// ============================================================================
+// La campanita del panel global: tickets nuevos, respuestas de una barbería
+// en un ticket, y cuentas suspendidas por deuda. Mismo esquema que las del
+// staff (/platform/notifications/items + push a /platformDevices), pero para
+// el equipo de la plataforma (dueño y moderadores).
+
+async function notificarPlataforma(datos) {
+  const ref = db.collection('platform/notifications/items').doc();
+  await ref.set({
+    id: ref.id,
+    leidaPor: {},
+    createdAt: FieldValue.serverTimestamp(),
+    ...datos,
+  });
+  await enviarPushPlataforma({ ...datos, notificationId: ref.id });
+}
+
+async function enviarPushPlataforma(datos) {
+  const snap = await db.collection('platformDevices').get();
+  if (snap.empty) return;
+  const tokens = snap.docs.map((d) => d.id);
+  let res;
+  try {
+    res = await getMessaging().sendEachForMulticast({
+      tokens,
+      data: {
+        title: String(datos.title || 'BarberOS'),
+        body: String(datos.body || ''),
+        type: String(datos.type || ''),
+        notificationId: String(datos.notificationId || ''),
+        url: String(datos.url || '/super-admin'),
+      },
+      webpush: { headers: { Urgency: 'high', TTL: '86400' }, fcmOptions: { link: String(datos.url || '/super-admin') } },
+    });
+  } catch (err) {
+    console.error('[push plataforma] No se pudo enviar:', err.message);
+    return;
+  }
+  const muertos = [];
+  res.responses.forEach((r, i) => {
+    if (r.success) return;
+    const code = r.error?.code || '';
+    if (code.includes('registration-token-not-registered') || code.includes('invalid-argument')) muertos.push(tokens[i]);
+  });
+  await Promise.all(muertos.map((t) => db.doc(`platformDevices/${t}`).delete().catch(() => {})));
+}
+
+exports.onTicketNuevo = onDocumentCreated('tickets/{ticketId}', async (event) => {
+  const t = event.data?.data();
+  if (!t) return;
+  await notificarPlataforma({
+    type: 'ticket_nuevo',
+    title: `Ticket nuevo · ${t.businessName || 'una barbería'}`,
+    body: String(t.subject || '').slice(0, 140) || 'Sin asunto',
+    businessId: t.businessId || null,
+    ticketId: event.params.ticketId,
+    url: '/super-admin?tab=soporte',
+  });
+});
+
+exports.onMensajeDeTicket = onDocumentCreated('tickets/{ticketId}/messages/{msgId}', async (event) => {
+  const m = event.data?.data();
+  if (!m || m.authorRole !== 'business') return; // lo que escribe la plataforma no se avisa a sí misma
+
+  const ticketSnap = await db.doc(`tickets/${event.params.ticketId}`).get();
+  const t = ticketSnap.exists ? ticketSnap.data() : {};
+
+  // El primer mensaje entra en el mismo batch que el ticket: ya lo avisó
+  // onTicketNuevo. En un batch, serverTimestamp() resuelve al mismo instante
+  // para todas las escrituras, así que si coinciden es ese primer mensaje.
+  const creado = t.createdAt?.toMillis?.();
+  const escrito = m.createdAt?.toMillis?.();
+  if (creado && escrito && creado === escrito) return;
+
+  await notificarPlataforma({
+    type: 'ticket_mensaje',
+    title: `${m.authorName || t.businessName || 'Una barbería'} respondió`,
+    body: `${t.subject ? t.subject + ': ' : ''}${String(m.text || '').slice(0, 120)}`,
+    businessId: t.businessId || null,
+    ticketId: event.params.ticketId,
+    url: '/super-admin?tab=soporte',
   });
 });
 

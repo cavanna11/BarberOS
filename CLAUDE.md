@@ -135,6 +135,15 @@ Google.
   (clave pública de Web Push) en `.env` **y en Vercel**.
   iPhone: solo con la app en la pantalla de inicio y iOS 16.4+; el permiso se
   pide desde un toque adentro de la app instalada.
+- **Notificaciones de la plataforma** (campanita del panel global, dueño y
+  moderadores): ticket nuevo, respuesta de una barbería en un ticket, y cuenta
+  suspendida por deuda (desde `procesarFacturacion`). Viven en
+  `platform/notifications/items`; push a `platformDevices/{token}` con el
+  mismo `push.js` (`plataforma: true`). Cada aviso trae `url` y la campanita
+  navega ahí (`/super-admin?tab=soporte`; el dashboard lee `?tab=`). El
+  primer mensaje de un ticket no se avisa dos veces: entra en el mismo batch
+  que el ticket y `createdAt` coincide (serverTimestamp resuelve al mismo
+  instante en todo el batch).
 - **Mobile**: todo el panel, la reserva y la landing verificados a 375px sin
   desborde horizontal. En el celular las citas son tarjetas (no tabla), las
   tablas de gestión esconden columnas secundarias (`.oculta-mobile`), las
@@ -151,7 +160,7 @@ Google.
 Desplegadas en `southamerica-east1`: `setBusinessAdmin`, `revokeBusinessAdmin`,
 `applyPendingClaims`, `createAppointment`, `createOwnerWithPassword`,
 `resetOwnerPassword`, `setPlatformModerator`, `deleteBusiness`, `getBusySlots`, los triggers
-`onNuevoTurno` / `onTurnoCancelado` y `runBilling` (3 AM, hora de Buenos
+`onNuevoTurno` / `onTurnoCancelado` / `onTicketNuevo` / `onMensajeDeTicket` y `runBilling` (3 AM, hora de Buenos
 Aires). Quedó puesta la política que borra imágenes de contenedor de más de un
 día, para que no se acumule costo de almacenamiento.
 
@@ -464,6 +473,9 @@ src/
 /tickets/{id}                     🔒 su barbería + plataforma
   /messages/{id}
 /platform/{doc}                   🔒 solo plataforma
+  /notifications/items/{id}       🔒 campanita del panel global (dueño y
+                                     moderadores); las escribe un trigger
+/platformDevices/{token}          🔒 push del equipo de la plataforma
 /pendingAdmins/{email}            🔒 claims de quien no entró todavía
 ```
 
@@ -671,7 +683,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 64, reservas 35, facturación 11, rules 98. Todo en verde.
+Hoy: claims 64, reservas 35, facturación 11, rules 106. Todo en verde.
 
 ---
 

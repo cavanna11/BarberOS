@@ -362,6 +362,23 @@ service cloud.firestore {
       allow read, write: if isPlatform();
     }
 
+    // Notificaciones del panel global (tickets, suspensiones). Las escribe un
+    // trigger; el equipo de la plataforma las lee y marca leídas.
+    match /platform/notifications/items/{notifId} {
+      allow read: if esEquipoPlataforma();
+      allow update: if esEquipoPlataforma()
+                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leidaPor']);
+      allow create, delete: if false;
+    }
+
+    // Teléfonos del equipo de la plataforma con push. Cada uno los suyos.
+    match /platformDevices/{token} {
+      allow get: if esEquipoPlataforma() && resource.data.uid == request.auth.uid;
+      allow list: if false;
+      allow create, update: if esEquipoPlataforma() && request.resource.data.uid == request.auth.uid;
+      allow delete: if esEquipoPlataforma() && resource.data.uid == request.auth.uid;
+    }
+
     // Equipo de la plataforma (moderadores). Lo escribe solo la Cloud Function
     // setPlatformModerator con el Admin SDK; el panel lo lee para listar.
     match /platform/team/members/{email} {

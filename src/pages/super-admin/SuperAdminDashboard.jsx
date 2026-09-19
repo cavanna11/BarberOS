@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBusiness } from '../../contexts/BusinessContext';
 import { useAuth } from '../../contexts/AuthContext';
 import TeamPanel from './TeamPanel';
@@ -42,7 +42,12 @@ export default function SuperAdminDashboard() {
   const navigate = useNavigate();
   const { businesses, whatsappConfig, whatsappLogs, appointments, professionals, services } = state;
 
-  const [activeTab, setActiveTab] = useState('resumen');
+  // La campanita manda a /super-admin?tab=soporte (o tenants): la pestaña se
+  // lee de la URL al montar y cada vez que cambia.
+  const [searchParams] = useSearchParams();
+  const tabDeUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(tabDeUrl || 'resumen');
+  useEffect(() => { if (tabDeUrl) setActiveTab(tabDeUrl); }, [tabDeUrl]);
 
   // Un moderador entra al panel para VER y para atender soporte. Todo lo que
   // mueve plata, cuentas o suspensiones queda escondido. Esto es UI: la
