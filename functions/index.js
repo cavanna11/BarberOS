@@ -22,6 +22,7 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
+const { getMessaging } = require('firebase-admin/messaging');
 
 // Se usan los submódulos y no el namespace `admin.*` a propósito: el emulador
 // de Functions envuelve firebase-admin en un proxy para interceptar
@@ -682,6 +683,64 @@ async function notificar(bizId, datos) {
     createdAt: FieldValue.serverTimestamp(),
     ...datos,
   });
+  await enviarPush(bizId, { ...datos, notificationId: ref.id });
+}
+
+/**
+ * Push a los teléfonos registrados: los del dueño siempre, y los del barbero
+ * al que le toca el turno. Mensaje de DATOS (sin bloque `notification`), para
+ * que el service worker decida cómo mostrarlo y la app en primer plano no lo
+ * duplique con la campanita.
+ *
+ * Los tokens que FCM da por muertos (app desinstalada, permiso revocado) se
+ * borran acá mismo; si no, la lista crece para siempre.
+ */
+async function enviarPush(bizId, datos) {
+  const snap = await db.collection(`businesses/${bizId}/devices`).get();
+  if (snap.empty) return;
+
+  const destinatarios = snap.docs.filter((d) => {
+    const dev = d.data();
+    if (dev.role === 'owner') return true;
+    return dev.professionalId && dev.professionalId === datos.professionalId;
+  });
+  if (!destinatarios.length) return;
+
+  const tokens = destinatarios.map((d) => d.id);
+  const mensaje = {
+    tokens,
+    data: {
+      title: String(datos.title || 'BarberOS'),
+      body: String(datos.body || ''),
+      type: String(datos.type || ''),
+      notificationId: String(datos.notificationId || ''),
+      url: '/admin/citas',
+    },
+    webpush: {
+      headers: { Urgency: 'high', TTL: '86400' },
+      fcmOptions: { link: '/admin/citas' },
+    },
+  };
+
+  let res;
+  try {
+    res = await getMessaging().sendEachForMulticast(mensaje);
+  } catch (err) {
+    console.error('[push] No se pudo enviar:', err.message);
+    return;
+  }
+
+  const muertos = [];
+  res.responses.forEach((r, i) => {
+    if (r.success) return;
+    const code = r.error?.code || '';
+    if (code.includes('registration-token-not-registered') || code.includes('invalid-argument')) {
+      muertos.push(tokens[i]);
+    } else {
+      console.warn('[push] Falló un envío:', code);
+    }
+  });
+  await Promise.all(muertos.map((t) => db.doc(`businesses/${bizId}/devices/${t}`).delete().catch(() => {})));
 }
 
 exports.onNuevoTurno = onDocumentCreated('businesses/{bizId}/appointments/{aptId}', async (event) => {
@@ -696,7 +755,7 @@ exports.onNuevoTurno = onDocumentCreated('businesses/{bizId}/appointments/{aptId
     body: `${a.clientName || 'Un cliente'} reservó ${a.serviceName || 'un servicio'} · ${fechaLinda(a.appointmentDate)} ${a.startTime}`,
     professionalId: a.professionalId || null,
     appointmentId: event.params.aptId,
-    appointmentDate: a.appointmentDate,
+    appointmentDate: a.appointmentDate || null,
   });
 });
 
@@ -714,7 +773,7 @@ exports.onTurnoCancelado = onDocumentUpdated('businesses/{bizId}/appointments/{a
     body: `${ahora.clientName || 'Un cliente'} canceló ${ahora.serviceName || 'su turno'} · ${fechaLinda(ahora.appointmentDate)} ${ahora.startTime}`,
     professionalId: ahora.professionalId || null,
     appointmentId: event.params.aptId,
-    appointmentDate: ahora.appointmentDate,
+    appointmentDate: ahora.appointmentDate || null,
   });
 });
 

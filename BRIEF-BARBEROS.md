@@ -74,7 +74,11 @@ nada, y que alguien de carne y hueso se los deje armado.
   instante y bloquea el horario.
 - **Un turno por día por cliente y máximo 3 reservados a futuro.** Nadie te
   llena la agenda de mentira.
-- **Sin app.** Funciona en cualquier celular desde el navegador.
+- **Sin app para el cliente.** Reserva desde el navegador, en cualquier celular.
+- **App para el barbero.** BarberOS se instala en el celular del dueño y de
+  cada barbero (Android o iPhone, sin tienda, en cuatro toques) y les avisa
+  con una notificación cuando un cliente reserva o cancela, aunque la app esté
+  cerrada. Adentro del panel hay un tutorial paso a paso.
 
 ### Lo que todavía NO está (marcar siempre como "pronto", nunca como disponible)
 
@@ -130,7 +134,7 @@ existe.
 
 Todos los planes incluyen: turnos e historial sin límite, link con tu marca,
 estadísticas de facturación, servicio sin turno (walk-in), cada barbero ve solo
-su agenda.
+su agenda, app para el celular con avisos al instante.
 
 Lo que diferencia los planes es la **cantidad de barberos** (y cuando lleguen
 los recordatorios por WhatsApp, la cuota de mensajes: 100 / 500 / 2000 por mes).
@@ -263,7 +267,8 @@ degradados, negro + naranja + blanco.
 - Esa misma tarde entra el primer turno.
 - Con tu cara, no la nuestra.
 - Probala 10 días sin pagar nada. No pedimos tarjeta.
-- Sin app. Sin permanencia. Sin tarjeta.
+- Sin app para tus clientes. Sin permanencia. Sin tarjeta.
+- Te avisa en el celular cuando te reservan. Aunque la tengas cerrada.
 
 ---
 

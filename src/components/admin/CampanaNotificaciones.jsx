@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../hooks/useTenantData';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { markNotificationRead } from '../../lib/repository';
+import { activarPush, estadoPush, ponerBadge } from '../../lib/push';
+import { Link } from 'react-router-dom';
 
 /**
  * La campanita del panel. Muestra las notificaciones del negocio (o las del
@@ -35,10 +37,14 @@ export default function CampanaNotificaciones() {
   const navigate = useNavigate();
   const [abierta, setAbierta] = useState(false);
   const [permiso, setPermiso] = useState(() => (typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'));
+  const [push, setPush] = useState(() => estadoPush().estado);
   const panelRef = useRef(null);
 
   const uid = user?.id;
   const noLeidas = notificaciones.filter((n) => !n.leidaPor?.[uid]);
+
+  // Numerito sobre el ícono de la app instalada.
+  useEffect(() => { ponerBadge(noLeidas.length); }, [noLeidas.length]);
 
   // Cerrar al hacer clic afuera.
   useEffect(() => {
@@ -65,10 +71,22 @@ export default function CampanaNotificaciones() {
     } catch { /* algunos navegadores móviles no dejan crear Notification desde la página */ }
   }, [notificaciones, permiso]);
 
+  // Activa el push de verdad (service worker + token), no solo el permiso del
+  // navegador: así el aviso llega aunque la app esté cerrada.
   const pedirPermiso = async () => {
-    if (typeof Notification === 'undefined') return;
-    const r = await Notification.requestPermission();
-    setPermiso(r);
+    try {
+      const r = await activarPush({
+        businessId,
+        uid,
+        professionalId: user?.professionalId || null,
+        role: user?.role === 'owner' ? 'owner' : 'admin',
+      });
+      setPush(r.estado);
+    } catch (err) {
+      console.error('[Campana] No se pudo activar el push:', err);
+      setPush('sin-token');
+    }
+    if (typeof Notification !== 'undefined') setPermiso(Notification.permission);
   };
 
   const abrir = async (n) => {
@@ -104,10 +122,20 @@ export default function CampanaNotificaciones() {
             )}
           </div>
 
-          {permiso === 'default' && (
+          {push === 'disponible' && (
             <button className="campana-permiso" onClick={pedirPermiso}>
               🔕 Activar avisos en este dispositivo
             </button>
+          )}
+          {push === 'ios-sin-instalar' && (
+            <Link className="campana-permiso" to="/admin/instalar" onClick={() => setAbierta(false)} style={{ display: 'block', textDecoration: 'none' }}>
+              📲 Instalá la app en tu iPhone para recibir avisos →
+            </Link>
+          )}
+          {(push === 'bloqueado' || push === 'sin-soporte' || push === 'sin-token' || push === 'rechazado') && (
+            <Link className="campana-permiso" to="/admin/instalar" onClick={() => setAbierta(false)} style={{ display: 'block', textDecoration: 'none' }}>
+              🔕 Los avisos no están activos en este dispositivo. Ver cómo →
+            </Link>
           )}
 
           {notificaciones.length === 0 ? (

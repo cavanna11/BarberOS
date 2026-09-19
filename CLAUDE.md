@@ -61,7 +61,8 @@ Después, y esto es lo que siempre se olvida:
 client secret de Google). Sin él la app arranca, pero muestra la pantalla de
 "Falta la configuración de Firebase".
 
-- Las siete `VITE_*` están en **Vercel → Settings → Environment Variables**.
+- Las ocho `VITE_*` (incluida `VITE_FIREBASE_VAPID_KEY`, la clave pública de
+  Web Push) están en **Vercel → Settings → Environment Variables**.
 - El `GOOGLE_CLIENT_SECRET` (sin prefijo `VITE_`) está en Google Cloud Console →
   Credenciales. El frontend no lo usa; queda para cuando haga falta del lado
   del servidor.
@@ -120,6 +121,20 @@ Google.
   notificación del navegador. Cuando llegue WhatsApp, sale del mismo trigger.
   No se notifica lo que cargó el propio staff (`type` walkin/manual) ni lo
   que canceló el staff (`cancelledBy !== 'client'`).
+- **PWA + push.** El panel se instala en el celular (`manifest.webmanifest`,
+  íconos en `public/icons/`, generados con `scripts/generar-iconos.mjs`) y
+  recibe notificaciones push por Firebase Cloud Messaging con la app cerrada.
+  Piezas: `public/firebase-messaging-sw.js` (service worker: SOLO push y click,
+  no cachea la app a propósito), `src/lib/push.js` (permiso, token, estado por
+  dispositivo), `businesses/{id}/devices/{token}` (un doc por teléfono, uid
+  propio), y `enviarPush()` en Functions, llamado desde el mismo `notificar()`
+  de la campanita: dueño todo, barbero lo suyo; los tokens muertos se borran.
+  `/admin/instalar` es el tutorial paso a paso (iPhone/Safari, Android/Chrome,
+  escritorio) con el botón "Activar avisos" y el estado real del dispositivo.
+  Badge en el ícono con las no leídas. Requiere `VITE_FIREBASE_VAPID_KEY`
+  (clave pública de Web Push) en `.env` **y en Vercel**.
+  iPhone: solo con la app en la pantalla de inicio y iOS 16.4+; el permiso se
+  pide desde un toque adentro de la app instalada.
 - **Mobile**: todo el panel, la reserva y la landing verificados a 375px sin
   desborde horizontal. En el celular las citas son tarjetas (no tabla), las
   tablas de gestión esconden columnas secundarias (`.oculta-mobile`), las
@@ -443,6 +458,8 @@ src/
   /notifications                  🔒 dueño todas; barbero las suyas. Las
                                      escribe un trigger; el browser solo
                                      marca leídas
+  /devices/{token}                🔒 tokens de push; cada uno crea/borra los
+                                     suyos, nadie lista
   /admins/{email}                 🔒 registro para UI, NO otorga permiso
 /tickets/{id}                     🔒 su barbería + plataforma
   /messages/{id}
@@ -525,6 +542,14 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
   Había un `match /notifications` viejo (log de WhatsApp que nunca existió)
   que le daba lectura a todo el staff, y anulaba el nuevo que filtra por
   barbero. Antes de agregar un match, `grep "match /"` para ver si ya existe.
+- **El panel de navegador de Claude bloquea los service workers y niega
+  `Notification`.** La PWA y el push no se pueden probar ahí: se prueban en un
+  teléfono real. Lo que sí se prueba desde el emulador es el camino del
+  servidor: sembrar un doc en `devices` con un token falso y reservar; el
+  trigger llama a FCM de verdad, FCM rechaza el token y el doc se borra.
+- **Un trigger que escribe `undefined` en Firestore muere.** `onNuevoTurno`
+  reventaba con turnos sin `appointmentDate` (los que siembra la suite de
+  rules). Todo lo que se copia de un doc a otro va con `|| null`.
 - **Los turnos guardan la fecha en `appointmentDate`, NO en `date`.** Todo el
   código lo usa así (`BookingPage`, `AppointmentsPage`, `DashboardPage`,
   `MyAppointments`, `availabilityEngine`). Sembrar datos de prueba con `date`
@@ -631,7 +656,8 @@ Email/Password habilitado, alcance del barbero cerrado en Rules.
     del negocio. Botón "Eliminar barbería" en el panel global.
     `deleteBusinessRecord` de repository.js quedó sin uso.
 13. Subir logo por barbería (Firebase Storage).
-14. PWA.
+14. ~~PWA~~ Hecha, con push. Falta: TWA para Play Store si algún cliente lo
+    pide (misma web envuelta con Bubblewrap).
 
 ---
 
@@ -645,7 +671,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 64, reservas 35, facturación 11, rules 92. Todo en verde.
+Hoy: claims 64, reservas 35, facturación 11, rules 98. Todo en verde.
 
 ---
 

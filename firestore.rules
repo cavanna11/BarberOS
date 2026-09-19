@@ -275,6 +275,18 @@ service cloud.firestore {
         allow create, delete: if false;
       }
 
+      // ── Dispositivos con push ────────────────────────────────────────────
+      // Cada miembro del staff registra SUS dispositivos (uid propio). Los lee
+      // el trigger de Functions con el Admin SDK, no el browser: un token de
+      // FCM sirve para mandarle mensajes a ese teléfono, no es para compartir.
+      match /devices/{token} {
+        allow get: if isBusinessStaff(bizId) && resource.data.uid == request.auth.uid;
+        allow list: if false;
+        allow create, update: if isBusinessStaff(bizId)
+                                 && request.resource.data.uid == request.auth.uid;
+        allow delete: if isBusinessStaff(bizId) && resource.data.uid == request.auth.uid;
+      }
+
       // ── Admins del negocio ───────────────────────────────────────────────
       // Este documento es un REGISTRO para la UI, no la fuente del permiso.
       // El permiso real son los custom claims, que se asignan con la Cloud

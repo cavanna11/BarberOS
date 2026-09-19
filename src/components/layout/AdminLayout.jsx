@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import CampanaNotificaciones from '../admin/CampanaNotificaciones';
 import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
+import { refrescarPush, desactivarPush, esAppInstalada, esIOS, esAndroid } from '../../lib/push';
 
 // Items visibles solo para el dueño (owner)
 const ownerNavItems = [
@@ -13,6 +14,7 @@ const ownerNavItems = [
   { to: '/admin/admins',        icon: '🛡️', label: 'Administradores' },
   { to: '/admin/configuracion', icon: '⚙️', label: 'Configuración' },
   { to: '/admin/soporte',       icon: '💬', label: 'Soporte' },
+  { to: '/admin/instalar',      icon: '📲', label: 'Instalar la app' },
 ];
 
 // Items para el admin/peluquero → solo sus citas
@@ -23,6 +25,7 @@ const adminNavItems = [
   { to: '/admin/citas',   icon: '📅', label: 'Mi Agenda' },
   { to: '/admin/ajustes', icon: '⚙️', label: 'Mi Configuración' },
   { to: '/admin/soporte', icon: '💬', label: 'Soporte' },
+  { to: '/admin/instalar', icon: '📲', label: 'Instalar la app' },
 ];
 
 const ROLE_LABELS = {
@@ -54,15 +57,39 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const { business, isPlatformOwner: platformOwner } = useCurrentBusiness();
+  const { business, businessId, isPlatformOwner: platformOwner } = useCurrentBusiness();
 
   const isOwner = user?.role === 'owner';
   const navItems = isOwner ? ownerNavItems : adminNavItems;
   const roleInfo = ROLE_LABELS[user?.role] || ROLE_LABELS.admin;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Que el próximo que entre en este teléfono no reciba los avisos de este.
+    if (businessId) await desactivarPush(businessId).catch(() => {});
     logout();
     navigate('/login');
+  };
+
+  // Si este dispositivo ya tenía los avisos activados, se renueva el registro
+  // al entrar (el token de FCM puede rotar). No pide nada si no estaban.
+  useEffect(() => {
+    if (!businessId || !user?.id) return;
+    refrescarPush({
+      businessId,
+      uid: user.id,
+      professionalId: user.professionalId || null,
+      role: user.role === 'owner' ? 'owner' : 'admin',
+    });
+  }, [businessId, user?.id, user?.professionalId, user?.role]);
+
+  // Invitación a instalar, solo en el celular y solo si no está instalada.
+  const [avisoInstalarOculto, setAvisoInstalarOculto] = useState(() => {
+    try { return localStorage.getItem('barberos:avisoInstalar') === 'no'; } catch { return false; }
+  });
+  const mostrarAvisoInstalar = (esIOS() || esAndroid()) && !esAppInstalada() && !avisoInstalarOculto;
+  const ocultarAvisoInstalar = () => {
+    setAvisoInstalarOculto(true);
+    try { localStorage.setItem('barberos:avisoInstalar', 'no'); } catch { /* nada */ }
   };
 
   return (
@@ -212,6 +239,16 @@ export default function AdminLayout() {
             </div>
           </div>
         </div>
+
+        {mostrarAvisoInstalar && business && (
+          <div className="notice notice-info aviso-instalar">
+            <span>📲 <strong>Instalá BarberOS en tu celular</strong> para recibir un aviso cuando te reserven un turno.</span>
+            <span className="aviso-instalar-acciones">
+              <Link to="/admin/instalar" className="btn btn-primary btn-sm">Ver cómo</Link>
+              <button className="btn btn-ghost btn-sm" onClick={ocultarAvisoInstalar} aria-label="Cerrar">✕</button>
+            </span>
+          </div>
+        )}
 
         <div className="admin-content">
           {business ? (

@@ -26,6 +26,7 @@ export const FEATURES_COMUNES = [
   'Estadísticas de facturación',
   'Servicios sin turno en vivo (walk-in)',
   'Cada barbero ve solo su agenda',
+  'App para el celular con avisos al instante',
 ];
 
 export const PLANS = [

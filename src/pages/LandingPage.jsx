@@ -50,6 +50,12 @@ const BENEFICIOS = [
     texto: 'Cada barbería tiene su propia dirección. La ponés en el perfil de Instagram y tus clientes reservan solos, a cualquier hora, sin instalar nada.',
   },
   {
+    imagen: '/img/benefit-app.svg',
+    alt: 'Un celular con BarberOS instalada y una notificación de turno nuevo',
+    titulo: 'Se instala en tu celular',
+    texto: 'Android o iPhone, sin pasar por la tienda. Te vibra en el bolsillo cuando alguien reserva o cancela, aunque tengas la app cerrada.',
+  },
+  {
     imagen: '/img/benefit-whatsapp.svg',
     alt: 'Vista previa del mensaje de recordatorio automático por WhatsApp',
     titulo: 'Recordatorio por WhatsApp',
@@ -92,6 +98,10 @@ const FAQ = [
   {
     q: '¿Mis clientes tienen que bajarse una app?',
     a: 'No. Abren el link, entran con su cuenta de Google y reservan. Funciona en cualquier celular, desde el navegador.',
+  },
+  {
+    q: '¿Y yo, tengo que bajarme algo?',
+    a: 'Tampoco. Pero podés instalar BarberOS en tu celular como una app —Android o iPhone, en cuatro toques, sin tienda— y te llega un aviso cada vez que un cliente reserva o cancela, aunque la tengas cerrada. Adentro del panel está el paso a paso.',
   },
   {
     q: 'Mis clientes son grandes, ¿lo van a poder usar?',
@@ -157,6 +167,7 @@ export default function LandingPage() {
         <ul className="landing-checks">
           <li>✓ Lo configuramos nosotros</li>
           <li>✓ Sin permanencia</li>
+          <li>✓ Avisos en tu celular</li>
           <li>✓ Andando el mismo día</li>
         </ul>
 

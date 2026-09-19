@@ -322,6 +322,22 @@ export async function markNotificationRead(businessId, id, uid) {
   });
 }
 
+// ── Dispositivos con push ───────────────────────────────────────────────────
+// Un documento por token de FCM: /businesses/{id}/devices/{token}. El trigger
+// de Functions les manda el push (al dueño todo; al barbero, lo suyo).
+
+export async function saveDevice(businessId, token, datos) {
+  await setDoc(doc(db, 'businesses', businessId, 'devices', token), {
+    ...datos,
+    token,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+export async function removeDevice(businessId, token) {
+  await deleteDoc(doc(db, 'businesses', businessId, 'devices', token));
+}
+
 // ============================================================================
 // CONTACTO DEL STAFF
 // ============================================================================

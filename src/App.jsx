@@ -36,6 +36,7 @@ const SettingsPage        = lazy(() => import('./pages/admin/SettingsPage'));
 const AdminsPage          = lazy(() => import('./pages/admin/AdminsPage'));
 const ProfileSettingsPage = lazy(() => import('./pages/admin/ProfileSettingsPage'));
 const SupportPage         = lazy(() => import('./pages/admin/SupportPage'));
+const InstalarPage        = lazy(() => import('./pages/admin/InstalarPage'));
 
 // Panel global
 const SuperAdminDashboard = lazy(() => import('./pages/super-admin/SuperAdminDashboard'));
@@ -189,6 +190,7 @@ export default function App() {
           <Route path="configuracion" element={<SettingsPage />} />
           <Route path="ajustes" element={<ProfileSettingsPage />} />
           <Route path="soporte" element={<SupportPage />} />
+          <Route path="instalar" element={<InstalarPage />} />
         </Route>
 
         {/* ── Rutas de super-admin ────────────────────────────────── */}

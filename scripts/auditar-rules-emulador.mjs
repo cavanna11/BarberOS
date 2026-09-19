@@ -190,6 +190,15 @@ await esperar('dueno NO edita otra cosa que leidaPor',    editar(duenoA, `busine
 await esperar('nadie crea notificaciones desde el browser', crear(duenoA, `businesses/${A}/notifications`, { title: 'x' }), 'denegado');
 await esperar('cliente NO lee notificaciones',            leer(cliente, `businesses/${A}/notifications/n-p1`), 'denegado');
 await esperar('dueno de B NO lee las de A',               leer(duenoB, `businesses/${A}/notifications/n-p1`), 'denegado');
+
+console.log('\n-- Dispositivos con push --');
+await esperar('barbero registra SU dispositivo',          crear(barberoA, `businesses/${A}/devices`, { uid: barberoA.uid, professionalId: 'p1', role: 'admin', token: 't' }), 'permitido');
+await esperar('barbero NO registra uno con otro uid',     crear(barberoA, `businesses/${A}/devices`, { uid: duenoA.uid, role: 'owner', token: 't' }), 'denegado');
+await esperar('cliente NO registra dispositivos',         crear(cliente, `businesses/${A}/devices`, { uid: cliente.uid, role: 'owner', token: 't' }), 'denegado');
+await esperar('nadie lista los tokens',                   consultar(duenoA, `businesses/${A}`, 'devices'), 'denegado');
+await db.doc(`businesses/${A}/devices/tok-dueno`).set({ uid: duenoA.uid, role: 'owner', token: 'tok-dueno' });
+await esperar('barbero NO lee el token del dueno',        leer(barberoA, `businesses/${A}/devices/tok-dueno`), 'denegado');
+await esperar('dueno borra SU dispositivo',               borrar(duenoA, `businesses/${A}/devices/tok-dueno`), 'permitido');
 await esperar('barbero NO crea turno para otro',         crear(barberoA, `businesses/${A}/appointments`, { businessId:A, userId:barberoA.uid, status:'pendiente', professionalId:'p9', appointmentDate:'2026-09-03', startTime:'09:00', endTime:'09:30' }), 'denegado');
 await esperar('barbero SI crea su walk-in',              crear(barberoA, `businesses/${A}/appointments`, { businessId:A, userId:barberoA.uid, status:'pendiente', professionalId:'p1', type:'walkin', appointmentDate:'2026-09-03', startTime:'09:00', endTime:'09:30' }), 'permitido');
 await esperar('el dueno SI ve toda la agenda',           consultar(duenoA, `businesses/${A}`, 'appointments'), 'permitido');
