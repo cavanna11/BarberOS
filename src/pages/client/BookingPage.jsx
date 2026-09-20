@@ -6,6 +6,7 @@ import { useTenant } from '../../hooks/useTenantData';
 import { createAppointment, getBusySlots } from '../../lib/functions';
 import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/availabilityEngine';
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
+import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
 
 // ---- STEPPER ----
 function Stepper({ step }) {
@@ -83,6 +84,11 @@ function ServiceSelect({ services, professionalServices, professionalId, selecte
             <div className="service-info">
               <h3>{service.name}</h3>
               <p>{service.description}</p>
+              {tieneVentana(service) && (
+                <span className="badge badge-warning" style={{ marginTop: 6, display: 'inline-block' }}>
+                  {describirVentana(service)}
+                </span>
+              )}
             </div>
             <div className="service-meta">
               <div className="service-price">{formatPrice(service.finalPrice, currency)}</div>
@@ -96,7 +102,7 @@ function ServiceSelect({ services, professionalServices, professionalId, selecte
 }
 
 // ---- DATE PICKER ----
-function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSchedules, businessHours }) {
+function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSchedules, businessHours, service }) {
   const [viewDate, setViewDate] = useState(() => {
     if (selectedDate) return new Date(selectedDate + 'T00:00:00');
     return new Date();
@@ -119,7 +125,9 @@ function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSche
   return (
     <div>
       <h2 className="booking-step-title">Elegí una fecha</h2>
-      <p className="booking-step-subtitle">Seleccioná el día de tu cita</p>
+      <p className="booking-step-subtitle">
+        {tieneVentana(service) ? `${service.name}: ${describirVentana(service).toLowerCase()}` : 'Seleccioná el día de tu cita'}
+      </p>
       <div className="calendar">
         <div className="calendar-header">
           <button className="calendar-nav" onClick={prevMonth}>◀</button>
@@ -134,7 +142,8 @@ function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSche
             if (day === null) return <div key={`empty-${idx}`} className="calendar-day empty" />;
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const isPastDate = dateStr < today;
-            const works = professionalWorksOnDate(professionalId, dateStr, allSchedules, businessHours);
+            const works = professionalWorksOnDate(professionalId, dateStr, allSchedules, businessHours)
+              && servicioAplicaAlDia(service, dateStr);
             const isSelected = dateStr === selectedDate;
             const isToday = dateStr === today;
 
@@ -470,6 +479,7 @@ export default function BookingPage() {
   // Calculate available slots
   const availableSlots = useMemo(() => {
     if (!professionalId || !serviceId || !date || cargandoOcupados) return [];
+    const servicio = services.find((s) => s.id === serviceId);
     return calculateAvailableSlots({
       professionalId,
       serviceId,
@@ -480,7 +490,7 @@ export default function BookingPage() {
       professionalServices,
       slotInterval: business.slotInterval,
       businessHours: business.businessHours,
-    });
+    }).filter((s) => servicioAplicaAlHorario(servicio, s.startTime, s.endTime)); // promo por franja
   }, [professionalId, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business]);
 
   if (blockedReason) {
@@ -623,6 +633,7 @@ export default function BookingPage() {
           professionalId={professionalId}
           schedules={schedules}
           businessHours={business.businessHours}
+          service={selectedService}
         />
       )}
 

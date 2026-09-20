@@ -4,6 +4,7 @@ import { useTenant } from '../../hooks/useTenantData';
 import { createAppointment, updateAppointment } from '../../lib/repository';
 import { calculateAvailableSlots } from '../../utils/availabilityEngine';
 import { formatPrice, toDateString } from '../../utils/dateUtils';
+import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
 
 /**
  * El staff agenda un turno a mano.
@@ -70,6 +71,8 @@ export default function NuevoTurnoModal({ onClose }) {
 
   const slots = useMemo(() => {
     if (!form.professionalId || !form.serviceId || !form.date) return [];
+    const srv = services.find((s) => s.id === form.serviceId);
+    if (!servicioAplicaAlDia(srv, form.date)) return [];
     return calculateAvailableSlots({
       professionalId: form.professionalId,
       serviceId: form.serviceId,
@@ -80,7 +83,7 @@ export default function NuevoTurnoModal({ onClose }) {
       professionalServices,
       slotInterval: business.slotInterval,
       businessHours: business.businessHours,
-    });
+    }).filter((s) => servicioAplicaAlHorario(srv, s.startTime, s.endTime));
   }, [form.professionalId, form.serviceId, form.date, schedules, appointments, services, professionalServices, business]);
 
   const slot = slots.find((s) => s.startTime === form.startTime);
@@ -160,6 +163,11 @@ export default function NuevoTurnoModal({ onClose }) {
                 </option>
               ))}
             </select>
+            {servicio && tieneVentana(servicio) && (
+              <p className="text-sm" style={{ marginTop: 6, color: 'var(--warning)' }}>
+                Promo: {describirVentana(servicio).toLowerCase()}.
+              </p>
+            )}
             {form.professionalId && serviciosDelProfesional.length === 0 && (
               <p className="text-sm text-muted" style={{ marginTop: 6 }}>
                 Este profesional no tiene servicios asignados. Se asignan desde Profesionales.

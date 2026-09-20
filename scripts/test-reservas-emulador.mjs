@@ -190,6 +190,33 @@ await cuarto.ref.update({ status: 'cancelada' });
 r = await reservar(c6, { ...base, appointmentDate: MARTES[3], startTime: '09:00' });
 chequear('los turnos pasados no cuentan para el tope', r.ok?.status === 'created', JSON.stringify(r));
 
+titulo('Promo por día y franja (ventana del servicio):');
+// Corte de media tarde: solo martes (1) y miércoles (2), de 16:30 a 19:30.
+await db.doc(`businesses/${BID}/services/srv-promo`).set({
+  name: 'Corte de media tarde', price: 10800, durationMinutes: 30, isActive: true,
+  ventana: { dias: [1, 2], desde: '16:30', hasta: '19:30' },
+});
+await db.doc(`businesses/${BID}/professionalServices/ps-promo`).set({ professionalId: PROF, serviceId: 'srv-promo' });
+const c8 = await usuario('c8@gmail.com');
+// FECHA es martes → día ok. 15:00 está fuera de la franja.
+r = await reservar(c8, { ...base, serviceId: 'srv-promo', startTime: '15:00' });
+chequear('martes 15:00: fuera de la franja, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+// 19:15–19:45 se pasa del final de la franja aunque empiece adentro.
+r = await reservar(c8, { ...base, serviceId: 'srv-promo', startTime: '19:15' });
+chequear('martes 19:15: termina fuera de la franja, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(c8, { ...base, serviceId: 'srv-promo', startTime: '17:00' });
+chequear('martes 17:00: adentro, creado', r.ok?.status === 'created' && r.ok?.price === 10800, JSON.stringify(r));
+// Un jueves (2027-03-04) no aplica aunque el horario esté bien. El barbero no
+// trabaja jueves en este escenario, así que se le agrega horario para que el
+// rechazo sea por la promo y no por la agenda.
+await db.doc(`businesses/${BID}/schedules/sch-jueves`).set({ professionalId: PROF, dayOfWeek: 3, startTime: '09:00', endTime: '20:00', isActive: true });
+await db.doc(`businesses/${BID}`).update({ businessHours: [{ dayOfWeek: DOW, startTime: '09:00', endTime: '18:00', isActive: true }, { dayOfWeek: 3, startTime: '09:00', endTime: '20:00', isActive: true }] });
+const c9 = await usuario('c9@gmail.com');
+r = await reservar(c9, { ...base, serviceId: 'srv-promo', appointmentDate: '2027-03-04', startTime: '17:00' });
+chequear('jueves 17:00: la promo no es los jueves, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(c9, { ...base, serviceId: SRV, appointmentDate: '2027-03-04', startTime: '17:00' });
+chequear('jueves 17:00 con el corte común: creado', r.ok?.status === 'created', JSON.stringify(r));
+
 titulo('getBusySlots — solo horas, sin datos de otros clientes:');
 const c7 = await usuario('c7@gmail.com');
 r = await llamar(c7, 'getBusySlots', { businessId: BID, professionalId: PROF, appointmentDate: FECHA });

@@ -545,6 +545,21 @@ exports.createAppointment = onCall(async (request) => {
     throw new HttpsError('failed-precondition', 'Ese horario está fuera del horario de atención.');
   }
 
+  // Promo por día y franja del servicio (utils/ventanaServicio.js en el front,
+  // misma regla acá, que es donde vale). `dias` en 0=Lunes … 6=Domingo.
+  const ventana = servicio.ventana || null;
+  if (ventana) {
+    const dow = diaDeLaSemana(appointmentDate);
+    if (Array.isArray(ventana.dias) && ventana.dias.length > 0 && !ventana.dias.includes(dow)) {
+      throw new HttpsError('failed-precondition', `${servicio.name || 'Ese servicio'} no se ofrece ese día.`);
+    }
+    if (ventana.desde && ventana.hasta) {
+      if (inicio < timeToMinutes(ventana.desde) || fin > timeToMinutes(ventana.hasta)) {
+        throw new HttpsError('failed-precondition', `${servicio.name || 'Ese servicio'} se ofrece solo de ${ventana.desde} a ${ventana.hasta}.`);
+      }
+    }
+  }
+
   if (horario.breakStart && horario.breakEnd) {
     const dStart = timeToMinutes(horario.breakStart), dEnd = timeToMinutes(horario.breakEnd);
     if (inicio < dEnd && fin > dStart) {

@@ -316,10 +316,11 @@ confirmar con milisegundos de diferencia.
 node scripts/test-reservas-emulador.mjs
 ```
 
-35 casos: precio falsificado, fecha pasada, profesional y servicio inexistentes,
+40 casos: precio falsificado, fecha pasada, profesional y servicio inexistentes,
 servicio que ese profesional no hace, fuera de horario, en el descanso, día que
 no trabaja, teléfono inválido, un turno por día, doble reserva, negocio
-suspendido, sin sesión, tope de turnos a futuro y `getBusySlots`.
+suspendido, sin sesión, tope de turnos a futuro, promo por día y franja, y
+`getBusySlots`.
 
 **Tope por cuenta.** Además de un turno por día, una cuenta no puede tener más
 de `MAX_TURNOS_ACTIVOS` (3) turnos activos de hoy en adelante en la misma
@@ -335,6 +336,15 @@ Rules (correcto: tiene datos de otros), la grilla del cliente quedó ciega —
 mostraba libre lo que ya estaba tomado y cada reserva moría en "ese horario ya
 fue tomado". `BookingPage` la llama al elegir profesional y día. No expone ni
 un campo más que las horas.
+
+**Promos por día y horario.** Un servicio puede llevar
+`ventana: { dias: [1, 2], desde: '16:30', hasta: '19:30' }` (días en 0=Lunes …
+6=Domingo, la convención de los horarios; `null` = siempre). Se configura en
+Servicios ("Solo en ciertos días y horarios"); `utils/ventanaServicio.js` la
+aplica en el calendario (días deshabilitados), en la grilla (el turno entero
+tiene que caer adentro), en el modal del staff, y `createAppointment` la
+repite en el servidor. Era el "corte de media tarde, martes y miércoles de
+16:30 a 19:30, 10% menos", que antes vivía solo en la descripción.
 
 **Turno agendado por el staff.** `NuevoTurnoModal` (botón "Agendar turno" en
 Citas) escribe directo a Firestore, NO por la function: la function cuenta los
@@ -709,7 +719,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 64, reservas 35, facturación 11, rules 106. Todo en verde.
+Hoy: claims 64, reservas 40, facturación 11, rules 106. Todo en verde.
 
 ---
 
