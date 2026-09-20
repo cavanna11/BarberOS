@@ -51,6 +51,74 @@ export const subCol = (businessId, name) => collection(db, 'businesses', busines
 const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
 // ============================================================================
+// ESCUCHAR CON RED DE SEGURIDAD
+// ============================================================================
+// Todas las suscripciones pasan por acá en vez de llamar a onSnapshot a pelo,
+// por dos cosas que se vieron en producción como "de la nada el panel muestra
+// cero barberías, cero turnos, y no vuelve hasta un F5":
+//
+//   1. Con la conexión caída un instante (la notebook vuelve del sueño, cambia
+//      la red), Firestore puede emitir un snapshot VACÍO desde el caché
+//      (`metadata.fromCache`) — y el panel pisaba los datos buenos con nada.
+//      Un vacío que viene del caché no se cree: se espera al servidor.
+//   2. Si el listener falla con un error terminal, onSnapshot lo cierra y no
+//      vuelve a intentar nunca. Acá se reintenta con espera creciente, y
+//      además al volver la conexión o la pestaña al frente.
+//
+// Devuelve una función para desuscribirse, igual que onSnapshot.
+function escuchar(ref, mapear, cb, onError) {
+  let off = null;
+  let cancelado = false;
+  let intentos = 0;
+  let timer = null;
+
+  const conectar = () => {
+    if (cancelado) return;
+    if (off) { off(); off = null; }
+    off = onSnapshot(
+      ref,
+      (snap) => {
+        intentos = 0;
+        const vacio = 'docs' in snap ? snap.empty : !snap.exists();
+        if (vacio && snap.metadata.fromCache) return; // ver (1)
+        cb(mapear(snap));
+      },
+      (err) => {
+        if (cancelado) return;
+        onError?.(err);
+        // permission-denied no se arregla reintentando: es una regla.
+        if (err?.code === 'permission-denied') return;
+        intentos++;
+        const espera = Math.min(3000 * 2 ** (intentos - 1), 60000);
+        console.warn(`[repository] Listener caído (${err?.code}); reintento en ${espera / 1000}s.`);
+        timer = setTimeout(conectar, espera);
+      }
+    );
+  };
+
+  const despertar = () => {
+    if (cancelado || intentos === 0) return;
+    clearTimeout(timer);
+    conectar();
+  };
+  window.addEventListener('online', despertar);
+  document.addEventListener('visibilitychange', despertar);
+
+  conectar();
+
+  return () => {
+    cancelado = true;
+    clearTimeout(timer);
+    window.removeEventListener('online', despertar);
+    document.removeEventListener('visibilitychange', despertar);
+    if (off) off();
+  };
+}
+
+const unDoc = (snap) => (snap.exists() ? { id: snap.id, ...snap.data() } : null);
+const datosDoc = (snap) => (snap.exists() ? snap.data() : null);
+
+// ============================================================================
 // NEGOCIOS
 // ============================================================================
 
@@ -112,16 +180,12 @@ export async function getBusinessIdBySlug(slug) {
 
 /** Escucha un negocio puntual. Devuelve la función para desuscribirse. */
 export function subscribeBusiness(businessId, cb, onError) {
-  return onSnapshot(
-    businessDoc(businessId),
-    (snap) => cb(snap.exists() ? { id: snap.id, ...snap.data() } : null),
-    onError
-  );
+  return escuchar(businessDoc(businessId), unDoc, cb, onError);
 }
 
 /** Escucha TODOS los negocios. Solo el dueño de plataforma puede listar. */
 export function subscribeAllBusinesses(cb, onError) {
-  return onSnapshot(businessesCol(), (snap) => cb(rows(snap)), onError);
+  return escuchar(businessesCol(), rows, cb, onError);
 }
 
 /**
@@ -151,11 +215,7 @@ export async function setBusinessFrozen(businessId, isFrozen) {
 // ============================================================================
 
 export function subscribeBilling(businessId, cb, onError) {
-  return onSnapshot(
-    billingDoc(businessId),
-    (snap) => cb(snap.exists() ? snap.data() : null),
-    onError
-  );
+  return escuchar(billingDoc(businessId), datosDoc, cb, onError);
 }
 
 export async function getBilling(businessId) {
@@ -196,7 +256,7 @@ export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFe
 
 /** Escucha una subcolección del negocio (professionals, services, etc.). */
 export function subscribeSubcollection(businessId, name, cb, onError) {
-  return onSnapshot(subCol(businessId, name), (snap) => cb(rows(snap)), onError);
+  return escuchar(subCol(businessId, name), rows, cb, onError);
 }
 
 export async function addToSubcollection(businessId, name, data) {
@@ -239,7 +299,7 @@ export async function replaceMatching(businessId, name, campo, valor, nuevos) {
 
 /** Turnos del negocio. El staff los ve todos. */
 export function subscribeAppointments(businessId, cb, onError) {
-  return onSnapshot(subCol(businessId, 'appointments'), (snap) => cb(rows(snap)), onError);
+  return escuchar(subCol(businessId, 'appointments'), rows, cb, onError);
 }
 
 /**
@@ -248,11 +308,7 @@ export function subscribeAppointments(businessId, cb, onError) {
  * rechaza la consulta entera.
  */
 export function subscribeAppointmentsDeProfesional(businessId, professionalId, cb, onError) {
-  return onSnapshot(
-    query(subCol(businessId, 'appointments'), where('professionalId', '==', professionalId)),
-    (snap) => cb(rows(snap)),
-    onError
-  );
+  return escuchar(query(subCol(businessId, 'appointments'), where('professionalId', '==', professionalId)), rows, cb, onError);
 }
 
 /**
@@ -260,11 +316,7 @@ export function subscribeAppointmentsDeProfesional(businessId, professionalId, c
  * rechazan el listado completo si no sos staff.
  */
 export function subscribeMyAppointments(businessId, userId, cb, onError) {
-  return onSnapshot(
-    query(subCol(businessId, 'appointments'), where('userId', '==', userId)),
-    (snap) => cb(rows(snap)),
-    onError
-  );
+  return escuchar(query(subCol(businessId, 'appointments'), where('userId', '==', userId)), rows, cb, onError);
 }
 
 export async function createAppointment(businessId, data) {
@@ -310,10 +362,7 @@ export function subscribeNotifications(businessId, { professionalId = null } = {
   const q = professionalId
     ? query(base, where('professionalId', '==', professionalId))
     : query(base, orderBy('createdAt', 'desc'), limit(60));
-  return onSnapshot(q, (snap) => {
-    const filas = rows(snap).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    cb(filas.slice(0, 60));
-  }, onError);
+  return escuchar(q, (snap) => rows(snap).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 60), cb, onError);
 }
 
 export async function markNotificationRead(businessId, id, uid) {
@@ -325,7 +374,7 @@ export async function markNotificationRead(businessId, id, uid) {
 // Las de la plataforma (panel global): tickets y suspensiones.
 export function subscribePlatformNotifications(cb, onError) {
   const q = query(collection(db, 'platform', 'notifications', 'items'), orderBy('createdAt', 'desc'), limit(60));
-  return onSnapshot(q, (snap) => cb(rows(snap)), onError);
+  return escuchar(q, rows, cb, onError);
 }
 
 export async function markPlatformNotificationRead(id, uid) {
@@ -389,7 +438,7 @@ export async function removeStaffContact(businessId, professionalId) {
 // ============================================================================
 
 export function subscribeAdmins(businessId, cb, onError) {
-  return onSnapshot(subCol(businessId, 'admins'), (snap) => cb(rows(snap)), onError);
+  return escuchar(subCol(businessId, 'admins'), rows, cb, onError);
 }
 
 /**
@@ -417,7 +466,7 @@ export async function removeAdminRecord(businessId, email) {
 // Cloud Function setPlatformModerator; acá solo se lee.
 
 export function subscribePlatformTeam(cb, onError) {
-  return onSnapshot(collection(db, 'platform', 'team', 'members'), (snap) => cb(rows(snap)), onError);
+  return escuchar(collection(db, 'platform', 'team', 'members'), rows, cb, onError);
 }
 
 // ============================================================================
@@ -437,11 +486,7 @@ export const TICKET_ESTADOS = {
 
 /** Todos los tickets de la plataforma, del más movido al más viejo. */
 export function subscribeAllTickets(cb, onError) {
-  return onSnapshot(
-    query(ticketsCol(), orderBy('lastMessageAt', 'desc')),
-    (snap) => cb(rows(snap)),
-    onError
-  );
+  return escuchar(query(ticketsCol(), orderBy('lastMessageAt', 'desc')), rows, cb, onError);
 }
 
 /**
@@ -450,19 +495,11 @@ export function subscribeAllTickets(cb, onError) {
  * rechaza la consulta entera.
  */
 export function subscribeBusinessTickets(businessId, cb, onError) {
-  return onSnapshot(
-    query(ticketsCol(), where('businessId', '==', businessId), orderBy('lastMessageAt', 'desc')),
-    (snap) => cb(rows(snap)),
-    onError
-  );
+  return escuchar(query(ticketsCol(), where('businessId', '==', businessId), orderBy('lastMessageAt', 'desc')), rows, cb, onError);
 }
 
 export function subscribeTicketMessages(ticketId, cb, onError) {
-  return onSnapshot(
-    query(collection(db, 'tickets', ticketId, 'messages'), orderBy('createdAt', 'asc')),
-    (snap) => cb(rows(snap)),
-    onError
-  );
+  return escuchar(query(collection(db, 'tickets', ticketId, 'messages'), orderBy('createdAt', 'asc')), rows, cb, onError);
 }
 
 /** Abre un ticket con su primer mensaje, en un solo batch. */
@@ -538,7 +575,7 @@ export async function markTicketRead(ticketId, role) {
 const platformDoc = (name) => doc(db, 'platform', name);
 
 export function subscribePlatformConfig(name, cb, onError) {
-  return onSnapshot(platformDoc(name), (snap) => cb(snap.exists() ? snap.data() : null), onError);
+  return escuchar(platformDoc(name), datosDoc, cb, onError);
 }
 
 export async function savePlatformConfig(name, data) {

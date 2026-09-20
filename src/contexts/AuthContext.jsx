@@ -169,7 +169,21 @@ export function AuthProvider({ children }) {
       }
       bypassActivo.current = false;
       try {
-        let { claims } = await getIdTokenResult(fbUser);
+        // Con la red a medio volver (la notebook despierta, cambia el wifi),
+        // leer el token puede fallar una vez. Sin reintento, la sesión se
+        // rehidrataba SIN claims: el dueño de la plataforma pasaba a ser
+        // "cliente", el panel quedaba en cero y solo se arreglaba cerrando y
+        // abriendo sesión.
+        let claims = null;
+        for (let intento = 0; intento < 3; intento++) {
+          try {
+            ({ claims } = await getIdTokenResult(fbUser));
+            break;
+          } catch (err) {
+            if (intento === 2) throw err;
+            await new Promise((r) => setTimeout(r, 1500 * (intento + 1)));
+          }
+        }
 
         // Red de seguridad: si el reclamo del login se cortó a mitad (se cerró
         // la pestaña, falló la red), sin esto la persona queda como cliente

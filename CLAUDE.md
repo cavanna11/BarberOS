@@ -453,6 +453,12 @@ src/
 1. **Ningún componente habla con Firestore directo.** Todo por `repository.js`.
 2. **Las suscripciones viven solo en `BusinessSync`.** Si cada hook abriera su
    listener, el mismo documento se cobraría una vez por componente montado.
+   Y en `repository.js` todas pasan por `escuchar()`, nunca `onSnapshot` a
+   pelo: descarta los snapshots vacíos que vienen del caché (con la red a
+   medio volver, Firestore emitía "cero de todo" y el panel pisaba los datos
+   buenos), y reintenta con espera creciente si el listener muere (onSnapshot
+   solo no vuelve a intentar nunca). Era el "de la nada el panel muestra cero
+   barberías y no se arregla sin F5".
 3. **`availabilityEngine.js` y `statsCalculator.js` reciben arrays por
    argumento y no saben de dónde salen.** Mantenerlos así.
 4. **El filtro del frontend NO es seguridad.** Lo que aísla los negocios son
