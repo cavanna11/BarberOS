@@ -8,12 +8,18 @@ import { isPlatformOwner } from '../config/platform';
  * Resuelve cuál es el negocio (tenant) activo para el usuario actual.
  *
  * Orden de resolución:
+ *   0. Hay un slug en la URL (/:businessSlug, la página pública de reserva)
+ *      → ESE negocio, sea quien sea el que mira. Antes el slug perdía contra
+ *      el negocio "administrado" del dueño de plataforma y contra el negocio
+ *      propio del staff: el link barberos.sacia.tech/volcadoclub, abierto por
+ *      la plataforma con otra barbería activa en el panel, mostraba la otra
+ *      barbería. Para el cliente del link eso es "me mandaron a otro lado".
+ *      (No es espiar: la página pública es pública, y las Rules siguen
+ *      decidiendo qué se puede leer.)
  *   1. Dueño de plataforma → el negocio que esté "impersonando" (currentBusinessId),
- *      o el slug de la URL, o el primero de la lista.
- *   2. Admin / owner de un negocio → SIEMPRE su propio businessId.
- *      El slug de la URL se ignora a propósito: un admin no puede espiar otro
- *      tenant cambiando la URL a mano.
- *   3. Cliente (o visitante) → el slug de la URL.
+ *      o el primero de la lista.
+ *   2. Admin / owner de un negocio → su propio businessId.
+ *   3. Nadie → null.
  *
  * Devuelve { business, businessId, slug, isPlatformOwner, resolved }.
  * `resolved` es false cuando no se pudo determinar ningún negocio (ej: cliente
@@ -25,7 +31,8 @@ export function useResolvedBusiness() {
   const { user } = useAuth();
 
   const businesses = state.businesses || [];
-  const platformOwner = isPlatformOwner(user?.email);
+  // Por el claim (dueño o moderador); la lista de mails queda de respaldo.
+  const platformOwner = user?.isPlatformTeam === true || isPlatformOwner(user?.email);
 
   // Sin useMemo a propósito: la lista de negocios es chica y el resultado se
   // consume por `businessId` (string estable), así que recalcular por render
@@ -35,16 +42,17 @@ export function useResolvedBusiness() {
     : null;
 
   let business;
-  if (platformOwner) {
+  if (businessSlug) {
+    business = bySlug || null;
+  } else if (platformOwner) {
     business =
       businesses.find((b) => b.id === state.currentBusinessId) ||
-      bySlug ||
       businesses[0] ||
       null;
   } else if (user?.businessId) {
     business = businesses.find((b) => b.id === user.businessId) || null;
   } else {
-    business = bySlug || null;
+    business = null;
   }
 
   return {

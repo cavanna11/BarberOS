@@ -44,7 +44,7 @@ const VACIO = { ...Object.fromEntries(COLECCIONES.map((c) => [c, []])), notifica
  */
 
 // Primeros segmentos de URL que son rutas de la app, no slugs de negocio.
-const RUTAS_RESERVADAS = new Set(['login', 'admin', 'super-admin', '']);
+const RUTAS_RESERVADAS = new Set(['login', 'admin', 'super-admin', 'cuenta', '']);
 
 export default function BusinessSync() {
   const { state, dispatch } = useBusiness();
@@ -104,6 +104,9 @@ export default function BusinessSync() {
 
       const desuscribirLista = subscribeAllBusinesses((lista) => {
         negocios = lista;
+        // Para que la página pública no diga "no existe" mientras la lista
+        // todavía no llegó.
+        dispatch({ type: 'SET_TENANT_DATA', payload: { negociosCargados: true } });
 
         // Alta: escuchar la facturación de los negocios nuevos.
         for (const n of lista) {
@@ -141,8 +144,10 @@ export default function BusinessSync() {
       };
     }
 
-    // 2. Staff de un negocio: solo el suyo.
-    if (businessIdPropio) {
+    // 2. Staff de un negocio, en su panel: solo el suyo. Si está parado en el
+    //    link público de OTRA barbería (/:slug), va por el camino 3 como
+    //    cualquier visitante: la página pública muestra lo que dice la URL.
+    if (businessIdPropio && !slug) {
       return subscribeBusiness(
         businessIdPropio,
         (negocio) => dispatch({ type: 'SET_BUSINESSES', payload: negocio ? [negocio] : [] }),
@@ -155,6 +160,11 @@ export default function BusinessSync() {
       let cancelado = false;
       let desuscribir = null;
 
+      // Mientras se resuelve, la página pública muestra "cargando" y no "no
+      // existe": ese destello de error en cada apertura del link era lo
+      // primero que veía el cliente.
+      dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'resolviendo' } } });
+
       (async () => {
         try {
           const cache = slugResuelto.current;
@@ -165,12 +175,18 @@ export default function BusinessSync() {
 
           if (cancelado) return;
           if (!businessId) {
+            dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'no-existe' } } });
             dispatch({ type: 'SET_BUSINESSES', payload: [] });
             return;
           }
+          dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'ok' } } });
           desuscribir = subscribeBusiness(
             businessId,
-            (negocio) => dispatch({ type: 'SET_BUSINESSES', payload: negocio ? [negocio] : [] }),
+            (negocio) => {
+              // Si el negocio se borró con el link abierto, que diga que no existe.
+              if (!negocio) dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'no-existe' } } });
+              dispatch({ type: 'SET_BUSINESSES', payload: negocio ? [negocio] : [] });
+            },
             onError
           );
         } catch (err) {

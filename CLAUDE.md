@@ -577,6 +577,17 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
   por cualquier proveedor. Síntoma: "No se pudo iniciar sesión con Google"
   para todo usuario nuevo, mientras los que ya entraron alguna vez siguen
   entrando. Dejarlo prendido. Ahora el mensaje del front trae el código.
+- **En la página pública (`/:slug`) manda el slug, para todos.**
+  `useResolvedBusiness` resolvía primero el negocio "administrado" del dueño
+  de plataforma (`currentBusinessId`) y el negocio propio del staff, y recién
+  después el slug: abrir `barberos.sacia.tech/volcadoclub` con otra barbería
+  activa en el panel mostraba la otra barbería. En incógnito andaba, por eso
+  parecía "caché". Ahora si hay slug en la URL, es ese negocio, sea quien sea.
+- **"No encontramos este negocio" solo cuando se SABE.** `TenantRoute`
+  mostraba el error mientras el slug todavía se resolvía: cada apertura del
+  link arrancaba con un cartel de error que desaparecía un segundo después.
+  `BusinessSync` deja `slugEstado` (resolviendo / ok / no-existe) y
+  `negociosCargados` para la plataforma; hasta entonces, "Cargando…".
 - **Los turnos guardan la fecha en `appointmentDate`, NO en `date`.** Todo el
   código lo usa así (`BookingPage`, `AppointmentsPage`, `DashboardPage`,
   `MyAppointments`, `availabilityEngine`). Sembrar datos de prueba con `date`

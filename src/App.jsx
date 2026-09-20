@@ -83,9 +83,20 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false })
 function TenantRoute({ children }) {
   const { businessSlug } = useParams();
   const { state } = useBusiness();
+  const { user, loading } = useAuth();
   const business = (state.businesses || []).find((b) => b.slug === businessSlug);
 
-  if (!business) return <NoBusinessPage reason="not-found" />;
+  if (!business) {
+    // "No existe" recién cuando se SABE que no existe. Antes se mostraba
+    // mientras el slug todavía se estaba resolviendo, y cada apertura del
+    // link arrancaba con un cartel de error que después desaparecía.
+    const esPlataforma = user?.isPlatformTeam === true;
+    const resuelto = esPlataforma
+      ? state.negociosCargados === true
+      : state.slugEstado?.slug === businessSlug && state.slugEstado.estado !== 'resolviendo';
+    if (loading || !resuelto) return <SessionLoading />;
+    return <NoBusinessPage reason="not-found" />;
+  }
   if (business.isFrozen || business.onlineBookingEnabled === false) {
     return <NoBusinessPage reason="frozen" />;
   }
