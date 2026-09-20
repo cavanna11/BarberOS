@@ -144,6 +144,17 @@ Google.
   primer mensaje de un ticket no se avisa dos veces: entra en el mismo batch
   que el ticket y `createdAt` coincide (serverTimestamp resuelve al mismo
   instante en todo el batch).
+- **Ficha de la barbería** en la reserva (`FichaBarberia`): presentación
+  (`welcomeMessage`), dirección + "Cómo llegar" (`mapsUrl` si es un link de
+  Google Maps de verdad —se valida contra una lista de dominios porque
+  termina en un href público—, o búsqueda por dirección+ciudad), Instagram y
+  WhatsApp (`socialLinks`). Compacta arriba del paso 1; completa en la
+  confirmación. Todo se edita en Configuración.
+- **Foto de perfil del barbero**: `avatarUrl` como data URL JPEG de ≤320 px
+  (`utils/imagen.js` la achica en el browser, ~20 KB) en el doc público del
+  profesional; sin Firebase Storage a propósito. Las Rules acotan a 250 KB.
+  La suben el dueño (Profesionales) o el barbero (Mi Configuración); se ve en
+  la reserva, el resumen y la tabla.
 - **Mobile**: todo el panel, la reserva y la landing verificados a 375px sin
   desborde horizontal. En el celular las citas son tarjetas (no tabla), las
   tablas de gestión esconden columnas secundarias (`.oculta-mobile`), las
@@ -703,7 +714,8 @@ Email/Password habilitado, alcance del barbero cerrado en Rules.
     slug, tickets, pendientes, y les vacía los claims a todos los usuarios
     del negocio. Botón "Eliminar barbería" en el panel global.
     `deleteBusinessRecord` de repository.js quedó sin uso.
-13. Subir logo por barbería (Firebase Storage).
+13. Subir logo por barbería. La foto del barbero ya va como data URL en el
+    doc; el logo puede ir igual (mismo `redimensionarImagen`) sin Storage.
 14. ~~PWA~~ Hecha, con push. Falta: TWA para Play Store si algún cliente lo
     pide (misma web envuelta con Bubblewrap).
 
@@ -719,7 +731,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 64, reservas 40, facturación 11, rules 106. Todo en verde.
+Hoy: claims 64, reservas 40, facturación 11, rules 109. Todo en verde.
 
 ---
 

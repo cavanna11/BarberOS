@@ -174,6 +174,9 @@ await esperar('barbero edita SU ficha',                  editar(barberoA, `busin
 await esperar('barbero NO se activa/desactiva solo',     editar(barberoA, `businesses/${A}/professionals/p1`, { isActive: false }), 'denegado');
 await esperar('barbero NO edita la ficha de otro',       editar(barberoA, `businesses/${A}/professionals/p2`, { specialty: 'x' }), 'denegado');
 await esperar('barbero NO crea fichas',                  crear(barberoA, `businesses/${A}/professionals`, { name: 'x' }), 'denegado');
+await esperar('barbero sube SU foto (chica)',            editar(barberoA, `businesses/${A}/professionals/p1`, { avatarUrl: 'data:image/jpeg;base64,' + 'A'.repeat(20000) }), 'permitido');
+await esperar('nadie mete una foto de 300 KB',           editar(duenoA, `businesses/${A}/professionals/p1`, { avatarUrl: 'data:image/jpeg;base64,' + 'A'.repeat(300000) }), 'denegado');
+await esperar('quitar la foto (null) esta bien',         editar(duenoA, `businesses/${A}/professionals/p1`, { avatarUrl: null }), 'permitido');
 await esperar('barbero crea SU horario',                 crear(barberoA, `businesses/${A}/schedules`, { professionalId: 'p1', dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true }), 'permitido');
 await esperar('barbero NO crea horario de otro',         crear(barberoA, `businesses/${A}/schedules`, { professionalId: 'p2', dayOfWeek: 1 }), 'denegado');
 await esperar('barbero borra SU horario',                borrar(barberoA, `businesses/${A}/schedules/sch-p1`), 'permitido');

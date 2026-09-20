@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import FotoPerfil from '../../components/admin/FotoPerfil';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   updateInSubcollection,
@@ -31,6 +32,7 @@ export default function ProfileSettingsPage() {
     name: professional?.name || '',
     specialty: professional?.specialty || '',
     bio: professional?.bio || '',
+    avatarUrl: professional?.avatarUrl || null,
     ...contacto,
     ...cambios,
   };
@@ -138,6 +140,7 @@ export default function ProfileSettingsPage() {
           <div className="card">
             <h3 className="mb-lg">Datos Personales</h3>
             <div className="flex flex-col gap-md">
+              <FotoPerfil value={form.avatarUrl} nombre={form.name} onChange={(avatarUrl) => editar({ avatarUrl })} />
               <div className="form-group">
                 <label className="form-label">Nombre Completo <span className="required">*</span></label>
                 <input

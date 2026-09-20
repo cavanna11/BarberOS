@@ -117,8 +117,18 @@ export default function SettingsPage() {
                 </p>
               </div>
               <div className="form-group">
-                <label className="form-label">Mensaje de bienvenida</label>
-                <textarea className="form-input" value={form.welcomeMessage || ''} onChange={e => editar({ welcomeMessage: e.target.value })} />
+                <label className="form-label">Presentación de la barbería</label>
+                <textarea className="form-input" value={form.welcomeMessage || ''} onChange={e => editar({ welcomeMessage: e.target.value })} placeholder="Dos líneas sobre el local: desde cuándo, qué los distingue, cómo trabajan." maxLength={300} />
+                <p className="text-sm text-muted" style={{ marginTop: 6 }}>Se muestra arriba de la reserva, antes de elegir barbero.</p>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Instagram</label>
+                <input className="form-input" value={form.socialLinks?.instagram || ''} onChange={e => editar({ socialLinks: { ...(form.socialLinks || {}), instagram: e.target.value.replace(/^@/, '') } })} placeholder="tubarberia" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">WhatsApp de la barbería</label>
+                <input className="form-input" value={form.socialLinks?.whatsapp || ''} onChange={e => editar({ socialLinks: { ...(form.socialLinks || {}), whatsapp: e.target.value } })} placeholder="11 1234-5678" />
+                <p className="text-sm text-muted" style={{ marginTop: 6 }}>El cliente lo ve como botón en la reserva. Si lo dejás vacío, se usa el teléfono de abajo.</p>
               </div>
             </div>
           </div>
@@ -190,7 +200,18 @@ export default function SettingsPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Dirección</label>
-                <input className="form-input" value={form.address || ''} onChange={e => editar({ address: e.target.value })} />
+                <input className="form-input" value={form.address || ''} onChange={e => editar({ address: e.target.value })} placeholder="Av. San Martín 1234" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Ciudad</label>
+                <input className="form-input" value={form.city || ''} onChange={e => editar({ city: e.target.value })} placeholder="Mar de Ajó" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Link de Google Maps (opcional)</label>
+                <input className="form-input" value={form.mapsUrl || ''} onChange={e => editar({ mapsUrl: e.target.value.trim() })} placeholder="https://maps.app.goo.gl/…" />
+                <p className="text-sm text-muted" style={{ marginTop: 6 }}>
+                  En Google Maps: buscá el local → Compartir → Copiar link. Sin esto, "Cómo llegar" busca la dirección de arriba.
+                </p>
               </div>
             </div>
           </div>

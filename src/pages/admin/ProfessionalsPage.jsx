@@ -11,6 +11,7 @@ import {
 } from '../../lib/repository';
 import { getDayName, generateId } from '../../utils/dateUtils';
 import { getPlan } from '../../config/plans';
+import FotoPerfil from '../../components/admin/FotoPerfil';
 
 // Mismo número que la landing y el resto del panel.
 const LINK_AMPLIAR = 'https://wa.me/5492257529684?text=' +
@@ -60,7 +61,7 @@ export default function ProfessionalsPage() {
   const openAdd = () => {
     if (llegoAlTope) return;
     setEditing(null);
-    setForm({ name: '', specialty: '', phone: '', email: '', bio: '' });
+    setForm({ name: '', specialty: '', phone: '', email: '', bio: '', avatarUrl: null });
     setEditSchedules(Array.from({ length: 7 }, (_, i) => ({
       id: generateId(), professionalId: '', dayOfWeek: i,
       startTime: i < 5 ? '09:00' : i === 5 ? '09:00' : '',
@@ -78,7 +79,7 @@ export default function ProfessionalsPage() {
   const openEdit = (prof) => {
     setEditing(prof);
     const contacto = contactos[prof.id] || {};
-    setForm({ name: prof.name, specialty: prof.specialty || '', phone: contacto.phone || '', email: contacto.email || '', bio: prof.bio || '' });
+    setForm({ name: prof.name, specialty: prof.specialty || '', phone: contacto.phone || '', email: contacto.email || '', bio: prof.bio || '', avatarUrl: prof.avatarUrl || null });
     const profSchedules = schedules.filter(s => s.professionalId === prof.id);
     setEditSchedules(Array.from({ length: 7 }, (_, i) => {
       const existing = profSchedules.find(s => s.dayOfWeek === i);
@@ -117,7 +118,6 @@ export default function ProfessionalsPage() {
         ? editing.id
         : await addToSubcollection(businessId, 'professionals', {
             ...publico,
-            avatarUrl: null,
             displayOrder: professionals.length + 1,
             isActive: true,
           });
@@ -237,7 +237,7 @@ export default function ProfessionalsPage() {
                 <tr key={prof.id}>
                   <td>
                     <div className="flex items-center gap-sm">
-                      <div className="avatar avatar-sm">{prof.name.split(' ').map(n => n[0]).join('')}</div>
+                      <div className="avatar avatar-sm" style={{ overflow: 'hidden' }}>{prof.avatarUrl ? <img src={prof.avatarUrl} alt={prof.name} /> : prof.name.split(' ').map(n => n[0]).join('')}</div>
                       <strong>{prof.name}</strong>
                     </div>
                   </td>
@@ -294,6 +294,7 @@ export default function ProfessionalsPage() {
               <div className="flex flex-col gap-md">
 
                 {/* ─ Datos básicos ─ */}
+                <FotoPerfil value={form.avatarUrl} nombre={form.name} onChange={(avatarUrl) => setForm({ ...form, avatarUrl })} />
                 <div className="form-group">
                   <label className="form-label">Nombre <span className="required">*</span></label>
                   <input

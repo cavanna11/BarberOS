@@ -7,6 +7,7 @@ import { createAppointment, getBusySlots } from '../../lib/functions';
 import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/availabilityEngine';
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
 import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
+import FichaBarberia from '../../components/client/FichaBarberia';
 
 // ---- STEPPER ----
 function Stepper({ step }) {
@@ -308,8 +309,8 @@ function BookingSummary({ professional, service, date, timeSlot, price, currency
       <div className="booking-summary">
         <div className="summary-card">
           <div className="summary-header">
-            <div className="avatar avatar-lg" style={{ margin: '0 auto var(--space-sm)' }}>
-              {professional.name.split(' ').map(n => n[0]).join('')}
+            <div className="avatar avatar-lg" style={{ margin: '0 auto var(--space-sm)', overflow: 'hidden' }}>
+              {professional.avatarUrl ? <img src={professional.avatarUrl} alt={professional.name} /> : professional.name.split(' ').map(n => n[0]).join('')}
             </div>
             <h3>{professional.name}</h3>
             <p className="text-sm" style={{ opacity: 0.8 }}>{professional.specialty}</p>
@@ -599,6 +600,9 @@ export default function BookingPage() {
 
   return (
     <div className="booking-container">
+      {/* La barbería se presenta antes del primer paso: dónde queda, cómo
+          llegar, cómo contactarla. */}
+      {step === 1 && <FichaBarberia business={business} services={services} />}
       <Stepper step={step} />
 
       {error && (

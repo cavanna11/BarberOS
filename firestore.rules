@@ -143,14 +143,24 @@ service cloud.firestore {
       // del dueño, y además es lo que cuenta para el límite de barberos del
       // plan. Tampoco crea ni borra fichas. Verificado: sin esta rama la página
       // entera del barbero fallaba con permission-denied al guardar.
+      // La foto va como data URL adentro del doc (sin Storage): se acota el
+      // tamaño para que nadie meta un doc de 1 MB en una colección pública.
+      function fotoRazonable() {
+        return !('avatarUrl' in request.resource.data)
+               || request.resource.data.avatarUrl == null
+               || (request.resource.data.avatarUrl is string
+                   && request.resource.data.avatarUrl.size() < 250000);
+      }
       match /professionals/{profId} {
         allow read: if true;
-        allow create, delete: if canManage(bizId);
-        allow update: if canManage(bizId)
-                         || (esBarbero(bizId)
-                             && claims().get('professionalId', '') == profId
-                             && !request.resource.data.diff(resource.data).affectedKeys()
-                                   .hasAny(['isActive', 'id']));
+        allow create: if canManage(bizId) && fotoRazonable();
+        allow delete: if canManage(bizId);
+        allow update: if fotoRazonable()
+                         && (canManage(bizId)
+                             || (esBarbero(bizId)
+                                 && claims().get('professionalId', '') == profId
+                                 && !request.resource.data.diff(resource.data).affectedKeys()
+                                       .hasAny(['isActive', 'id'])));
       }
 
       // Teléfono y mail personales del staff, en subcolección aparte.

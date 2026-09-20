@@ -1,6 +1,7 @@
 import { useLocation, Link } from 'react-router-dom';
 import { useTenant } from '../../hooks/useTenantData';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
+import FichaBarberia from '../../components/client/FichaBarberia';
 
 export default function ConfirmationPage() {
   const location = useLocation();
@@ -54,6 +55,11 @@ export default function ConfirmationPage() {
             <span className="summary-value">{formatPrice(appointment.price, business?.currency)}</span>
           </div>
         </div>
+      </div>
+
+      {/* Es el momento en que el cliente necesita la dirección. */}
+      <div style={{ margin: 'var(--space-lg) 0', textAlign: 'left' }}>
+        <FichaBarberia business={business} variant="completa" />
       </div>
 
       <div className="confirmation-actions">
