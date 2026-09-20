@@ -386,10 +386,14 @@ está cerrado por rol.
 **Lo que hace falta hacer a mano en la consola de Firebase (Authentication →
 Settings):**
 
-1. **User actions → desactivar "Enable create (sign-up)"**: nadie se registra
-   solo, las cuentas las crea la plataforma o entran con Google. Es la
-   barrera de primer orden contra el robo de pendientes (el `email_verified`
-   es la de segundo).
+1. ~~User actions → desactivar "Enable create (sign-up)"~~ **NO. Tiene que
+   estar PRENDIDO.** Se probó apagarlo y rompió el primer login de todos: ese
+   interruptor bloquea la creación de la cuenta de Auth con CUALQUIER
+   proveedor, y el primer "Continuar con Google" de un barbero nuevo o de un
+   cliente que viene a reservar ES una creación (`auth/admin-restricted-
+   operation`, que el front mostraba como "No se pudo iniciar sesión con
+   Google"). La barrera contra el robo de pendientes es el `email_verified`
+   de las Functions, que alcanza.
 2. **Activar "Email enumeration protection"**: sin eso, el endpoint de login
    dice si un mail existe o no.
 3. **Password policy**: mínimo 8, mayúscula y número, para las cuentas con
@@ -562,6 +566,11 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
 - **Un trigger que escribe `undefined` en Firestore muere.** `onNuevoTurno`
   reventaba con turnos sin `appointmentDate` (los que siembra la suite de
   rules). Todo lo que se copia de un doc a otro va con `|| null`.
+- **"Enable create (sign-up)" apagado en Firebase Auth rompe el primer login
+  con Google.** No es "registro con contraseña": es crear la cuenta de Auth
+  por cualquier proveedor. Síntoma: "No se pudo iniciar sesión con Google"
+  para todo usuario nuevo, mientras los que ya entraron alguna vez siguen
+  entrando. Dejarlo prendido. Ahora el mensaje del front trae el código.
 - **Los turnos guardan la fecha en `appointmentDate`, NO en `date`.** Todo el
   código lo usa así (`BookingPage`, `AppointmentsPage`, `DashboardPage`,
   `MyAppointments`, `availabilityEngine`). Sembrar datos de prueba con `date`

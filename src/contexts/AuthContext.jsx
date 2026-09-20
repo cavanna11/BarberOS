@@ -216,8 +216,15 @@ export function AuthProvider({ children }) {
         'auth/unauthorized-domain': 'Este dominio no está autorizado en Firebase Authentication.',
         'auth/operation-not-allowed': 'El proveedor de Google no está habilitado en Firebase.',
         'auth/network-request-failed': 'Falló la conexión. Revisá tu internet.',
+        // Firebase → Authentication → Settings → User actions → "Enable
+        // create (sign-up)" apagado. Bloquea el PRIMER login de cualquiera
+        // (barbero nuevo o cliente que viene a reservar), no solo el registro
+        // con contraseña. Tiene que estar prendido.
+        'auth/admin-restricted-operation': 'Tu cuenta todavía no puede entrar: la creación de cuentas está desactivada en el servidor. Escribinos y lo resolvemos en el momento.',
       };
-      return { success: false, error: mensajes[error.code] || 'No se pudo iniciar sesión con Google.' };
+      // El código va en el mensaje genérico a propósito: "no se pudo" sin más
+      // no le sirve a nadie para diagnosticar desde una captura.
+      return { success: false, error: mensajes[error.code] || `No se pudo iniciar sesión con Google (${error.code || 'error desconocido'}).` };
     }
   };
 
