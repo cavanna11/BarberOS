@@ -3645,3 +3645,43 @@ select.form-input {
 .ficha-presentacion { margin-bottom: 6px; color: var(--text); }
 .ficha-datos { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--text-secondary); }
 .ficha-datos a { color: var(--primary); font-weight: 600; text-decoration: none; }
+
+/* Horario semanal con corte (HorarioSemanal) */
+.schedule-day {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.schedule-day:last-child { border-bottom: none; }
+.schedule-day .schedule-row { padding-bottom: 4px; }
+.schedule-corte {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  gap: var(--space-sm);
+  align-items: center;
+  padding: 0 0 6px 100px;
+}
+.schedule-corte-agregar {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 6px 100px;
+}
+.schedule-corte-agregar:hover { text-decoration: underline; }
+.schedule-aviso {
+  color: var(--danger);
+  font-size: 0.8rem;
+  margin: 0 0 6px 100px;
+}
+@media (max-width: 768px) {
+  .schedule-corte, .schedule-corte-agregar, .schedule-aviso { padding-left: 0; margin-left: 0; }
+  .schedule-corte { grid-template-columns: auto 1fr auto 1fr auto; font-size: 0.8rem; }
+}
+
+/* Agenda: franjas del corte del local */
+.agenda-franja.cerrada { background: repeating-linear-gradient(135deg, transparent 0 8px, var(--surface-2, rgba(0,0,0,0.04)) 8px 16px); }
+.agenda-franja.cerrada .agenda-hora { color: var(--text-muted); font-weight: 500; }
+.agenda-cerrada { color: var(--text-muted); }

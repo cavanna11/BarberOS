@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import FotoPerfil from '../../components/admin/FotoPerfil';
+import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import { errorDeHorario } from '../../utils/horarios';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   updateInSubcollection,
@@ -82,16 +84,11 @@ export default function ProfileSettingsPage() {
     );
   }
 
-  const toggleScheduleDay = (dayIndex) => {
-    setEditSchedules(prev => prev.map((s, i) => i === dayIndex ? { ...s, isActive: !s.isActive } : s));
-  };
-
-  const updateSchedule = (dayIndex, field, value) => {
-    setEditSchedules(prev => prev.map((s, i) => i === dayIndex ? { ...s, [field]: value } : s));
-  };
 
   const handleSave = async () => {
     if (!businessId || !profId) return;
+    const malHorario = errorDeHorario(editSchedules, getDayName);
+    if (malHorario) { alert(malHorario); return; }
     setGuardando(true);
     try {
       // El contacto va aparte: el documento del profesional es público.
@@ -201,41 +198,9 @@ export default function ProfileSettingsPage() {
           <div className="card">
             <h3 className="mb-lg">Mi Horario de Trabajo</h3>
             <p className="text-secondary text-sm mb-md">
-              Los días de la semana y las horas en las que atendés.
+              Los días y las horas en que atendés. Si hacés horario cortado (mañana y tarde), cargá el corte: en ese rato no se ofrecen turnos.
             </p>
-            <div className="schedule-grid">
-              {editSchedules.map((sch, idx) => (
-                <div key={idx} className="schedule-row">
-                  <label style={{ textTransform: 'capitalize' }}>{getDayName(idx)}</label>
-                  <button
-                    type="button"
-                    className={`schedule-toggle ${sch.isActive ? 'active' : ''}`}
-                    onClick={() => toggleScheduleDay(idx)}
-                  />
-                  {sch.isActive ? (
-                    <>
-                      <input
-                        className="form-input"
-                        type="time"
-                        value={sch.startTime || ''}
-                        onChange={e => updateSchedule(idx, 'startTime', e.target.value)}
-                      />
-                      <input
-                        className="form-input"
-                        type="time"
-                        value={sch.endTime || ''}
-                        onChange={e => updateSchedule(idx, 'endTime', e.target.value)}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-muted text-sm">—</span>
-                      <span className="text-muted text-sm">—</span>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
+            <HorarioSemanal dias={editSchedules} onChange={setEditSchedules} />
           </div>
 
           <div className="flex gap-sm mt-lg justify-end">

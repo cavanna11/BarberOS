@@ -34,9 +34,10 @@ function rangoDelDia(business, fechaISO) {
   const dow = js === 0 ? 6 : js - 1; // 0=Lunes … 6=Domingo
   const dia = business?.businessHours?.find((h) => h.dayOfWeek === dow);
   if (dia?.isActive && dia.startTime && dia.endTime) {
-    return { desde: timeToMinutes(dia.startTime), hasta: timeToMinutes(dia.endTime), cerrado: false };
+    const corte = dia.breakStart && dia.breakEnd ? [timeToMinutes(dia.breakStart), timeToMinutes(dia.breakEnd)] : null;
+    return { desde: timeToMinutes(dia.startTime), hasta: timeToMinutes(dia.endTime), cerrado: false, corte };
   }
-  return { desde: 8 * 60, hasta: 21 * 60, cerrado: Boolean(dia) && !dia.isActive };
+  return { desde: 8 * 60, hasta: 21 * 60, cerrado: Boolean(dia) && !dia.isActive, corte: null };
 }
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -61,7 +62,7 @@ export default function AgendaDelDia({
   const profActivo = professionalId || filtroProf || null;
   const varios = !professionalId && professionals.length > 1;
 
-  const { desde, hasta, cerrado } = rangoDelDia(business, fecha);
+  const { desde, hasta, cerrado, corte } = rangoDelDia(business, fecha);
   const paso = Number(business?.slotInterval) || 30;
 
   const delDia = useMemo(() => {
@@ -150,14 +151,17 @@ export default function AgendaDelDia({
             }) : null;
             const esAhora = ahoraMin !== null && ahoraMin >= m && ahoraMin < m + paso;
             const yaPaso = ahoraMin !== null && m + paso <= ahoraMin;
+            const enCorte = Boolean(corte) && m >= corte[0] && m < corte[1];
             return (
-              <div key={m} className={`agenda-franja ${turnos.length ? 'con-turno' : enCurso ? 'ocupada' : 'libre'} ${esAhora ? 'ahora' : ''} ${yaPaso ? 'pasada' : ''}`}>
+              <div key={m} className={`agenda-franja ${turnos.length ? 'con-turno' : enCurso ? 'ocupada' : enCorte ? 'cerrada' : 'libre'} ${esAhora ? 'ahora' : ''} ${yaPaso ? 'pasada' : ''}`}>
                 <div className="agenda-hora">{aHora(m)}</div>
                 <div className="agenda-celda">
                   {turnos.length === 0 ? (
                     enCurso
                       ? <span className="agenda-libre agenda-sigue">↑ sigue {enCurso.type === 'walkin' ? 'servicio sin turno' : (enCurso.clientName || 'cliente')}</span>
-                      : <span className="agenda-libre">libre</span>
+                      : enCorte
+                        ? <span className="agenda-libre agenda-cerrada">cerrado</span>
+                        : <span className="agenda-libre">libre</span>
                   ) : turnos.map((a) => {
                     const est = ESTADO[a.status] || { label: a.status, clase: 'badge-neutral' };
                     const walkin = a.type === 'walkin';

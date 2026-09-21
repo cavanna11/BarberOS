@@ -123,6 +123,14 @@ r = await reservar(cliente, { ...base, startTime: '13:15' });
 chequear('cae en el descanso, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 r = await reservar(cliente, { ...base, appointmentDate: '2027-03-01' });
 chequear('día que no trabaja, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+// Horario cortado del local: el barbero trabaja 09–18 seguido, pero el local
+// cierra de 15 a 16:30; ese rato no se puede reservar aunque él esté.
+await db.doc(`businesses/${BID}`).update({ businessHours: [{ dayOfWeek: DOW, startTime: '09:00', endTime: '18:00', breakStart: '15:00', breakEnd: '16:30', isActive: true }] });
+r = await reservar(cliente, { ...base, startTime: '15:30' });
+chequear('cae en el corte del local, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(cliente, { ...base, startTime: '14:45' });
+chequear('termina adentro del corte del local (14:45–15:15), rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+await db.doc(`businesses/${BID}`).update({ businessHours: [{ dayOfWeek: DOW, startTime: '09:00', endTime: '18:00', isActive: true }] });
 
 titulo('Teléfono:');
 const c3 = await usuario('c3@gmail.com');

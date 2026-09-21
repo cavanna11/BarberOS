@@ -3,6 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { updateBusiness } from '../../lib/repository';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { getDayName } from '../../utils/dateUtils';
+import { errorDeHorario } from '../../utils/horarios';
+import HorarioSemanal from '../../components/admin/HorarioSemanal';
 
 const defaultHours = [
   { dayOfWeek: 0, startTime: '09:00', endTime: '20:00', isActive: true },
@@ -40,6 +42,8 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     if (!businessId) return;
+    const malHorario = errorDeHorario(form.businessHours, getDayName);
+    if (malHorario) { setError(malHorario); return; }
     setGuardando(true);
     setError('');
     try {
@@ -61,22 +65,6 @@ export default function SettingsPage() {
     document.documentElement.style.setProperty('--secondary', form.secondaryColor || form.primaryColor);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
-  };
-
-  const toggleScheduleDay = (dayIndex) => {
-    const hours = form.businessHours || defaultHours;
-    const updatedHours = hours.map((h, i) =>
-      i === dayIndex ? { ...h, isActive: !h.isActive } : h
-    );
-    editar({ businessHours: updatedHours });
-  };
-
-  const updateSchedule = (dayIndex, field, value) => {
-    const hours = form.businessHours || defaultHours;
-    const updatedHours = hours.map((h, i) =>
-      i === dayIndex ? { ...h, [field]: value } : h
-    );
-    editar({ businessHours: updatedHours });
   };
 
   return (
@@ -218,30 +206,11 @@ export default function SettingsPage() {
 
           <div className="card mt-md">
             <h3 className="mb-lg">Horarios de la Barbería</h3>
-            <p className="text-secondary text-sm mb-md">Configura los días y horarios en los que la barbería se encuentra abierta al público.</p>
-            <div className="schedule-grid">
-              {(form.businessHours || defaultHours).map((sch, idx) => (
-                <div key={idx} className="schedule-row">
-                  <label style={{ textTransform: 'capitalize' }}>{getDayName(idx)}</label>
-                  <button
-                    type="button"
-                    className={`schedule-toggle ${sch.isActive ? 'active' : ''}`}
-                    onClick={() => toggleScheduleDay(idx)}
-                  />
-                  {sch.isActive ? (
-                    <>
-                      <input className="form-input" type="time" value={sch.startTime || ''} onChange={e => updateSchedule(idx, 'startTime', e.target.value)} />
-                      <input className="form-input" type="time" value={sch.endTime || ''}   onChange={e => updateSchedule(idx, 'endTime',   e.target.value)} />
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-muted text-sm">—</span>
-                      <span className="text-muted text-sm">—</span>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
+            <p className="text-secondary text-sm mb-md">
+              Los días y horas en que el local atiende. Si cerrás al mediodía o a la siesta, usá "Horario cortado":
+              de 8 a 16 y de 19 a 22 es abrir 08:00, cerrar 16:00, volver 19:00 y cerrar 22:00.
+            </p>
+            <HorarioSemanal dias={form.businessHours || defaultHours} onChange={(h) => editar({ businessHours: h })} />
           </div>
 
           {error && (

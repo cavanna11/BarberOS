@@ -12,6 +12,8 @@ import {
 import { getDayName, generateId } from '../../utils/dateUtils';
 import { getPlan } from '../../config/plans';
 import FotoPerfil from '../../components/admin/FotoPerfil';
+import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import { errorDeHorario } from '../../utils/horarios';
 
 // Mismo número que la landing y el resto del panel.
 const LINK_AMPLIAR = 'https://wa.me/5492257529684?text=' +
@@ -66,8 +68,8 @@ export default function ProfessionalsPage() {
       id: generateId(), professionalId: '', dayOfWeek: i,
       startTime: i < 5 ? '09:00' : i === 5 ? '09:00' : '',
       endTime:   i < 5 ? '19:00' : i === 5 ? '14:00' : '',
-      breakStart: i < 5 ? '13:00' : null,
-      breakEnd:   i < 5 ? '14:00' : null,
+      breakStart: null,
+      breakEnd: null,
       isActive: i < 6,
     })));
     // Por defecto seleccionar TODOS los servicios activos
@@ -106,6 +108,8 @@ export default function ProfessionalsPage() {
   // ── Guardar ────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!form.name.trim() || !businessId) return;
+    const malHorario = errorDeHorario(editSchedules, getDayName);
+    if (malHorario) { alert(malHorario); return; }
 
     setGuardando(true);
     try {
@@ -177,14 +181,6 @@ export default function ProfessionalsPage() {
     }
   };
 
-  // ── Horario helpers ────────────────────────────────────────────────────────
-  const toggleScheduleDay = (dayIndex) => {
-    setEditSchedules(prev => prev.map((s, i) => i === dayIndex ? { ...s, isActive: !s.isActive } : s));
-  };
-
-  const updateSchedule = (dayIndex, field, value) => {
-    setEditSchedules(prev => prev.map((s, i) => i === dayIndex ? { ...s, [field]: value } : s));
-  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -382,28 +378,10 @@ export default function ProfessionalsPage() {
                 {/* ─ Horario ─ */}
                 <div>
                   <h3 style={{ marginBottom: 'var(--space-sm)' }}>Horario de Trabajo</h3>
-                  <div className="schedule-grid">
-                    {editSchedules.map((sch, idx) => (
-                      <div key={idx} className="schedule-row">
-                        <label>{getDayName(idx).substring(0, 3)}</label>
-                        <button
-                          className={`schedule-toggle ${sch.isActive ? 'active' : ''}`}
-                          onClick={() => toggleScheduleDay(idx)}
-                        />
-                        {sch.isActive ? (
-                          <>
-                            <input className="form-input" type="time" value={sch.startTime} onChange={e => updateSchedule(idx, 'startTime', e.target.value)} />
-                            <input className="form-input" type="time" value={sch.endTime}   onChange={e => updateSchedule(idx, 'endTime',   e.target.value)} />
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-muted text-sm">—</span>
-                            <span className="text-muted text-sm">—</span>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-secondary text-sm" style={{ marginBottom: 'var(--space-sm)' }}>
+                    Si hace horario cortado (mañana y tarde), cargá el corte: en ese rato no se ofrecen turnos.
+                  </p>
+                  <HorarioSemanal dias={editSchedules} onChange={setEditSchedules} nombreCorto />
                 </div>
 
               </div>

@@ -566,6 +566,13 @@ exports.createAppointment = onCall(async (request) => {
       throw new HttpsError('failed-precondition', 'Ese horario cae en el descanso del profesional.');
     }
   }
+  // Horario cortado del local: en ese rato no se atiende, trabaje quien trabaje.
+  if (diaNegocio?.breakStart && diaNegocio?.breakEnd) {
+    const cStart = timeToMinutes(diaNegocio.breakStart), cEnd = timeToMinutes(diaNegocio.breakEnd);
+    if (inicio < cEnd && fin > cStart) {
+      throw new HttpsError('failed-precondition', `La barbería cierra de ${diaNegocio.breakStart} a ${diaNegocio.breakEnd}.`);
+    }
+  }
 
   // ── Solapamiento, en transacción ──────────────────────────────────────────
   // Va en transacción y no en un get suelto porque dos personas mirando la

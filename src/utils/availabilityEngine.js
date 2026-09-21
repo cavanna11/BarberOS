@@ -23,6 +23,9 @@ export function calculateAvailableSlots({
   // 1. Validar horario de la barbería para este día
   let businessStart = null;
   let businessEnd = null;
+  // Corte del local (horario cortado): se trata igual que el descanso del
+  // profesional, un rato en el que no se ofrecen turnos.
+  let corteLocal = null;
   if (businessHours) {
     const bizDay = businessHours.find((b) => b.dayOfWeek === dayOfWeek);
     if (!bizDay || !bizDay.isActive) {
@@ -31,6 +34,9 @@ export function calculateAvailableSlots({
     if (bizDay.startTime && bizDay.endTime) {
       businessStart = timeToMinutes(bizDay.startTime);
       businessEnd = timeToMinutes(bizDay.endTime);
+    }
+    if (bizDay.breakStart && bizDay.breakEnd) {
+      corteLocal = [timeToMinutes(bizDay.breakStart), timeToMinutes(bizDay.breakEnd)];
     }
   }
 
@@ -78,6 +84,9 @@ export function calculateAvailableSlots({
       if (cursor < breakEnd && slotEnd > breakStart) {
         continue; // El slot se solapa con el descanso
       }
+    }
+    if (corteLocal && cursor < corteLocal[1] && slotEnd > corteLocal[0]) {
+      continue; // El slot cae en el corte del local
     }
 
     allSlots.push({

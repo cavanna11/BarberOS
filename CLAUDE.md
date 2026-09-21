@@ -102,6 +102,11 @@ Google.
 - Multi-tenancy por slug: `/:businessSlug`.
 - Panel global: alta de barberías, facturación, suspensión, tickets.
 - Panel por barbería: staff, servicios, horarios, agenda, admins, soporte.
+- **Horario cortado** (de 8 a 16 y de 19 a 22), tanto del local como de cada
+  barbero: `HorarioSemanal` es el único editor de horario (Configuración,
+  Profesionales, Mi Configuración). Se guarda como `breakStart`/`breakEnd`
+  dentro del día; el motor, `createAppointment` y la agenda lo respetan.
+  Validación en `utils/horarios.js` (`errorDeHorario`), en vivo y al guardar.
 - Reserva pública con motor de disponibilidad. **Se mira sin cuenta**: el link
   muestra equipo, servicios y grilla; el login se pide recién al cargar los
   datos (paso 5), y al volver sigue donde estaba. El staff también agenda a
@@ -465,7 +470,8 @@ src/
 │   ├── admin/            Panel del negocio
 │   └── super-admin/      Panel global
 └── utils/
-    ├── availabilityEngine.js   ⚠️ NO TOCAR — anda
+    ├── availabilityEngine.js   ⚠️ NO TOCAR — anda (única excepción hecha:
+    │                              el corte del local, `corteLocal`, 21/09/2026)
     └── statsCalculator.js      ⚠️ NO TOCAR — anda
 ```
 
@@ -731,7 +737,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 64, reservas 40, facturación 11, rules 109. Todo en verde.
+Hoy: claims 64, reservas 42, facturación 11, rules 109. Todo en verde.
 
 ---
 
