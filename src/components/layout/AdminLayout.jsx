@@ -9,10 +9,10 @@ import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 // Items visibles solo para el dueño (owner)
 const ownerNavItems = [
   { to: '/admin',               icon: '📊', label: 'Dashboard',        end: true },
-  { to: '/admin/agenda',        icon: '🗓️', label: 'Agenda del día' },
+  // Citas va segundo a propósito: es la pantalla que más se abre en el día.
+  { to: '/admin/citas',         icon: '📅', label: 'Citas' },
   { to: '/admin/profesionales', icon: '👥', label: 'Profesionales' },
   { to: '/admin/servicios',     icon: '✂️', label: 'Servicios' },
-  { to: '/admin/citas',         icon: '📅', label: 'Citas' },
   { to: '/admin/admins',        icon: '🛡️', label: 'Administradores' },
   { to: '/admin/configuracion', icon: '⚙️', label: 'Configuración' },
   { to: '/admin/soporte',       icon: '💬', label: 'Soporte' },
@@ -22,12 +22,10 @@ const ownerNavItems = [
 // Items para el admin/peluquero → solo sus citas
 const adminNavItems = [
   { to: '/admin',         icon: '🏠', label: 'Hoy', end: true },
-  // La agenda del día como calendario: es lo que se mira entre cliente y
-  // cliente, y estaba escondida al pie del dashboard.
-  { to: '/admin/agenda',  icon: '🗓️', label: 'Agenda del día' },
-  // La tabla con confirmar / completar / no asistió / cancelar y "Agendar
-  // turno". Sin esta entrada el barbero no tenía forma de llegar.
-  { to: '/admin/citas',   icon: '📅', label: 'Lista de turnos' },
+  // La lista del día, con confirmar / vino / no vino / cancelar y "Agendar
+  // turno". Es la que más se abre; la agenda como calendario vive abajo del
+  // dashboard, que para eso alcanza.
+  { to: '/admin/citas',   icon: '📅', label: 'Citas' },
   { to: '/admin/ajustes', icon: '⚙️', label: 'Mi Configuración' },
   { to: '/admin/soporte', icon: '💬', label: 'Soporte' },
   { to: '/admin/instalar', icon: '📲', label: 'Instalar la app' },

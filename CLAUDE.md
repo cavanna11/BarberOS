@@ -531,6 +531,16 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
 
 ## Trampas ya pagadas (no volver a descubrirlas)
 
+### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
+
+El `allow update` de `businesses/{id}/notifications` listaba dueño y barbero,
+no a `esEquipoPlataforma()`. Entrando al panel de una barbería como plataforma,
+"marcar todas leídas" fallaba con permission-denied y volvían a aparecer sin
+leer. El `catch` vacío de la campana se comía el error, así que parecía magia.
+Ahora la plataforma también puede (solo `leidaPor`), el marcado va en un batch
+y los errores se muestran.
+
+
 ### Un turno entra si EMPIEZA dentro del horario (22/09/2026)
 
 Antes se exigía que el turno entrara entero: `cursor + duration <= cierre`. Con

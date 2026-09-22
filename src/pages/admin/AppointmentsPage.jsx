@@ -132,25 +132,27 @@ export default function AppointmentsPage() {
       <div className="table-actions">
         {(apt.status === 'pendiente' || apt.status === 'confirmada') && (
           <>
+            {/* Con palabras: el tilde y el fantasmita no se entendían, y
+                marcar si vino o no es lo que más se toca en el día. */}
             <button
-              className="btn btn-ghost btn-sm"
-              title={started ? 'Marcar como completada' : blockedMsg}
+              className="btn btn-sm btn-primary"
+              title={started ? 'El cliente vino y lo atendiste' : blockedMsg}
               onClick={() => started && updateStatus(apt.id, 'completada')}
               disabled={!started}
               style={!started ? { opacity: 0.35, cursor: 'not-allowed' } : {}}
-            >✅</button>
+            >Vino</button>
             <button
-              className="btn btn-ghost btn-sm"
-              title={started ? 'No asistió' : blockedMsg}
+              className="btn btn-sm btn-outline"
+              title={started ? 'El cliente no se presentó' : blockedMsg}
               onClick={() => started && updateStatus(apt.id, 'no_asistio')}
               disabled={!started}
               style={!started ? { opacity: 0.35, cursor: 'not-allowed' } : {}}
-            >👻</button>
-            <button className="btn btn-ghost btn-sm" title="Cancelar" onClick={() => handleCancel(apt.id)}>❌</button>
+            >No vino</button>
+            <button className="btn btn-ghost btn-sm" title="Cancelar el turno" onClick={() => handleCancel(apt.id)}>✕</button>
           </>
         )}
         {apt.status === 'pendiente' && (
-          <button className="btn btn-ghost btn-sm" title="Confirmar" onClick={() => updateStatus(apt.id, 'confirmada')}>✔️</button>
+          <button className="btn btn-sm btn-outline" title="Avisarle al cliente que el turno queda en pie" onClick={() => updateStatus(apt.id, 'confirmada')}>Confirmar</button>
         )}
       </div>
     );

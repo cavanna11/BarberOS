@@ -3093,7 +3093,8 @@ select.form-input {
   font-weight: 500;
 }
 
-.agenda-franja.pasada {
+.agenda-franja.pasada .agenda-hora,
+.agenda-franja.pasada .agenda-libre {
   opacity: 0.55;
 }
 

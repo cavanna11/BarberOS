@@ -19,6 +19,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { setGlobalOptions } = require('firebase-functions/v2');
+const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
@@ -671,6 +672,16 @@ exports.createAppointment = onCall(async (request) => {
       origen: 'cliente',
       createdAt: FieldValue.serverTimestamp(),
     });
+  });
+
+  // Rastro de la reserva. Cuando una barbería dice "el cliente mostró el turno
+  // confirmado y a mí no me aparece", esto contesta en un minuto si la reserva
+  // llegó al servidor, a qué negocio fue y con qué barbero. Sin nombres ni
+  // teléfonos: para eso está el documento.
+  logger.info('turno creado', {
+    businessId, professionalId, serviceId,
+    appointmentDate, startTime, endTime: minutesToTime(fin),
+    appointmentId: ref.id, uid: request.auth.uid,
   });
 
   return { status: 'created', id: ref.id, price: precio, endTime: minutesToTime(fin) };

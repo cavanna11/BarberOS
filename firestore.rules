@@ -280,7 +280,11 @@ service cloud.firestore {
         allow get, list: if isBusinessOwner(bizId)
                             || esEquipoPlataforma()
                             || (esBarbero(bizId) && esSuTurno());
-        allow update: if (isBusinessOwner(bizId) || (esBarbero(bizId) && esSuTurno()))
+        // La plataforma ve estas notificaciones cuando entra al panel de una
+        // barbería, así que también tiene que poder marcarlas leídas: si no,
+        // "marcar todas" fallaba con permission-denied y volvían a aparecer
+        // sin leer (22/09/2026). Solo toca `leidaPor`, como todos.
+        allow update: if (isBusinessOwner(bizId) || esEquipoPlataforma() || (esBarbero(bizId) && esSuTurno()))
                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leidaPor']);
         allow create, delete: if false;
       }
