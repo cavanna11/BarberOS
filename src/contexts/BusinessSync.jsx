@@ -241,7 +241,13 @@ export default function BusinessSync() {
     // datos), y "Mis citas" quedaba vacío para todos. subscribeMyAppointments
     // existía en el repositorio y nadie la llamaba.
     const esStaffCompleto = esPlataforma || rol === 'owner';
-    const esBarbero = rol === 'admin' && Boolean(profId);
+    // Ojo con la condición: antes era `rol === 'admin' && Boolean(profId)`, y
+    // un barbero sin perfil vinculado caía en `esCliente`. Se le pedían SUS
+    // turnos como cliente (ninguno) y el panel quedaba vacío sin un error:
+    // los clientes reservaban, se presentaban, y la barbería no se enteraba.
+    // Un admin es staff aunque el vínculo esté roto; lo que falta se avisa en
+    // pantalla (useVinculoBarbero), no se disfraza de agenda vacía.
+    const esBarbero = rol === 'admin';
     const esCliente = Boolean(uid) && !esStaffCompleto && !esBarbero;
 
     const cb = (col) => (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { [col]: filas } });
@@ -257,11 +263,13 @@ export default function BusinessSync() {
     // La campanita: el dueño ve todas las del negocio, el barbero las suyas.
     if (esStaffCompleto) {
       offs.push(subscribeNotifications(businessId, {}, cb('notifications'), onError('notifications')));
-    } else if (esBarbero) {
+    } else if (esBarbero && profId) {
       offs.push(subscribeNotifications(businessId, { professionalId: profId }, cb('notifications'), onError('notifications')));
     }
 
-    if (esBarbero) {
+    // Sin profId no hay consulta posible (las Rules la rechazan, y `undefined`
+    // en un where revienta): no se pide, y la pantalla explica por qué.
+    if (esBarbero && profId) {
       offs.push(subscribeAppointmentsDeProfesional(businessId, profId, cb('appointments'), onError('appointments')));
     } else if (esCliente) {
       offs.push(subscribeMyAppointments(businessId, uid, cb('appointments'), onError('appointments')));

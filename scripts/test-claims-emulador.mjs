@@ -82,11 +82,16 @@ await borrarUsuario('elegida@hotmail.com');
 await borrarUsuario('corta@hotmail.com');
 await borrarUsuario('moderador@sacia.tech');
 await borrarUsuario('nunca-entro@sacia.tech');
+await borrarUsuario('victima@gmail.com');
+await borrarUsuario('sinperfil@gmail.com');
 for (const d of (await db.collection('platform/team/members').get()).docs) await d.ref.delete();
 const pendientes = await db.collection('pendingAdmins').get();
 await Promise.all(pendientes.docs.map((d) => d.ref.delete()));
 
 await db.doc(`businesses/${B1}`).set({ name: 'Barbería Uno', slug: 'uno' });
+// Un barbero necesita un perfil que exista: sin eso no puede ver su agenda.
+await db.doc(`businesses/${B1}/professionals/prof-1`).set({ id: 'prof-1', name: 'Barbero Uno', isActive: true });
+await db.doc(`businesses/${B1}/professionals/prof-2`).set({ id: 'prof-2', name: 'Barbero Dos', isActive: true });
 await db.doc(`businesses/${B2}`).set({ name: 'Barbería Dos', slug: 'dos' });
 
 const uidPlataforma = await crearUsuario('plataforma@sacia.tech', { platform: true });
@@ -158,6 +163,18 @@ chequear('negocio inexistente da not-found', r.error === 'NOT_FOUND', JSON.strin
 
 r = await llamar('setBusinessAdmin', tPlataforma, { email: 'x@gmail.com', businessId: B1, role: 'superadmin' });
 chequear('rol inválido rechazado', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+
+// Un barbero sin perfil, o con uno borrado, entra al panel y ve la agenda
+// VACÍA: las Rules le filtran los turnos por ese id. Pasó en producción
+// (22/09/2026): los clientes reservaban y la barbería no se enteraba.
+r = await llamar('setBusinessAdmin', tDuenoB1, { email: 'sinperfil@gmail.com', businessId: B1, role: 'admin' });
+chequear('barbero SIN perfil asignado, rechazado', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+
+r = await llamar('setBusinessAdmin', tDuenoB1, { email: 'sinperfil@gmail.com', businessId: B1, role: 'admin', professionalId: 'prof-borrado' });
+chequear('barbero con perfil inexistente, rechazado', r.error === 'NOT_FOUND', JSON.stringify(r));
+
+chequear('y no quedó anotado en la lista de admins',
+  !(await db.doc(`businesses/${B1}/admins/sinperfil@gmail.com`).get()).exists, 'quedó escrito');
 
 console.log('\nRevocar (camino feliz):');
 

@@ -104,10 +104,13 @@ export default function DashboardPage() {
   // ya es "mañana" — el walk-in se registraba en el día equivocado.
   const today   = toDateString(new Date());
 
-  // Owner ve todas las citas; peluquero solo las suyas
+  // Owner ve todas las citas; peluquero solo las suyas. Sin perfil vinculado
+  // no hay turnos que mostrar: el aviso de arriba dice por qué.
   const visibleAppointments = isOwner
     ? appointments
-    : appointments.filter(a => a.professionalId === user?.professionalId);
+    : user?.professionalId
+      ? appointments.filter(a => a.professionalId === user.professionalId)
+      : [];
 
   // Acciones sobre un turno desde la agenda: confirmar, completar, no asistió,
   // cancelar. Completar y "no asistió" recién cuando el turno ya empezó.

@@ -139,6 +139,20 @@ exports.setBusinessAdmin = onCall(async (request) => {
     );
   }
 
+  // Un barbero SIN perfil, o con uno que no existe, no puede ver su agenda:
+  // las Rules filtran los turnos por este id. Dejarlo pasar creaba una cuenta
+  // que entra al panel y ve la agenda vacía mientras los clientes reservan.
+  // Pasó en producción (22/09/2026), así que se valida acá y no solo en la UI.
+  if (role === 'admin') {
+    if (!professionalId) {
+      throw new HttpsError('invalid-argument', 'Un peluquero necesita un perfil de profesional asignado, si no no va a ver sus turnos.');
+    }
+    const perfil = await db.doc(`businesses/${businessId}/professionals/${professionalId}`).get();
+    if (!perfil.exists) {
+      throw new HttpsError('not-found', 'Ese perfil de profesional no existe en esta barbería. Elegí uno de la lista.');
+    }
+  }
+
   // Registro para la UI (la lista de /admin/admins sale de acá).
   await db.doc(`businesses/${businessId}/admins/${normalizedEmail}`).set({
     email: normalizedEmail,

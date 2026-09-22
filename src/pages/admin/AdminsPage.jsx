@@ -158,7 +158,11 @@ export default function AdminsPage() {
                       {admin.role === 'owner' ? 'Dueño' : 'Peluquero'}
                     </span>
                   </td>
-                  <td className="oculta-mobile">{prof?.name || (admin.role === 'owner' ? '—' : <span className="text-muted">Sin asignar</span>)}</td>
+                  <td className="oculta-mobile">
+                    {prof?.name
+                      || (admin.role === 'owner' ? '—'
+                        : <span className="badge badge-danger">⚠️ {admin.professionalId ? 'Perfil inexistente' : 'Sin asignar'}</span>)}
+                  </td>
                   <td className="text-sm text-secondary oculta-mobile">
                     {/* Viene como Timestamp de Firestore; new Date(timestamp) da Invalid Date. */}
                     {admin.addedAt?.toDate ? admin.addedAt.toDate().toLocaleDateString('es-AR')

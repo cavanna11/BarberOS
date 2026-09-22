@@ -77,8 +77,9 @@ export default function ProfileSettingsPage() {
         <div style={{ fontSize: '3rem', marginBottom: 'var(--space-md)' }}>⚠️</div>
         <h3>Perfil No Vinculado</h3>
         <p className="text-secondary mt-sm">
-          Esta cuenta de administrador no está vinculada a ningún perfil de profesional (barbero/estilista). 
-          Contacta al dueño del negocio para asociar tu correo de Google a tu perfil.
+          Esta cuenta no está asociada a ningún perfil de barbero. Mientras siga así
+          <strong> no vas a ver los turnos que te reserven</strong>, aunque los clientes reserven normalmente.
+          Pedile al dueño que te vincule desde <strong>Administradores</strong>: editar tu cuenta y elegir tu perfil de la lista.
         </p>
       </div>
     );

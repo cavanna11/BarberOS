@@ -4,6 +4,7 @@ import { useTenant } from '../../hooks/useTenantData';
 import { updateAppointment, cancelAppointment } from '../../lib/repository';
 import NuevoTurnoModal from '../../components/admin/NuevoTurnoModal';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
+import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
@@ -46,6 +47,8 @@ export default function AppointmentsPage() {
   const { appointments, professionals, services, business, businessId } = useTenant();
 
   const isOwner = user?.role === 'owner';
+  const vinculo = useVinculoBarbero();
+  const profIdPropio = user?.professionalId ?? null;
 
   const [filterProf,   setFilterProf]   = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -59,16 +62,19 @@ export default function AppointmentsPage() {
       return db.localeCompare(da);
     });
 
-    // Admin/peluquero solo ve sus propias citas
+    // Admin/peluquero solo ve sus propias citas. Si no hay perfil vinculado,
+    // este filtro comparaba contra undefined y vaciaba la tabla en silencio:
+    // se devuelve vacío a propósito y la pantalla lo explica.
     if (!isOwner) {
-      result = result.filter(a => a.professionalId === user?.professionalId);
+      if (!profIdPropio) return [];
+      result = result.filter(a => a.professionalId === profIdPropio);
     }
 
     if (filterProf)   result = result.filter(a => a.professionalId === filterProf);
     if (filterStatus) result = result.filter(a => a.status === filterStatus);
     if (filterDate)   result = result.filter(a => a.appointmentDate === filterDate);
     return result;
-  }, [appointments, filterProf, filterStatus, filterDate, isOwner, user?.professionalId]);
+  }, [appointments, filterProf, filterStatus, filterDate, isOwner, profIdPropio]);
 
   const updateStatus = (id, status) => {
     updateAppointment(businessId, id, { status }).catch((err) => {
@@ -205,7 +211,11 @@ export default function AppointmentsPage() {
           );
         })}
         {filtered.length === 0 && (
-          <div className="empty-state"><p>No se encontraron citas con estos filtros</p></div>
+          <div className="empty-state">
+            {vinculo.esBarbero && !vinculo.vinculado
+              ? <p>⚠️ {textoVinculo(vinculo.motivo)} Pedile al dueño que te vincule desde Administradores.</p>
+              : <p>No se encontraron citas con estos filtros</p>}
+          </div>
         )}
       </div>
 
@@ -264,7 +274,9 @@ export default function AppointmentsPage() {
         </table>
         {filtered.length === 0 && (
           <div className="empty-state">
-            <p>No se encontraron citas con estos filtros</p>
+            {vinculo.esBarbero && !vinculo.vinculado
+              ? <p>⚠️ {textoVinculo(vinculo.motivo)} Pedile al dueño que te vincule desde Administradores.</p>
+              : <p>No se encontraron citas con estos filtros</p>}
           </div>
         )}
       </div>

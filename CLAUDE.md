@@ -531,6 +531,25 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
 
 ## Trampas ya pagadas (no volver a descubrirlas)
 
+### El barbero sin perfil vinculado veía la agenda VACÍA (22/09/2026)
+
+El permiso del barbero sale del claim `professionalId` y las Rules le filtran
+los turnos por ese id. Con el claim vacío, o apuntando a un perfil borrado:
+
+- sin claim  → la consulta la rechazan las Rules;
+- claim viejo → la consulta ANDA y devuelve **cero turnos**, sin un solo error.
+
+Encima `BusinessSync` trataba a ese admin como cliente (`rol === 'admin' &&
+Boolean(profId)`), así que ni lo intentaba: pedía "mis turnos" por uid y el
+panel quedaba vacío y mudo. En producción los clientes reservaron, se
+presentaron, y la barbería no se enteró.
+
+Ahora: un `admin` es staff aunque el vínculo esté roto, `useVinculoBarbero`
+detecta los dos casos, el panel muestra un aviso rojo permanente, la lista de
+Administradores marca la cuenta rota y `setBusinessAdmin` rechaza dar de alta
+un barbero sin un perfil que exista. Nunca más una agenda vacía sin explicación.
+
+
 - **Firestore lee del caché.** Un `getDocs` que devuelve 0 documentos NO prueba
   que la base exista ni que las reglas permitan. Verificar con
   `getDocsFromServer` o por REST.
@@ -737,7 +756,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 64, reservas 42, facturación 11, rules 109. Todo en verde.
+Hoy: claims 67, reservas 42, facturación 11, rules 109. Todo en verde.
 
 ---
 

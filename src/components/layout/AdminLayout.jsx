@@ -4,6 +4,7 @@ import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { refrescarPush, desactivarPush, esAppInstalada, esIOS, esAndroid } from '../../lib/push';
+import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 
 // Items visibles solo para el dueño (owner)
 const ownerNavItems = [
@@ -58,6 +59,7 @@ export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { business, businessId, isPlatformOwner: platformOwner } = useCurrentBusiness();
+  const vinculo = useVinculoBarbero();
 
   const isOwner = user?.role === 'owner';
   const navItems = isOwner ? ownerNavItems : adminNavItems;
@@ -239,6 +241,15 @@ export default function AdminLayout() {
             </div>
           </div>
         </div>
+
+        {/* Vínculo roto: sin esto el barbero ve una agenda vacía y cree que no
+            tiene turnos. Es el aviso más importante del panel. */}
+        {vinculo.esBarbero && !vinculo.vinculado && business && (
+          <div className="notice notice-danger" style={{ borderRadius: 0, margin: 0, padding: '10px 16px' }}>
+            ⚠️ <strong>Avisale al dueño de la barbería.</strong> {textoVinculo(vinculo.motivo)}{' '}
+            Se arregla en <strong>Administradores</strong>: editar tu cuenta y elegir tu perfil de la lista.
+          </div>
+        )}
 
         {mostrarAvisoInstalar && business && (
           <div className="notice notice-info aviso-instalar">
