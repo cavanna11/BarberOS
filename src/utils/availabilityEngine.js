@@ -69,14 +69,18 @@ export function calculateAvailableSlots({
     scheduleEnd = Math.min(scheduleEnd, businessEnd);
   }
 
-  if (scheduleStart + duration > scheduleEnd) {
-    return []; // No hay tiempo suficiente dentro del horario cruzado
+  if (scheduleStart >= scheduleEnd) {
+    return []; // El horario cruzado no deja ni un minuto
   }
 
   const breakStart = schedule.breakStart ? timeToMinutes(schedule.breakStart) : null;
   const breakEnd = schedule.breakEnd ? timeToMinutes(schedule.breakEnd) : null;
 
-  for (let cursor = scheduleStart; cursor + duration <= scheduleEnd; cursor += slotInterval) {
+  // Alcanza con que el turno EMPIECE dentro del horario: el barbero que
+  // atiende hasta las 17:30 termina la cabeza que arrancó 17:00, no lo echa a
+  // la mitad. Antes se exigía que entrara entero y el último turno del día se
+  // perdía siempre (y con él, las promos de media tarde).
+  for (let cursor = scheduleStart; cursor < scheduleEnd; cursor += slotInterval) {
     const slotEnd = cursor + duration;
 
     // Verificar si toca el descanso

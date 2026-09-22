@@ -381,6 +381,26 @@ export async function markPlatformNotificationRead(id, uid) {
   await updateDoc(doc(db, 'platform', 'notifications', 'items', id), { [`leidaPor.${uid}`]: true });
 }
 
+/**
+ * Marca varias como leídas en UN solo commit.
+ *
+ * Antes eran N updates sueltos en paralelo, cada uno con su `catch` vacío: si
+ * alguno fallaba, esa notificación volvía a aparecer sin leer y sin decir por
+ * qué. En batch o entran todas o no entra ninguna, y el error se propaga.
+ */
+export async function markNotificationsRead(ids, uid, { businessId = null } = {}) {
+  if (!ids.length || !uid) return;
+  // El límite de un batch de Firestore es 500 escrituras; la campana trae 60.
+  const batch = writeBatch(db);
+  for (const id of ids) {
+    const ref = businessId
+      ? doc(db, 'businesses', businessId, 'notifications', id)
+      : doc(db, 'platform', 'notifications', 'items', id);
+    batch.update(ref, { [`leidaPor.${uid}`]: true });
+  }
+  await batch.commit();
+}
+
 // ── Dispositivos con push ───────────────────────────────────────────────────
 // Un documento por token de FCM: /businesses/{id}/devices/{token}. El trigger
 // de Functions les manda el push (al dueño todo; al barbero, lo suyo).

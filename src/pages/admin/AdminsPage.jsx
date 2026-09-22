@@ -127,6 +127,22 @@ export default function AdminsPage() {
         </div>
       )}
 
+      {/* Una cuenta sin perfil no ve NINGÚN turno: es lo primero que hay que
+          arreglar si un barbero dice que tiene la agenda vacía. */}
+      {(() => {
+        const rotas = authorizedAdmins.filter(
+          (a) => a.role === 'admin' && !professionals.some((p) => p.id === a.professionalId)
+        );
+        if (rotas.length === 0) return null;
+        return (
+          <div className="notice notice-danger mb-md">
+            ⚠️ <strong>{rotas.length === 1 ? 'Una cuenta no está vinculada' : `${rotas.length} cuentas no están vinculadas`} a un perfil de barbero</strong>
+            {' '}({rotas.map((a) => a.email).join(', ')}). Mientras siga así, esa persona entra al panel y ve la agenda vacía,
+            aunque los clientes le reserven. Tocá ✏️ en su fila, elegí su nombre en "Profesional vinculado" y guardá.
+          </div>
+        );
+      })()}
+
       <div className="card" style={{ padding: 0, overflow: 'auto' }}>
         <table className="data-table">
           <thead>

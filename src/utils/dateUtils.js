@@ -81,3 +81,23 @@ export function isPast(dateStr) {
 export function generateId() {
   return 'id-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
 }
+
+/**
+ * Fecha para leer de un vistazo en la agenda: "Hoy", "Mañana", "Ayer" o
+ * "mié 24/09". El barbero mira la lista entre cliente y cliente; "miércoles 24
+ * de septiembre de 2026" no se lee en ese momento.
+ */
+export function fechaCorta(fechaISO) {
+  if (!fechaISO) return '';
+  const hoy = toDateString(new Date());
+  if (fechaISO === hoy) return 'Hoy';
+  const d = new Date(`${fechaISO}T12:00:00`);
+  const ayer = new Date(); ayer.setDate(ayer.getDate() - 1);
+  const manana = new Date(); manana.setDate(manana.getDate() + 1);
+  if (fechaISO === toDateString(manana)) return 'Mañana';
+  if (fechaISO === toDateString(ayer)) return 'Ayer';
+  const dias = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dias[d.getDay()]} ${dd}/${mm}`;
+}

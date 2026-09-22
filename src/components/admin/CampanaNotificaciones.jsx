@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications, usePlatformNotifications } from '../../hooks/useTenantData';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
-import { markNotificationRead, markPlatformNotificationRead } from '../../lib/repository';
+import { markNotificationRead, markPlatformNotificationRead, markNotificationsRead } from '../../lib/repository';
 import { activarPush, estadoPush, ponerBadge } from '../../lib/push';
 import { Link } from 'react-router-dom';
 
@@ -50,7 +50,12 @@ export default function CampanaNotificaciones({ modo = 'negocio' }) {
   const panelRef = useRef(null);
 
   const uid = user?.id;
-  const noLeidas = notificaciones.filter((n) => !n.leidaPor?.[uid]);
+  // Lo que se marcó en esta sesión. El dato manda, pero mientras el snapshot
+  // vuelve —o si el servidor tarda— la campana no se da vuelta sola: eso era
+  // "las marco todas leídas y se vuelven a poner sin leer".
+  const [marcadas, setMarcadas] = useState(() => new Set());
+  const [errorMarcar, setErrorMarcar] = useState('');
+  const noLeidas = notificaciones.filter((n) => !n.leidaPor?.[uid] && !marcadas.has(n.id));
 
   // Numerito sobre el ícono de la app instalada.
   useEffect(() => { ponerBadge(noLeidas.length); }, [noLeidas.length]);
@@ -102,13 +107,26 @@ export default function CampanaNotificaciones({ modo = 'negocio' }) {
   const abrir = async (n) => {
     setAbierta(false);
     if (!n.leidaPor?.[uid] && uid && (plataforma || businessId)) {
-      marcarLeida(n.id).catch((err) => console.error('[Campana] No se pudo marcar leída:', err));
+      setMarcadas((s) => new Set(s).add(n.id));
+      marcarLeida(n.id).catch((err) => {
+        console.error('[Campana] No se pudo marcar leída:', err);
+        setMarcadas((s) => { const c = new Set(s); c.delete(n.id); return c; });
+      });
     }
     navigate(n.url || (plataforma ? '/super-admin?tab=soporte' : '/admin/citas'));
   };
 
   const marcarTodas = () => {
-    noLeidas.forEach((n) => marcarLeida(n.id).catch(() => {}));
+    if (!uid || (!plataforma && !businessId)) return;
+    const ids = noLeidas.map((n) => n.id);
+    setErrorMarcar('');
+    setMarcadas((s) => { const c = new Set(s); ids.forEach((id) => c.add(id)); return c; });
+    markNotificationsRead(ids, uid, { businessId: plataforma ? null : businessId }).catch((err) => {
+      console.error('[Campana] No se pudieron marcar todas:', err);
+      // Se vuelven a mostrar sin leer, pero ahora diciendo por qué.
+      setMarcadas((s) => { const c = new Set(s); ids.forEach((id) => c.delete(id)); return c; });
+      setErrorMarcar('No se pudieron marcar como leídas: ' + (err.code || err.message));
+    });
   };
 
   return (
@@ -131,6 +149,8 @@ export default function CampanaNotificaciones({ modo = 'negocio' }) {
               <button className="btn btn-ghost btn-sm" onClick={marcarTodas}>Marcar todas leídas</button>
             )}
           </div>
+
+          {errorMarcar && <div className="notice notice-danger" style={{ margin: 8, fontSize: '0.85rem' }}>{errorMarcar}</div>}
 
           {push === 'disponible' && (
             <button className="campana-permiso" onClick={pedirPermiso}>
@@ -157,7 +177,7 @@ export default function CampanaNotificaciones({ modo = 'negocio' }) {
           ) : (
             <ul className="campana-lista">
               {notificaciones.slice(0, 30).map((n) => {
-                const leida = Boolean(n.leidaPor?.[uid]);
+                const leida = Boolean(n.leidaPor?.[uid]) || marcadas.has(n.id);
                 return (
                   <li key={n.id} className={`campana-item ${leida ? '' : 'no-leida'}`} onClick={() => abrir(n)}>
                     <span className="campana-icono">{ICONO[n.type] || '🔔'}</span>

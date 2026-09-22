@@ -117,8 +117,16 @@ chequear('servicio que ese profesional no hace, rechazado', r.error === 'FAILED_
 titulo('Horario:');
 r = await reservar(cliente, { ...base, startTime: '08:00' });
 chequear('antes de abrir, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
-r = await reservar(cliente, { ...base, startTime: '17:45' });
-chequear('se pasa del cierre, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+// Regla del mostrador: alcanza con que EMPIECE dentro del horario. El barbero
+// termina la cabeza que arrancó antes de cerrar. (Cliente nuevo: el de arriba
+// ya tiene su turno del día y lo pararía el uno-por-día.)
+const cTarde = await usuario('ctarde@gmail.com');
+r = await reservar(cTarde, { ...base, startTime: '17:45', clientName: 'Tarde' });
+chequear('arranca 17:45 y termina pasado el cierre: se toma', r.ok?.status === 'created', JSON.stringify(r));
+r = await reservar(cliente, { ...base, startTime: '18:00' });
+chequear('arranca justo al cierre, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(cliente, { ...base, startTime: '19:00' });
+chequear('arranca después del cierre, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 r = await reservar(cliente, { ...base, startTime: '13:15' });
 chequear('cae en el descanso, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 r = await reservar(cliente, { ...base, appointmentDate: '2027-03-01' });
@@ -209,9 +217,12 @@ const c8 = await usuario('c8@gmail.com');
 // FECHA es martes → día ok. 15:00 está fuera de la franja.
 r = await reservar(c8, { ...base, serviceId: 'srv-promo', startTime: '15:00' });
 chequear('martes 15:00: fuera de la franja, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
-// 19:15–19:45 se pasa del final de la franja aunque empiece adentro.
-r = await reservar(c8, { ...base, serviceId: 'srv-promo', startTime: '19:15' });
-chequear('martes 19:15: termina fuera de la franja, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+// El caso de Lucas: la promo va hasta 19:30 pero el barbero cierra 18:00.
+// 17:45 arranca dentro de las dos cosas y termina 18:15, después del cierre.
+// Antes esto se rechazaba y la promo quedaba sin un solo horario para él.
+const c8b = await usuario('c8b@gmail.com');
+r = await reservar(c8b, { ...base, serviceId: 'srv-promo', appointmentDate: MARTES[3], startTime: '17:45' });
+chequear('martes 17:45: promo que termina pasado el cierre, se toma', r.ok?.status === 'created' && r.ok?.price === 10800, JSON.stringify(r));
 r = await reservar(c8, { ...base, serviceId: 'srv-promo', startTime: '17:00' });
 chequear('martes 17:00: adentro, creado', r.ok?.status === 'created' && r.ok?.price === 10800, JSON.stringify(r));
 // Un jueves (2027-03-04) no aplica aunque el horario esté bien. El barbero no
@@ -224,6 +235,16 @@ r = await reservar(c9, { ...base, serviceId: 'srv-promo', appointmentDate: '2027
 chequear('jueves 17:00: la promo no es los jueves, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 r = await reservar(c9, { ...base, serviceId: SRV, appointmentDate: '2027-03-04', startTime: '17:00' });
 chequear('jueves 17:00 con el corte común: creado', r.ok?.status === 'created', JSON.stringify(r));
+
+// Con el jueves abierto hasta las 20:00 se puede probar el límite de la propia
+// promo, sin que el horario del barbero conteste antes.
+await db.doc(`businesses/${BID}/services/srv-promo`).update({ ventana: { dias: [1, 2, 3], desde: '16:30', hasta: '19:30' } });
+const c10 = await usuario('c10@gmail.com');
+r = await reservar(c10, { ...base, serviceId: 'srv-promo', appointmentDate: '2027-03-04', startTime: '19:15' });
+chequear('jueves 19:15: arranca dentro de la promo aunque termine después, se toma', r.ok?.status === 'created', JSON.stringify(r));
+const c11 = await usuario('c11@gmail.com');
+r = await reservar(c11, { ...base, serviceId: 'srv-promo', appointmentDate: '2027-03-04', startTime: '19:30' });
+chequear('jueves 19:30: la promo ya cerró, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 
 titulo('getBusySlots — solo horas, sin datos de otros clientes:');
 const c7 = await usuario('c7@gmail.com');

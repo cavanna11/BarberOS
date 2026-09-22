@@ -35,13 +35,18 @@ export function servicioAplicaAlDia(servicio, fechaISO) {
   return v.dias.includes(dow);
 }
 
-/** ¿Un turno de [inicio, fin] (en 'HH:MM') entra en la franja del servicio? */
-export function servicioAplicaAlHorario(servicio, startTime, endTime) {
+/**
+ * ¿Un turno que empieza a `startTime` entra en la franja del servicio?
+ *
+ * Mira el arranque, no el final, igual que el horario del barbero: la promo de
+ * 16:30 a 19:30 incluye el turno de las 19:00 aunque termine 20:00. Exigir que
+ * entrara entero dejaba la última hora de cada promo sin usar.
+ */
+export function servicioAplicaAlHorario(servicio, startTime) {
   const v = servicio?.ventana;
   if (!v || !v.desde || !v.hasta) return true;
   const ini = timeToMinutes(startTime);
-  const fin = endTime ? timeToMinutes(endTime) : ini;
-  return ini >= timeToMinutes(v.desde) && fin <= timeToMinutes(v.hasta);
+  return ini >= timeToMinutes(v.desde) && ini < timeToMinutes(v.hasta);
 }
 
 /** "Solo martes y miércoles, de 16:30 a 19:30." para mostrar al cliente. */

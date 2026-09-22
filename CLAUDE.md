@@ -531,6 +531,18 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
 
 ## Trampas ya pagadas (no volver a descubrirlas)
 
+### Un turno entra si EMPIEZA dentro del horario (22/09/2026)
+
+Antes se exigía que el turno entrara entero: `cursor + duration <= cierre`. Con
+grilla de 60' y servicios de 60', el barbero que atiende hasta las 17:30 perdía
+el turno de las 17:00 — y con él, toda promo de media tarde: la de Volcado
+(16:30–19:30) le daba CERO horarios a un barbero y sí al otro, que cerraba más
+tarde. Ahora alcanza con que empiece dentro (del horario del barbero, del local
+y de la franja de la promo); el descanso del mediodía sigue siendo excluyente,
+porque ahí no se atiende. Está en `availabilityEngine`, `ventanaServicio` y
+`createAppointment`, y hay casos en la suite de reservas.
+
+
 ### El barbero sin perfil vinculado veía la agenda VACÍA (22/09/2026)
 
 El permiso del barbero sale del claim `professionalId` y las Rules le filtran
@@ -756,7 +768,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 67, reservas 42, facturación 11, rules 109. Todo en verde.
+Hoy: claims 67, reservas 46, facturación 11, rules 109. Todo en verde.
 
 ---
 

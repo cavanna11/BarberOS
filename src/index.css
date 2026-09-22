@@ -3685,3 +3685,67 @@ select.form-input {
 .agenda-franja.cerrada { background: repeating-linear-gradient(135deg, transparent 0 8px, var(--surface-2, rgba(0,0,0,0.04)) 8px 16px); }
 .agenda-franja.cerrada .agenda-hora { color: var(--text-muted); font-weight: 500; }
 .agenda-cerrada { color: var(--text-muted); }
+
+/* Aviso de cuenta de barbero sin perfil vinculado */
+.aviso-vinculo {
+  border-radius: 0;
+  margin: 0;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.aviso-vinculo .btn { flex-shrink: 0; }
+
+/* Citas: solapas de día */
+.citas-solapas {
+  display: flex;
+  gap: 6px;
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+}
+.citas-solapa {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: all var(--transition);
+}
+.citas-solapa:hover { border-color: var(--primary); }
+.citas-solapa.activa {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.citas-solapa-badge {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.78rem;
+}
+.citas-solapa.activa .citas-solapa-badge { background: rgba(255, 255, 255, 0.25); }
+.cita-tarjeta-dia {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* Agenda: título del día y acciones */
+.agenda-dia { font-size: 1.25rem; }
+.agenda-fecha-larga { color: var(--text-secondary); font-size: 0.85rem; margin: 0 8px; }
+.agenda-turno-origen { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+.agenda-turno-acciones { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.agenda-cerrar { white-space: nowrap; }
+@media (max-width: 768px) {
+  .agenda-fecha-larga { display: block; margin: 2px 0 0; }
+}

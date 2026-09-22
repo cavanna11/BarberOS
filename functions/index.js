@@ -555,7 +555,9 @@ exports.createAppointment = onCall(async (request) => {
     }
   }
 
-  if (inicio < desde || fin > hasta) {
+  // Alcanza con que EMPIECE dentro del horario (del barbero y del local): el
+  // último turno puede terminar después del cierre, como pasa en el mostrador.
+  if (inicio < desde || inicio >= hasta) {
     throw new HttpsError('failed-precondition', 'Ese horario está fuera del horario de atención.');
   }
 
@@ -568,7 +570,7 @@ exports.createAppointment = onCall(async (request) => {
       throw new HttpsError('failed-precondition', `${servicio.name || 'Ese servicio'} no se ofrece ese día.`);
     }
     if (ventana.desde && ventana.hasta) {
-      if (inicio < timeToMinutes(ventana.desde) || fin > timeToMinutes(ventana.hasta)) {
+      if (inicio < timeToMinutes(ventana.desde) || inicio >= timeToMinutes(ventana.hasta)) {
         throw new HttpsError('failed-precondition', `${servicio.name || 'Ese servicio'} se ofrece solo de ${ventana.desde} a ${ventana.hasta}.`);
       }
     }
@@ -663,6 +665,10 @@ exports.createAppointment = onCall(async (request) => {
       clientEmail: String(request.auth.token.email || clientEmail || '').slice(0, 120),
       notes: String(notes).slice(0, 500),
       status: 'pendiente',
+      // Reservado por el cliente desde el link. Los que carga el staff llevan
+      // type 'manual' o 'walkin'. Sirve para que el barbero sepa, de un
+      // vistazo, cuál entró solo y cuál cargó él.
+      origen: 'cliente',
       createdAt: FieldValue.serverTimestamp(),
     });
   });

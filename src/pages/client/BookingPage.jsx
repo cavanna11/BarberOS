@@ -491,7 +491,7 @@ export default function BookingPage() {
       professionalServices,
       slotInterval: business.slotInterval,
       businessHours: business.businessHours,
-    }).filter((s) => servicioAplicaAlHorario(servicio, s.startTime, s.endTime)); // promo por franja
+    }).filter((s) => servicioAplicaAlHorario(servicio, s.startTime)); // promo por franja
   }, [professionalId, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business]);
 
   if (blockedReason) {

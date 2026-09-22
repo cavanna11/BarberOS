@@ -121,21 +121,6 @@ export default function DashboardPage() {
       alert('No se pudo actualizar el turno: ' + err.message);
     });
   };
-  const yaEmpezo = (apt) => new Date(`${apt.appointmentDate}T${apt.startTime}:00`) <= new Date();
-  const accionesDeTurno = (apt) => {
-    if (apt.status !== 'pendiente' && apt.status !== 'confirmada') return null;
-    const empezo = yaEmpezo(apt);
-    return (
-      <>
-        {apt.status === 'pendiente' && (
-          <button className="btn btn-ghost btn-sm" title="Confirmar" onClick={() => cambiarEstado(apt, 'confirmada')}>✔️</button>
-        )}
-        <button className="btn btn-ghost btn-sm" title={empezo ? 'Marcar como completada' : 'Todavía no empezó'} disabled={!empezo} style={!empezo ? { opacity: 0.35 } : undefined} onClick={() => cambiarEstado(apt, 'completada')}>✅</button>
-        <button className="btn btn-ghost btn-sm" title={empezo ? 'No asistió' : 'Todavía no empezó'} disabled={!empezo} style={!empezo ? { opacity: 0.35 } : undefined} onClick={() => cambiarEstado(apt, 'no_asistio')}>👻</button>
-        <button className="btn btn-ghost btn-sm" title="Cancelar" onClick={() => cambiarEstado(apt, 'cancelada')}>❌</button>
-      </>
-    );
-  };
 
   // ══════════════════════════════════════════════════════════════════════════
   // VISTA PELUQUERO
@@ -185,9 +170,9 @@ export default function DashboardPage() {
         <div className="admin-page-header">
           <div>
             <h1>Hola, {user?.name?.split(' ')[0]} 👋</h1>
-            <span className="text-secondary text-sm" style={{ marginTop: 4, display: 'block' }}>
-              {formatDate(today)}
-            </span>
+            {/* La fecha vive en la agenda, que es la que se mueve de día: acá
+                arriba decía siempre "hoy" aunque abajo estuvieras mirando
+                mañana. */}
           </div>
           <div className="flex items-center gap-md">
             <span className="badge badge-warning" style={{ fontSize: 13, padding: '6px 12px' }}>
@@ -212,7 +197,7 @@ export default function DashboardPage() {
             services={services}
             business={business}
             professionalId={user.professionalId}
-            renderAcciones={accionesDeTurno}
+            onCambiarEstado={cambiarEstado}
           />
         </div>
 
@@ -418,7 +403,7 @@ export default function DashboardPage() {
           professionals={professionals}
           services={services}
           business={business}
-          renderAcciones={accionesDeTurno}
+          onCambiarEstado={cambiarEstado}
         />
       </div>
     </div>

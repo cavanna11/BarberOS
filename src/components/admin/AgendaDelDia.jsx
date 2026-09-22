@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { formatDate, toDateString, timeToMinutes } from '../../utils/dateUtils';
+import { formatDate, toDateString, timeToMinutes, fechaCorta } from '../../utils/dateUtils';
+import { origenTurno } from '../../utils/origenTurno';
 
 /**
  * La agenda de un día, como un calendario: una fila por franja horaria, con
@@ -54,6 +55,8 @@ export default function AgendaDelDia({
   onSelect = null,
   /** Acciones opcionales por turno: (apt) => ReactNode. */
   renderAcciones = null,
+  /** Si viene, la agenda dibuja sola los botones: (apt, status) => void. */
+  onCambiarEstado = null,
 }) {
   const hoy = toDateString(new Date());
   const [fecha, setFecha] = useState(hoy);
@@ -98,6 +101,45 @@ export default function AgendaDelDia({
 
   const activos = delDia.filter((a) => a.status === 'pendiente' || a.status === 'confirmada');
 
+  // Turnos que ya terminaron y siguen abiertos: son los que hay que cerrar al
+  // final del día. Tenerlos contados permite hacerlo de una vez en lugar de
+  // turno por turno.
+  const ahoraReal = new Date();
+  const yaTermino = (a) => new Date(`${a.appointmentDate}T${a.endTime || a.startTime}:00`) <= ahoraReal;
+  const sinCerrar = activos.filter(yaTermino);
+
+  const cerrarElDia = () => {
+    if (!onCambiarEstado) return;
+    const n = sinCerrar.length;
+    if (!window.confirm(
+      `¿Marcar ${n === 1 ? 'el turno que ya pasó' : `los ${n} turnos que ya pasaron`} como atendidos?\n\n` +
+      'Si alguien no vino, marcalo primero con "No vino" y después cerrá el día.'
+    )) return;
+    sinCerrar.forEach((a) => onCambiarEstado(a, 'completada'));
+  };
+
+  // Un solo lugar decide qué botones tiene un turno, para que la agenda del
+  // dashboard y la de la sección propia no se vayan separando.
+  const accionesPropias = (a) => {
+    if (a.status !== 'pendiente' && a.status !== 'confirmada') return null;
+    const termino = yaTermino(a);
+    return (
+      <>
+        {a.status === 'pendiente' && !termino && (
+          <button className="btn btn-sm btn-outline" onClick={() => onCambiarEstado(a, 'confirmada')}>Confirmar</button>
+        )}
+        {termino && (
+          <>
+            <button className="btn btn-sm btn-primary" onClick={() => onCambiarEstado(a, 'completada')}>Vino</button>
+            <button className="btn btn-sm btn-outline" onClick={() => onCambiarEstado(a, 'no_asistio')}>No vino</button>
+          </>
+        )}
+        <button className="btn btn-sm btn-ghost" title="Cancelar el turno" onClick={() => onCambiarEstado(a, 'cancelada')}>✕</button>
+      </>
+    );
+  };
+  const acciones = renderAcciones || (onCambiarEstado ? accionesPropias : null);
+
   return (
     <div className="agenda">
       <div className="agenda-cabecera">
@@ -117,12 +159,21 @@ export default function AgendaDelDia({
             onChange={(e) => e.target.value && setFecha(e.target.value)}
           />
         </div>
+        {/* El día que se está mirando, grande: antes el título de la pantalla
+            decía siempre la fecha de hoy y al moverse de día seguía diciendo
+            "hoy", que es justo lo que uno viene a chequear. */}
         <div className="agenda-titulo">
-          <strong>{formatDate(fecha)}</strong>
+          <strong className="agenda-dia">{fechaCorta(fecha)}</strong>
+          <span className="agenda-fecha-larga">{formatDate(fecha)}</span>
           <span className="text-secondary text-sm">
-            {' '}· {activos.length === 0 ? 'sin turnos' : activos.length === 1 ? '1 turno' : `${activos.length} turnos`}
+            {activos.length === 0 ? 'sin turnos' : activos.length === 1 ? '1 turno' : `${activos.length} turnos`}
           </span>
         </div>
+        {onCambiarEstado && sinCerrar.length > 0 && (
+          <button className="btn btn-sm btn-primary agenda-cerrar" onClick={cerrarElDia}>
+            ✅ Cerrar el día ({sinCerrar.length})
+          </button>
+        )}
         {varios && (
           <select className="form-input agenda-filtro" value={filtroProf} onChange={(e) => setFiltroProf(e.target.value)}>
             <option value="">Todos los barberos</option>
@@ -180,6 +231,11 @@ export default function AgendaDelDia({
                             {a.startTime}–{a.endTime || '?'} · {nombreSrv(a)}
                             {varios && !profActivo && <> · <strong>{nombreProf(a.professionalId)}</strong></>}
                           </div>
+                          {!walkin && (
+                            <div className="agenda-turno-origen" title={origenTurno(a).detalle}>
+                              {origenTurno(a).icono} {origenTurno(a).etiqueta}
+                            </div>
+                          )}
                           {a.clientPhone && !walkin && (
                             <a className="agenda-turno-tel" href={`tel:${a.clientPhone}`} onClick={(e) => e.stopPropagation()}>
                               📞 {a.clientPhone}
@@ -188,7 +244,7 @@ export default function AgendaDelDia({
                         </div>
                         <div className="agenda-turno-lateral">
                           <span className={`badge ${est.clase}`}>{est.label}</span>
-                          {renderAcciones && <div className="agenda-turno-acciones" onClick={(e) => e.stopPropagation()}>{renderAcciones(a)}</div>}
+                          {acciones && <div className="agenda-turno-acciones" onClick={(e) => e.stopPropagation()}>{acciones(a)}</div>}
                         </div>
                       </div>
                     );

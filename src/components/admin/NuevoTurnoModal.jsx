@@ -83,7 +83,7 @@ export default function NuevoTurnoModal({ onClose }) {
       professionalServices,
       slotInterval: business.slotInterval,
       businessHours: business.businessHours,
-    }).filter((s) => servicioAplicaAlHorario(srv, s.startTime, s.endTime));
+    }).filter((s) => servicioAplicaAlHorario(srv, s.startTime));
   }, [form.professionalId, form.serviceId, form.date, schedules, appointments, services, professionalServices, business]);
 
   const slot = slots.find((s) => s.startTime === form.startTime);

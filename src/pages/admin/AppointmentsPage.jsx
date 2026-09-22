@@ -3,7 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { updateAppointment, cancelAppointment } from '../../lib/repository';
 import NuevoTurnoModal from '../../components/admin/NuevoTurnoModal';
-import { formatDate, formatPrice } from '../../utils/dateUtils';
+import { formatDate, formatPrice, fechaCorta, toDateString } from '../../utils/dateUtils';
+import { origenTurno } from '../../utils/origenTurno';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 
 const STATUS_OPTIONS = [
@@ -54,6 +55,11 @@ export default function AppointmentsPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterDate,   setFilterDate]   = useState('');
   const [agendando,    setAgendando]    = useState(false);
+  // Arranca en los de hoy: es lo que se mira noventa veces al día. Antes la
+  // lista venía toda junta, por orden de carga, y había que ir buscando cuál
+  // era de hoy entre los de la semana que viene.
+  const [rango, setRango] = useState('hoy');
+  const hoy = toDateString(new Date());
 
   const filtered = useMemo(() => {
     let result = [...appointments].sort((a, b) => {
@@ -72,9 +78,35 @@ export default function AppointmentsPage() {
 
     if (filterProf)   result = result.filter(a => a.professionalId === filterProf);
     if (filterStatus) result = result.filter(a => a.status === filterStatus);
-    if (filterDate)   result = result.filter(a => a.appointmentDate === filterDate);
+
+    // Una fecha elegida a mano manda sobre las solapas.
+    if (filterDate) {
+      result = result.filter(a => a.appointmentDate === filterDate);
+    } else if (rango === 'hoy') {
+      result = result.filter(a => a.appointmentDate === hoy);
+    } else if (rango === 'proximos') {
+      result = result.filter(a => a.appointmentDate > hoy);
+    }
+
+    // Los de hoy y los que vienen, del primero al último (es el orden en que
+    // van entrando por la puerta); los pasados, del más reciente al más viejo.
+    const cronologico = !filterDate && rango !== 'todos';
+    result.sort((a, b) => {
+      const ka = a.appointmentDate + 'T' + a.startTime;
+      const kb = b.appointmentDate + 'T' + b.startTime;
+      return cronologico ? ka.localeCompare(kb) : kb.localeCompare(ka);
+    });
     return result;
-  }, [appointments, filterProf, filterStatus, filterDate, isOwner, profIdPropio]);
+  }, [appointments, filterProf, filterStatus, filterDate, isOwner, profIdPropio, rango, hoy]);
+
+  const cuantos = useMemo(() => {
+    const mios = isOwner ? appointments : appointments.filter(a => a.professionalId === profIdPropio);
+    const vivos = mios.filter(a => a.status !== 'cancelada');
+    return {
+      hoy: vivos.filter(a => a.appointmentDate === hoy).length,
+      proximos: vivos.filter(a => a.appointmentDate > hoy).length,
+    };
+  }, [appointments, isOwner, profIdPropio, hoy]);
 
   const updateStatus = (id, status) => {
     updateAppointment(businessId, id, { status }).catch((err) => {
@@ -140,6 +172,24 @@ export default function AppointmentsPage() {
 
       {agendando && <NuevoTurnoModal onClose={() => setAgendando(false)} />}
 
+      {/* Solapas de día: lo primero que se mira. */}
+      <div className="citas-solapas">
+        {[
+          { id: 'hoy', label: 'Hoy', badge: cuantos.hoy },
+          { id: 'proximos', label: 'Próximos', badge: cuantos.proximos },
+          { id: 'todos', label: 'Todos', badge: null },
+        ].map((s) => (
+          <button
+            key={s.id}
+            className={`citas-solapa ${rango === s.id && !filterDate ? 'activa' : ''}`}
+            onClick={() => { setRango(s.id); setFilterDate(''); }}
+          >
+            {s.label}
+            {s.badge > 0 && <span className="citas-solapa-badge">{s.badge}</span>}
+          </button>
+        ))}
+      </div>
+
       {/* Filtros */}
       <div className="filters-bar">
         <input
@@ -175,7 +225,7 @@ export default function AppointmentsPage() {
         {(filterProf || filterStatus || filterDate) && (
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => { setFilterProf(''); setFilterStatus(''); setFilterDate(''); }}
+            onClick={() => { setFilterProf(''); setFilterStatus(''); setFilterDate(''); setRango('hoy'); }}
           >
             ✕ Limpiar
           </button>
@@ -189,16 +239,18 @@ export default function AppointmentsPage() {
           const prof = professionals.find(p => p.id === apt.professionalId);
           const srv  = services.find(s => s.id === apt.serviceId);
           const isWalkin = apt.type === 'walkin';
+          const origen = origenTurno(apt);
           return (
             <div key={apt.id} className={`card cita-tarjeta estado-${apt.status}`}>
               <div className="cita-tarjeta-fila">
                 <div>
                   <div className="cita-tarjeta-hora">{apt.startTime}<span> — {apt.endTime}</span></div>
-                  <div className="text-sm text-secondary">{formatDate(apt.appointmentDate).split(',')[0]}</div>
+                  <div className="cita-tarjeta-dia">{fechaCorta(apt.appointmentDate)}</div>
                 </div>
                 <span className={`badge ${STATUS_BADGES[apt.status]}`}>{STATUS_LABELS[apt.status] || apt.status}</span>
               </div>
               <div className="cita-tarjeta-cliente">{isWalkin ? '✂️ Servicio sin turno' : (apt.clientName || 'Cliente')}</div>
+              <div className="text-sm text-muted" title={origen.detalle}>{origen.icono} {origen.etiqueta}</div>
               <div className="text-sm text-secondary">
                 {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'} · ${formatPrice(apt.price, business?.currency)}`}
                 {isOwner && prof && <> · {prof.name}</>}
@@ -223,10 +275,11 @@ export default function AppointmentsPage() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Fecha</th>
+              <th>Día</th>
               <th>Hora</th>
               {isOwner && <th>Profesional</th>}
               <th>Cliente</th>
+              <th>Lo reservó</th>
               <th>Teléfono</th>
               <th>Servicio</th>
               <th>Precio</th>
@@ -239,17 +292,25 @@ export default function AppointmentsPage() {
               const prof    = professionals.find(p => p.id === apt.professionalId);
               const srv     = services.find(s => s.id === apt.serviceId);
               const isWalkin = apt.type === 'walkin';
+              const origen  = origenTurno(apt);
 
               return (
                 <tr key={apt.id} style={isWalkin ? { background: 'var(--bg-secondary)', fontStyle: 'italic' } : {}}>
-                  <td>{formatDate(apt.appointmentDate).split(',')[0]}</td>
-                  <td><strong>{apt.startTime}</strong> — {apt.endTime}</td>
+                  <td title={formatDate(apt.appointmentDate)}>
+                    <strong>{fechaCorta(apt.appointmentDate)}</strong>
+                  </td>
+                  <td><strong style={{ fontSize: '1.05rem' }}>{apt.startTime}</strong> <span className="text-muted">— {apt.endTime}</span></td>
                   {isOwner && <td>{prof?.name}</td>}
                   <td>
                     {isWalkin
                       ? <span className="flex items-center gap-sm"><span>✂️</span><span>Servicio sin turno</span></span>
                       : (apt.clientName || apt.userId)
                     }
+                  </td>
+                  <td>
+                    <span className={`badge ${origen.clase}`} title={origen.detalle} style={{ fontSize: 11 }}>
+                      {origen.icono} {origen.etiqueta}
+                    </span>
                   </td>
                   <td>{apt.clientPhone || '—'}</td>
                   <td>

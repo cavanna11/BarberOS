@@ -29,6 +29,7 @@ const MyAppointments   = lazy(() => import('./pages/client/MyAppointments'));
 
 // Panel del negocio
 const DashboardPage       = lazy(() => import('./pages/admin/DashboardPage'));
+const AgendaPage          = lazy(() => import('./pages/admin/AgendaPage'));
 const ProfessionalsPage   = lazy(() => import('./pages/admin/ProfessionalsPage'));
 const ServicesPage        = lazy(() => import('./pages/admin/ServicesPage'));
 const AppointmentsPage    = lazy(() => import('./pages/admin/AppointmentsPage'));
@@ -194,6 +195,7 @@ export default function App() {
           </ProtectedRoute>
         }>
           <Route index element={<DashboardPage />} />
+          <Route path="agenda" element={<AgendaPage />} />
           <Route path="profesionales" element={<ProfessionalsPage />} />
           <Route path="servicios" element={<ServicesPage />} />
           <Route path="citas" element={<AppointmentsPage />} />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import CampanaNotificaciones from '../admin/CampanaNotificaciones';
 import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,6 +9,7 @@ import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 // Items visibles solo para el dueño (owner)
 const ownerNavItems = [
   { to: '/admin',               icon: '📊', label: 'Dashboard',        end: true },
+  { to: '/admin/agenda',        icon: '🗓️', label: 'Agenda del día' },
   { to: '/admin/profesionales', icon: '👥', label: 'Profesionales' },
   { to: '/admin/servicios',     icon: '✂️', label: 'Servicios' },
   { to: '/admin/citas',         icon: '📅', label: 'Citas' },
@@ -21,9 +22,12 @@ const ownerNavItems = [
 // Items para el admin/peluquero → solo sus citas
 const adminNavItems = [
   { to: '/admin',         icon: '🏠', label: 'Hoy', end: true },
+  // La agenda del día como calendario: es lo que se mira entre cliente y
+  // cliente, y estaba escondida al pie del dashboard.
+  { to: '/admin/agenda',  icon: '🗓️', label: 'Agenda del día' },
   // La tabla con confirmar / completar / no asistió / cancelar y "Agendar
   // turno". Sin esta entrada el barbero no tenía forma de llegar.
-  { to: '/admin/citas',   icon: '📅', label: 'Mi Agenda' },
+  { to: '/admin/citas',   icon: '📅', label: 'Lista de turnos' },
   { to: '/admin/ajustes', icon: '⚙️', label: 'Mi Configuración' },
   { to: '/admin/soporte', icon: '💬', label: 'Soporte' },
   { to: '/admin/instalar', icon: '📲', label: 'Instalar la app' },
@@ -56,10 +60,39 @@ function diasDePruebaRestantes(trialEndsAt) {
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, logout } = useAuth();
+  const { user, logout, refreshClaims } = useAuth();
   const navigate = useNavigate();
   const { business, businessId, isPlatformOwner: platformOwner } = useCurrentBusiness();
   const vinculo = useVinculoBarbero();
+  const [revisandoVinculo, setRevisandoVinculo] = useState(false);
+  const [vinculoSigueRoto, setVinculoSigueRoto] = useState(false);
+
+  // El permiso vive en el token, así que cuando el dueño vincula la cuenta el
+  // barbero no se entera hasta que el token se renueva (hasta una hora) o
+  // cierra sesión. Con el vínculo roto se pide un token nuevo al entrar: si ya
+  // lo arreglaron, el panel se repara solo y el aviso desaparece.
+  const yaRevisado = useRef(false);
+  useEffect(() => {
+    if (!vinculo.esBarbero || vinculo.vinculado || yaRevisado.current) return;
+    yaRevisado.current = true;
+    refreshClaims().catch((err) => console.error('[AdminLayout] No se pudo refrescar el permiso:', err));
+  }, [vinculo.esBarbero, vinculo.vinculado, refreshClaims]);
+
+  const revisarVinculo = async () => {
+    setRevisandoVinculo(true);
+    setVinculoSigueRoto(false);
+    try {
+      const claims = await refreshClaims();
+      // Si el dueño acaba de vincular, el claim nuevo ya viene en este token y
+      // el aviso se va solo; si no, hay que decirlo y no dejarlo en la duda.
+      if (!claims?.professionalId) setVinculoSigueRoto(true);
+    } catch (err) {
+      console.error('[AdminLayout] No se pudo revisar el vínculo:', err);
+      setVinculoSigueRoto(true);
+    } finally {
+      setRevisandoVinculo(false);
+    }
+  };
 
   const isOwner = user?.role === 'owner';
   const navItems = isOwner ? ownerNavItems : adminNavItems;
@@ -245,9 +278,16 @@ export default function AdminLayout() {
         {/* Vínculo roto: sin esto el barbero ve una agenda vacía y cree que no
             tiene turnos. Es el aviso más importante del panel. */}
         {vinculo.esBarbero && !vinculo.vinculado && business && (
-          <div className="notice notice-danger" style={{ borderRadius: 0, margin: 0, padding: '10px 16px' }}>
-            ⚠️ <strong>Avisale al dueño de la barbería.</strong> {textoVinculo(vinculo.motivo)}{' '}
-            Se arregla en <strong>Administradores</strong>: editar tu cuenta y elegir tu perfil de la lista.
+          <div className="notice notice-danger aviso-vinculo">
+            <span>
+              ⚠️ <strong>Avisale al dueño de la barbería.</strong> {textoVinculo(vinculo.motivo)}{' '}
+              Lo arregla en <strong>Administradores</strong>: tocar ✏️ en tu cuenta, elegir tu nombre en
+              "Profesional vinculado" y guardar.
+              {vinculoSigueRoto && <> <strong>Todavía no está hecho:</strong> probá de nuevo cuando te avisen.</>}
+            </span>
+            <button className="btn btn-sm btn-outline" onClick={revisarVinculo} disabled={revisandoVinculo}>
+              {revisandoVinculo ? 'Revisando…' : 'Ya me vincularon'}
+            </button>
           </div>
         )}
 
