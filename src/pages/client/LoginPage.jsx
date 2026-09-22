@@ -97,7 +97,7 @@ export default function LoginPage() {
         <h1>{vieneDeReserva ? 'Reservar turno' : 'Iniciar sesión'}</h1>
         <p className="auth-subtitle">
           {vieneDeReserva
-            ? 'Entrá con tu cuenta para confirmar el turno'
+            ? 'Tu turno todavía NO está reservado: entrá con Google y lo confirmás en un toque.'
             : 'Entrá a tu panel, o al link de tu barbería para reservar'}
         </p>
 

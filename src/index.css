@@ -3750,3 +3750,22 @@ select.form-input {
 @media (max-width: 768px) {
   .agenda-fecha-larga { display: block; margin: 2px 0 0; }
 }
+
+/* Aviso de reserva a medio hacer */
+.reserva-pendiente {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+}
+.reserva-pendiente-acciones {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .reserva-pendiente-acciones { width: 100%; }
+  .reserva-pendiente-acciones .btn { flex: 1; }
+}

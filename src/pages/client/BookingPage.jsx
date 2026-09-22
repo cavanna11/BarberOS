@@ -8,6 +8,7 @@ import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/av
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
 import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
 import FichaBarberia from '../../components/client/FichaBarberia';
+import { guardarPendiente, leerPendiente, borrarPendiente } from '../../utils/reservaPendiente';
 
 // ---- STEPPER ----
 function Stepper({ step }) {
@@ -437,6 +438,40 @@ export default function BookingPage() {
   const finalPrice = ps?.customPrice || selectedService?.price || 0;
   const finalDuration = ps?.customDuration || selectedService?.durationMinutes || 30;
 
+  // Lo que ya eligió queda guardado en su teléfono desde que elige el día y
+  // la hora: si cierra la pestaña en el paso del login —creyendo que ya
+  // reservó— al volver se le ofrece seguir donde estaba.
+  useEffect(() => {
+    if (!businessId || !professionalId || !serviceId || !date || !timeSlot) return;
+    guardarPendiente({
+      businessId, slug, professionalId, serviceId, date,
+      startTime: timeSlot.startTime, endTime: timeSlot.endTime,
+    });
+  }, [businessId, slug, professionalId, serviceId, date, timeSlot]);
+
+  // El aviso se muestra solo mientras no eligió nada en esta visita: apenas
+  // retoma (o empieza de cero), se va solo.
+  const [pendienteDescartado, setPendienteDescartado] = useState(false);
+  const eligiendo = Boolean(professionalId || serviceId || date);
+  const pendiente = useMemo(() => {
+    if (!businessId || pendienteDescartado || eligiendo) return null;
+    return leerPendiente(businessId);
+  }, [businessId, pendienteDescartado, eligiendo]);
+
+  const retomarPendiente = () => {
+    if (!pendiente) return;
+    dispatch({ type: 'SET_PROFESSIONAL', payload: pendiente.professionalId });
+    dispatch({ type: 'SET_SERVICE', payload: pendiente.serviceId });
+    dispatch({ type: 'SET_DATE', payload: pendiente.date });
+    dispatch({ type: 'SET_TIMESLOT', payload: { startTime: pendiente.startTime, endTime: pendiente.endTime } });
+    dispatch({ type: 'SET_STEP', payload: user ? 5 : 4 });
+  };
+
+  const descartarPendiente = () => {
+    borrarPendiente();
+    setPendienteDescartado(true);
+  };
+
   // Volvió del login con el horario ya elegido: seguir al paso 5 solo, sin
   // pedirle que aprete "Siguiente" otra vez.
   useEffect(() => {
@@ -574,6 +609,7 @@ export default function BookingPage() {
       datos.price = res.price;
       datos.endTime = res.endTime;
 
+      borrarPendiente();
       dispatch({ type: 'RESET' });
       navigate(`/${slug}/confirmacion`, {
         state: { appointment: { ...datos, id, businessId, status: 'pendiente' } },
@@ -603,6 +639,23 @@ export default function BookingPage() {
       {/* La barbería se presenta antes del primer paso: dónde queda, cómo
           llegar, cómo contactarla. */}
       {step === 1 && <FichaBarberia business={business} services={services} />}
+      {/* "Me faltó confirmar": lo más probable es que se haya ido en el paso
+          del login creyendo que el turno ya estaba. */}
+      {pendiente && (
+        <div className="notice notice-warn reserva-pendiente">
+          <div>
+            <strong>Te quedó un turno sin confirmar.</strong>{' '}
+            {professionals.find((p) => p.id === pendiente.professionalId)?.name || 'Tu barbero'} ·{' '}
+            {formatDate(pendiente.date)} a las {pendiente.startTime}.
+            <div className="text-sm">Ese horario todavía no está reservado a tu nombre.</div>
+          </div>
+          <div className="reserva-pendiente-acciones">
+            <button className="btn btn-primary btn-sm" onClick={retomarPendiente}>Seguir con ese turno</button>
+            <button className="btn btn-ghost btn-sm" onClick={descartarPendiente}>Empezar de nuevo</button>
+          </div>
+        </div>
+      )}
+
       <Stepper step={step} />
 
       {error && (
@@ -657,6 +710,12 @@ export default function BookingPage() {
           phone={personalInfo.phone}
           onPhoneChange={phone => dispatch({ type: 'SET_PERSONAL_INFO', payload: { phone } })}
         />
+      )}
+
+      {step === 6 && (
+        <div className="notice notice-warn" style={{ marginBottom: 'var(--space-md)' }}>
+          ⏳ <strong>Falta un paso:</strong> tocá <strong>Confirmar Reserva</strong> acá abajo. Hasta entonces el horario no es tuyo.
+        </div>
       )}
 
       {step === 6 && selectedProfessional && selectedService && (
