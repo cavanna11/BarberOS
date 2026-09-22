@@ -66,8 +66,15 @@ export default function LoginPage() {
     setEntrando(true);
     const result = await loginWithPassword(cred.email, cred.password);
     setEntrando(false);
-    if (result.success) redirectAfterLogin(result.user);
-    else setError(result.error);
+    if (result.success) return redirectAfterLogin(result.user);
+    // El usuario y contraseña son de las cuentas que damos nosotros (dueño y
+    // barberos). Un cliente que prueba por acá se choca con "no coinciden" y
+    // no tiene forma de saber que su camino es Google.
+    setError(
+      vieneDeReserva
+        ? `${result.error} Si venís a reservar un turno, entrá con Google: las cuentas con contraseña son del equipo de la barbería.`
+        : result.error
+    );
   };
 
   const handleBypass = (email) => {
@@ -121,14 +128,25 @@ export default function LoginPage() {
           </button>
         </div>
 
+        {/* Los clientes entran SOLO con Google: las cuentas con contraseña las
+            damos nosotros al dueño y a los barberos. Cuando alguien llega acá
+            desde el link de una barbería, esto va chiquito y rotulado, para
+            que no se meta en un camino que no es el suyo. */}
         {!verFormulario ? (
           <div style={{ textAlign: 'center', marginTop: 'var(--space-md)' }}>
+            {vieneDeReserva && (
+              <p className="text-sm text-muted" style={{ marginBottom: 6 }}>
+                Los turnos se reservan con tu cuenta de Google.
+              </p>
+            )}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={() => { setVerFormulario(true); setError(''); }}
             >
-              Tengo un usuario y contraseña
+              {vieneDeReserva
+                ? '¿Trabajás en la barbería? Entrá con tu usuario'
+                : 'Soy del equipo: tengo usuario y contraseña'}
             </button>
           </div>
         ) : (
@@ -141,7 +159,7 @@ export default function LoginPage() {
                 textAlign: 'center',
               }}
             >
-              <span className="text-xs text-muted">O CON TU USUARIO</span>
+              <span className="text-xs text-muted">CUENTA DEL EQUIPO DE LA BARBERÍA</span>
             </div>
 
             <div className="form-group">
