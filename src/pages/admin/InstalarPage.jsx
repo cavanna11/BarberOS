@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { activarPush, estadoPush, esAppInstalada, esIOS, esAndroid } from '../../lib/push';
+import { probarPush } from '../../lib/functions';
 
 /**
  * Tutorial para instalar BarberOS en el celular y activar los avisos.
@@ -197,6 +198,44 @@ export default function InstalarPage() {
   const info = TEXTO_ESTADO[estado] || TEXTO_ESTADO.disponible;
   const puedeActivar = ['disponible', 'rechazado', 'sin-token'].includes(estado);
 
+  // "¿Le estarán llegando los avisos?" no se contesta mirando: el envío puede
+  // fallar por un permiso revocado en el teléfono o un token viejo, y desde el
+  // panel se ve igual que si anduviera. Esto lo prueba de verdad.
+  const [probando, setProbando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const probar = async () => {
+    setProbando(true);
+    setResultado(null);
+    try {
+      const r = await probarPush();
+      setResultado(r);
+    } catch (err) {
+      console.error('[Instalar] No se pudo probar el aviso:', err);
+      setResultado({ error: err.message });
+    } finally {
+      setProbando(false);
+    }
+  };
+
+  const textoResultado = (r) => {
+    if (!r) return null;
+    if (r.error) return { clase: 'notice-danger', texto: `No se pudo probar: ${r.error}` };
+    if (!r.dispositivos) {
+      return { clase: 'notice-warn', texto: 'Esta cuenta no tiene ningún teléfono con avisos activados. Activalos acá arriba, desde el celular en el que los querés recibir.' };
+    }
+    if (r.enviados > 0) {
+      return {
+        clase: 'notice-success',
+        texto: `Aviso enviado a ${r.enviados === 1 ? 'tu teléfono' : `tus ${r.enviados} dispositivos`}. Si no te aparece en unos segundos, fijate que BarberOS tenga permiso de notificaciones en el celular.`,
+      };
+    }
+    return {
+      clase: 'notice-danger',
+      texto: `No salió a ningún dispositivo (${r.fallidos} ${r.fallidos === 1 ? 'falló' : 'fallaron'}). ${r.muertos ? 'Había teléfonos que ya no existen y se limpiaron: ' : ''}Volvé a activar los avisos en este dispositivo.`,
+    };
+  };
+  const res = textoResultado(resultado);
+
   // Orden de las guías: primero la del dispositivo desde el que está leyendo.
   const guias = ios
     ? [<GuiaIPhone key="ios" />, <GuiaAndroid key="and" onInstalar={instalarUnToque} puedeUnToque={false} />, <GuiaEscritorio key="pc" />]
@@ -236,6 +275,18 @@ export default function InstalarPage() {
           )}
         </div>
         <div className={`notice ${info.clase}`} style={{ marginTop: 12 }}>{info.texto}</div>
+
+        {estado === 'activo' && (
+          <div style={{ marginTop: 12 }}>
+            <button className="btn btn-outline btn-sm" onClick={probar} disabled={probando}>
+              {probando ? 'Enviando…' : '📨 Probar el aviso'}
+            </button>
+            <span className="text-sm text-muted" style={{ marginLeft: 10 }}>
+              Te mandamos una notificación de prueba a este mismo momento.
+            </span>
+          </div>
+        )}
+        {res && <div className={`notice ${res.clase}`} style={{ marginTop: 12 }}>{res.texto}</div>}
       </div>
 
       <h2 style={{ fontSize: '1.1rem', marginBottom: 'var(--space-md)' }}>Cómo instalarla, paso a paso</h2>

@@ -813,6 +813,116 @@ async function enviarPush(bizId, datos) {
   await Promise.all(muertos.map((t) => db.doc(`businesses/${bizId}/devices/${t}`).delete().catch(() => {})));
 }
 
+/**
+ * Manda un push de prueba a los teléfonos de QUIEN llama, y devuelve cuántos
+ * salieron y cuántos fallaron.
+ *
+ * Es la única forma honesta de contestar "¿les están llegando los avisos?":
+ * el envío puede fallar por un token muerto, por el permiso revocado en el
+ * teléfono o porque nunca se activó, y desde afuera todo se ve igual.
+ */
+exports.probarPush = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
+
+  const uid = request.auth.uid;
+  const claims = request.auth.token || {};
+  const esPlataforma = claims.platform === true || claims.platform === 'moderator';
+  const businessId = claims.businessId || null;
+
+  if (!esPlataforma && !businessId) {
+    throw new HttpsError('permission-denied', 'Esta cuenta no tiene panel.');
+  }
+
+  const col = esPlataforma
+    ? db.collection('platformDevices')
+    : db.collection(`businesses/${businessId}/devices`);
+  const snap = await col.where('uid', '==', uid).get();
+  const tokens = snap.docs.map((d) => d.id);
+
+  if (!tokens.length) {
+    return { enviados: 0, fallidos: 0, dispositivos: 0 };
+  }
+
+  const url = esPlataforma ? '/super-admin' : '/admin/citas';
+  let res;
+  try {
+    res = await getMessaging().sendEachForMulticast({
+      tokens,
+      data: {
+        title: 'Prueba de BarberOS',
+        body: 'Si ves este aviso, las notificaciones te están llegando bien.',
+        type: 'prueba',
+        notificationId: '',
+        url,
+      },
+      webpush: { headers: { Urgency: 'high', TTL: '3600' }, fcmOptions: { link: url } },
+    });
+  } catch (err) {
+    logger.error('prueba de push fallida', { uid, error: err.message });
+    throw new HttpsError('internal', 'No se pudo enviar la prueba: ' + err.message);
+  }
+
+  // Los tokens muertos se borran acá también: si el teléfono se desinstaló, el
+  // documento queda y la próxima prueba volvería a decir "falló".
+  const muertos = [];
+  const errores = [];
+  res.responses.forEach((r, i) => {
+    if (r.success) return;
+    const code = r.error?.code || 'desconocido';
+    errores.push(code);
+    if (code.includes('registration-token-not-registered') || code.includes('invalid-argument')) {
+      muertos.push(tokens[i]);
+    }
+  });
+  await Promise.all(muertos.map((t) => col.doc(t).delete().catch(() => {})));
+
+  logger.info('prueba de push', { uid, dispositivos: tokens.length, ok: res.successCount, fallidos: res.failureCount });
+  return {
+    dispositivos: tokens.length,
+    enviados: res.successCount,
+    fallidos: res.failureCount,
+    muertos: muertos.length,
+    errores,
+  };
+});
+
+/**
+ * Para el dueño: qué cuentas de su barbería tienen los avisos activados.
+ * No devuelve tokens —eso sirve para mandarle mensajes a un teléfono— sino
+ * cuántos dispositivos tiene cada uno y cuándo fue el último registro.
+ */
+exports.estadoPushDelEquipo = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
+  const claims = request.auth.token || {};
+  const businessId = claims.businessId || request.data?.businessId || null;
+  const esPlataforma = claims.platform === true || claims.platform === 'moderator';
+
+  if (!businessId) throw new HttpsError('invalid-argument', 'Falta el negocio.');
+  if (!esPlataforma && !(claims.businessId === businessId && claims.role === 'owner')) {
+    throw new HttpsError('permission-denied', 'Solo el dueño de la barbería.');
+  }
+
+  const snap = await db.collection(`businesses/${businessId}/devices`).get();
+  const porPerfil = {};
+  snap.docs.forEach((d) => {
+    const dev = d.data();
+    const clave = dev.role === 'owner' ? 'owner' : (dev.professionalId || 'sin-perfil');
+    const actual = porPerfil[clave] || { dispositivos: 0, ultimo: null };
+    actual.dispositivos += 1;
+    const ts = dev.updatedAt?.toDate?.() || null;
+    if (ts && (!actual.ultimo || ts > actual.ultimo)) actual.ultimo = ts;
+    porPerfil[clave] = actual;
+  });
+
+  return {
+    equipo: Object.entries(porPerfil).map(([clave, v]) => ({
+      clave,
+      dispositivos: v.dispositivos,
+      ultimo: v.ultimo ? v.ultimo.toISOString() : null,
+    })),
+  };
+});
+
 exports.onNuevoTurno = onDocumentCreated('businesses/{bizId}/appointments/{aptId}', async (event) => {
   const a = event.data?.data();
   if (!a) return;

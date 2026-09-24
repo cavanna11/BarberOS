@@ -13,6 +13,7 @@ import { getDayName, generateId } from '../../utils/dateUtils';
 import { getPlan } from '../../config/plans';
 import FotoPerfil from '../../components/admin/FotoPerfil';
 import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import { estadoPushDelEquipo } from '../../lib/functions';
 import { errorDeHorario } from '../../utils/horarios';
 
 // Mismo número que la landing y el resto del panel.
@@ -58,6 +59,25 @@ export default function ProfessionalsPage() {
   }, [businessId]);
 
   const activeServices = services.filter(s => s.isActive);
+
+  // Quién tiene los avisos prendidos. Sale de una función: la lista de
+  // dispositivos no se puede leer desde el browser (un token de FCM sirve para
+  // mandarle mensajes a ese teléfono), así que el servidor devuelve solo la
+  // cuenta por perfil.
+  const [avisos, setAvisos] = useState({});
+  useEffect(() => {
+    if (!businessId) return;
+    let vigente = true;
+    estadoPushDelEquipo(businessId)
+      .then((r) => {
+        if (!vigente) return;
+        const mapa = {};
+        (r?.equipo || []).forEach((e) => { mapa[e.clave] = e; });
+        setAvisos(mapa);
+      })
+      .catch((err) => console.error('[Profesionales] No se pudo leer el estado de avisos:', err));
+    return () => { vigente = false; };
+  }, [businessId]);
 
   // ── Abrir modal NUEVO ──────────────────────────────────────────────────────
   const openAdd = () => {
@@ -219,6 +239,7 @@ export default function ProfessionalsPage() {
               <th className="oculta-mobile">Especialidad</th>
               <th>Servicios</th>
               <th className="oculta-mobile">Días</th>
+              <th className="oculta-mobile">Avisos</th>
               <th>Estado</th>
               <th>Acciones</th>
             </tr>
@@ -238,6 +259,11 @@ export default function ProfessionalsPage() {
                     </div>
                   </td>
                   <td className="oculta-mobile">{prof.specialty}</td>
+                  <td className="oculta-mobile">
+                    {avisos[prof.id]?.dispositivos
+                      ? <span className="badge badge-success" title="Recibe los avisos en el celular">🔔 Activados</span>
+                      : <span className="badge badge-neutral" title="No va a recibir avisos de turnos nuevos">— Sin activar</span>}
+                  </td>
                   <td>
                     <span className="text-sm text-secondary">
                       {srvNames.length > 0 ? `${srvNames.length} servicio${srvNames.length !== 1 ? 's' : ''}` : (
