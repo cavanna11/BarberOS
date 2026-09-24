@@ -189,6 +189,21 @@ curl -s -o /dev/null -w "%{http_code}\n" https://southamerica-east1-barberos-1d6
 El checklist post-Blaze está completo: el fallback de permisos de
 `AuthContext` se sacó en la auditoría de seguridad. Sin claims, sos cliente.
 
+### Equipo de la plataforma: moderadores y administradores
+
+`setPlatformModerator` toma `rol: 'moderator' | 'admin'` y sirve para nombrar,
+ascender y degradar (antes solo nombraba moderadores y para cambiar algo había
+que quitar el acceso y volver a empezar):
+
+- `moderator` → claim `platform: 'moderator'`. Mira y atiende soporte.
+- `admin`     → claim `platform: true`. Acceso total, igual que el fundador.
+
+Cambiar el rol corta las sesiones abiertas (`revokeRefreshTokens`): el rol vive
+en el token y si no tarda hasta una hora en tomar efecto. Los mails de
+`FUNDADORES` (functions/index.js) no se pueden degradar ni revocar desde el
+panel: sin eso, el primer administrador que nombres puede dejarte afuera y
+recuperarlo exige la clave de servicio.
+
 ### Moderadores
 
 Equipo de soporte con acceso al panel global. Un moderador **ve todo y atiende
@@ -778,7 +793,7 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 67, reservas 46, facturación 11, rules 109. Todo en verde.
+Hoy: claims 77, reservas 46, facturación 11, rules 109. Todo en verde.
 
 ---
 

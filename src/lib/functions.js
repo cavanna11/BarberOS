@@ -125,8 +125,8 @@ export function resetOwnerPassword({ email, password = null }) {
  * Devuelve 'applied' si la cuenta ya existía, 'pending' si nunca entró (se
  * aplica en su primer login), 'revoked' o 'not-found' al quitar.
  */
-export function setPlatformModerator({ email, enabled = true, name = '' }) {
-  return llamar('setPlatformModerator', { email, enabled, name });
+export function setPlatformModerator({ email, enabled = true, name = '', rol = 'moderator' }) {
+  return llamar('setPlatformModerator', { email, enabled, name, rol });
 }
 
 /**

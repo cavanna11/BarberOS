@@ -82,6 +82,7 @@ await borrarUsuario('elegida@hotmail.com');
 await borrarUsuario('corta@hotmail.com');
 await borrarUsuario('moderador@sacia.tech');
 await borrarUsuario('nunca-entro@sacia.tech');
+await borrarUsuario('jefe-nuevo@sacia.tech');
 await borrarUsuario('victima@gmail.com');
 await borrarUsuario('sinperfil@gmail.com');
 for (const d of (await db.collection('platform/team/members').get()).docs) await d.ref.delete();
@@ -257,8 +258,37 @@ chequear('NO se cambia a si misma', r.error === 'FAILED_PRECONDITION', JSON.stri
 r = await llamar('setPlatformModerator', tDuenoB1, { email: 'z@gmail.com' });
 chequear('un dueno de barberia NO nombra moderadores', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
 
+// Ascender y degradar: el rol del equipo se edita, no hay que borrar y volver
+// a crear. Es como se pasa un moderador a administrador de plataforma.
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'moderador@sacia.tech', rol: 'admin' });
+chequear('un moderador se asciende a administrador', r.ok?.status === 'applied', JSON.stringify(r));
+chequear('y le queda platform: true', (await auth.getUser(uidMod)).customClaims?.platform === true, JSON.stringify((await auth.getUser(uidMod)).customClaims));
+chequear('el registro del equipo dice admin', (await db.doc('platform/team/members/moderador@sacia.tech').get()).data()?.role === 'admin', 'no dice admin');
+
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'moderador@sacia.tech', rol: 'moderator' });
+chequear('y se puede volver a bajar a moderador', r.ok?.status === 'applied', JSON.stringify(r));
+chequear('vuelve a platform: moderator', (await auth.getUser(uidMod)).customClaims?.platform === 'moderator', JSON.stringify((await auth.getUser(uidMod)).customClaims));
+
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'moderador@sacia.tech', rol: 'jefe' });
+chequear('un rol inventado, rechazado', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+
+// La cuenta fundadora no se toca desde el panel: si un administrador nuevo la
+// pudiera degradar, te deja afuera de tu propia plataforma.
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'cavannaprogramacion@gmail.com', rol: 'moderator' });
+chequear('la cuenta fundadora NO se degrada', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'cavannaprogramacion@gmail.com', enabled: false });
+chequear('ni se le quita el acceso', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+
 r = await llamar('setPlatformModerator', tPlataforma, { email: 'nunca-entro@sacia.tech' });
 chequear('alguien que nunca entro queda pendiente', r.ok?.status === 'pending', JSON.stringify(r));
+
+// Un administrador de plataforma que nunca entró: el pendiente lo tiene que
+// aplicar como platform: true, no como moderador.
+r = await llamar('setPlatformModerator', tPlataforma, { email: 'jefe-nuevo@sacia.tech', rol: 'admin' });
+chequear('un administrador que nunca entro queda pendiente', r.ok?.status === 'pending', JSON.stringify(r));
+const uidJefe = await crearUsuario('jefe-nuevo@sacia.tech', null);
+r = await llamar('applyPendingClaims', await idToken(uidJefe), {});
+chequear('en su primer login le toma platform: true', r.ok?.status === 'applied' && r.ok?.platform === true, JSON.stringify(r));
 const uidNuevoMod = await crearUsuario('nunca-entro@sacia.tech', null);
 r = await llamar('applyPendingClaims', await idToken(uidNuevoMod), {});
 chequear('y en su primer login le toma el rol', r.ok?.status === 'applied' && r.ok?.platform === 'moderator', JSON.stringify(r));

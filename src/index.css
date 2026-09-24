@@ -3769,3 +3769,14 @@ select.form-input {
   .reserva-pendiente-acciones { width: 100%; }
   .reserva-pendiente-acciones .btn { flex: 1; }
 }
+
+/* Equipo de la plataforma: alta de moderador / administrador */
+.equipo-form {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+@media (max-width: 768px) {
+  .equipo-form { grid-template-columns: 1fr; }
+}

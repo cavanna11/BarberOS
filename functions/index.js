@@ -251,9 +251,11 @@ exports.applyPendingClaims = onCall(async (request) => {
   // El pendiente puede ser de dos formas: permiso de barbería (businessId +
   // role) o moderador de la plataforma (platform: 'moderator'). Se aplica el
   // que corresponda, nunca una mezcla.
-  const claims = datos.platform === 'moderator'
-    ? { platform: 'moderator' }
-    : { businessId: datos.businessId, role: datos.role, professionalId: datos.professionalId ?? null };
+  const claims = datos.platform === true
+    ? { platform: true }
+    : datos.platform === 'moderator'
+      ? { platform: 'moderator' }
+      : { businessId: datos.businessId, role: datos.role, professionalId: datos.professionalId ?? null };
 
   await getAuth().setCustomUserClaims(request.auth.uid, claims);
   await pendingRef.delete();
@@ -1149,6 +1151,12 @@ exports.deleteBusiness = onCall(async (request) => {
 // y "tiene todo salvo lo que se le sacó".
 
 /** Solo el dueño de la plataforma. Un moderador no puede nombrar moderadores. */
+// Cuentas fundadoras: nadie las puede degradar ni revocar desde el panel, ni
+// siquiera otro administrador de plataforma. Sin esto, la primera persona a la
+// que le das acceso total puede dejarte afuera de tu propia plataforma, y
+// volver a entrar exige la clave de servicio y un script a mano.
+const FUNDADORES = ['cavannaprogramacion@gmail.com'];
+
 function assertPlatformOwner(request) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
@@ -1166,10 +1174,17 @@ function assertPlatformOwner(request) {
 exports.setPlatformModerator = onCall(async (request) => {
   assertPlatformOwner(request);
 
-  const { email, enabled = true, name = '' } = request.data || {};
+  const { email, enabled = true, name = '', rol = 'moderator' } = request.data || {};
   if (!email) throw new HttpsError('invalid-argument', 'Falta el email.');
+  if (!['moderator', 'admin'].includes(rol)) {
+    throw new HttpsError('invalid-argument', 'El rol tiene que ser moderator o admin.');
+  }
 
   const normalizedEmail = String(email).trim().toLowerCase();
+  // `admin` es acceso total al panel global: altas, cobros, suspensiones,
+  // borrar barberías y nombrar a otros. `moderator` solo mira y atiende
+  // soporte. La diferencia vive en el claim: true vs 'moderator'.
+  const esAdmin = rol === 'admin';
 
   // Nadie se toca a sí mismo desde acá: sacarse el claim de dueño por error
   // dejaría el panel global sin nadie que pueda entrar.
@@ -1184,10 +1199,8 @@ exports.setPlatformModerator = onCall(async (request) => {
     if (err.code !== 'auth/user-not-found') throw err;
   }
 
-  // Un dueño de plataforma no se degrada a moderador por acá. Si algún día hay
-  // más de uno, se decide a mano.
-  if (user?.customClaims?.platform === true) {
-    throw new HttpsError('permission-denied', 'Esa cuenta ya es dueña de la plataforma.');
+  if (FUNDADORES.includes(normalizedEmail)) {
+    throw new HttpsError('permission-denied', 'Esa cuenta es fundadora de la plataforma: no se puede cambiar desde acá.');
   }
 
   const registro = db.doc(`platform/team/members/${normalizedEmail}`);
@@ -1207,15 +1220,15 @@ exports.setPlatformModerator = onCall(async (request) => {
   await registro.set({
     email: normalizedEmail,
     name,
-    role: 'moderator',
+    role: esAdmin ? 'admin' : 'moderator',
     addedAt: FieldValue.serverTimestamp(),
-  });
+  }, { merge: true });
 
   if (!user) {
     // Nunca entró: queda anotado y applyPendingClaims lo aplica en su primer
     // login. Se reutiliza el mismo mecanismo que los admins de barbería.
     await db.doc(`pendingAdmins/${normalizedEmail}`).set({
-      platform: 'moderator',
+      platform: esAdmin ? true : 'moderator',
       email: normalizedEmail,
       name,
       createdAt: FieldValue.serverTimestamp(),
@@ -1224,8 +1237,11 @@ exports.setPlatformModerator = onCall(async (request) => {
   }
 
   // Si administraba una barbería, esto lo reemplaza: una cuenta tiene UN rol.
-  await getAuth().setCustomUserClaims(user.uid, { platform: 'moderator' });
-  return { status: 'applied', uid: user.uid };
+  await getAuth().setCustomUserClaims(user.uid, { platform: esAdmin ? true : 'moderator' });
+  // El rol viaja en el token: sin cortar las sesiones, un ascenso (o una
+  // degradación) tarda hasta una hora en tomar efecto.
+  await getAuth().revokeRefreshTokens(user.uid);
+  return { status: 'applied', uid: user.uid, rol };
 });
 
 // ============================================================================
