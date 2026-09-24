@@ -821,6 +821,228 @@ async function enviarPush(bizId, datos) {
  * el envío puede fallar por un token muerto, por el permiso revocado en el
  * teléfono o porque nunca se activó, y desde afuera todo se ve igual.
  */
+// ============================================================================
+// Alta sola: el barbero se crea la cuenta de prueba sin esperar a nadie
+// ============================================================================
+// Hasta acá las cuentas las dábamos de alta nosotros, una por una. El que
+// entraba a curiosear un sábado a la noche se encontraba con "escribinos por
+// WhatsApp" y se perdía. Esto le deja la barbería andando en un minuto, con
+// DIAS_DE_PRUEBA días; después la corta la facturación sola, por el mismo
+// camino que cualquier cuenta impaga.
+//
+// Es la única puerta por la que alguien de afuera crea datos en la plataforma,
+// así que tiene cuatro cerrojos:
+//   1. sesión con mail verificado (Google lo verifica; el alta por contraseña
+//      la hacemos nosotros y nace verificada);
+//   2. una barbería por cuenta: si ya tiene claims, no pasa;
+//   3. el slug se toma en una transacción, con formato y lista de reservados;
+//   4. un tope de altas por día, para que un script no llene la base.
+
+const DIAS_DE_PRUEBA = 5;
+const ALTAS_POR_DIA = 40;
+const SLUGS_RESERVADOS = ['login', 'admin', 'super-admin', 'confirmacion', 'mis-citas', 'cuenta', 'crear-barberia'];
+
+const HORARIO_POR_DEFECTO = [
+  { dayOfWeek: 0, startTime: '09:00', endTime: '20:00', isActive: true },
+  { dayOfWeek: 1, startTime: '09:00', endTime: '20:00', isActive: true },
+  { dayOfWeek: 2, startTime: '09:00', endTime: '20:00', isActive: true },
+  { dayOfWeek: 3, startTime: '09:00', endTime: '20:00', isActive: true },
+  { dayOfWeek: 4, startTime: '09:00', endTime: '20:00', isActive: true },
+  { dayOfWeek: 5, startTime: '09:00', endTime: '18:00', isActive: true },
+  { dayOfWeek: 6, startTime: '', endTime: '', isActive: false },
+];
+
+// Con qué arranca la cuenta. Un panel vacío no se entiende: el dueño entra,
+// ve su propio perfil, tres servicios típicos y el link ya funcionando.
+const SERVICIOS_INICIALES = [
+  { name: 'Corte de cabello', price: 12000, durationMinutes: 30 },
+  { name: 'Corte + barba', price: 16000, durationMinutes: 45 },
+  { name: 'Barba', price: 7000, durationMinutes: 20 },
+];
+
+/**
+ * La fecha de dentro de N días, en Buenos Aires.
+ *
+ * Con `toISOString()` esto daba un día de más: después de las 21:00 en
+ * Argentina, en UTC ya es mañana. La cuenta prometía 5 días de prueba y el
+ * panel mostraba 6.
+ */
+function enDiasISO(dias) {
+  const [a, m, d] = hoyEnArgentina().split('-').map(Number);
+  // Mediodía UTC para que sumar días no cruce husos por un par de horas.
+  const base = new Date(Date.UTC(a, m - 1, d, 12));
+  base.setUTCDate(base.getUTCDate() + dias);
+  return base.toISOString().slice(0, 10);
+}
+
+function limpiar(texto, largo) {
+  return String(texto || '').trim().slice(0, largo);
+}
+
+exports.crearBarberiaDePrueba = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entrá con tu cuenta para crear la barbería.');
+  if (request.auth.token.email_verified !== true) {
+    throw new HttpsError('failed-precondition', 'Necesitamos un mail verificado. Entrá con Google.');
+  }
+
+  const claims = request.auth.token || {};
+  if (claims.businessId || claims.platform) {
+    throw new HttpsError('failed-precondition', 'Esta cuenta ya tiene un panel asignado.');
+  }
+  // Y de nuevo contra la fuente real: el token dura hasta una hora, así que el
+  // de ANTES del alta sigue diciendo "sin barbería". Con solo mirar el token,
+  // la misma cuenta se creaba una barbería atrás de otra (visto en el
+  // emulador). Los claims del usuario, en cambio, ya están escritos.
+  const cuenta = await getAuth().getUser(request.auth.uid);
+  const claimsReales = cuenta.customClaims || {};
+  if (claimsReales.businessId || claimsReales.platform) {
+    throw new HttpsError('failed-precondition', 'Esta cuenta ya tiene una barbería.');
+  }
+
+  const nombre = limpiar(request.data?.nombre, 60);
+  const slug = limpiar(request.data?.slug, 30).toLowerCase();
+  const telefono = limpiar(request.data?.telefono, 40);
+  const ciudad = limpiar(request.data?.ciudad, 60);
+  const nombreDueno = limpiar(request.data?.nombreDueno, 60);
+
+  if (nombre.length < 2) throw new HttpsError('invalid-argument', 'Poné el nombre de la barbería.');
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug) || slug.length < 3) {
+    throw new HttpsError('invalid-argument', 'El link solo puede tener letras, números y guiones (mínimo 3).');
+  }
+  if (SLUGS_RESERVADOS.includes(slug)) {
+    throw new HttpsError('already-exists', 'Ese link está reservado por el sistema. Probá con otro.');
+  }
+  const soloNumeros = telefono.replace(/\D/g, '');
+  if (soloNumeros.length < 8 || soloNumeros.length > 15) {
+    throw new HttpsError('invalid-argument', 'Poné un teléfono de contacto válido.');
+  }
+
+  // Tope diario de altas: si algo se desmadra, se frena solo y avisa, en vez de
+  // que nos enteremos por la factura de Firebase.
+  const desde = new Date(Date.now() - 24 * 3600 * 1000);
+  const ultimas = await db.collection('businesses')
+    .where('createdAt', '>=', desde)
+    .count().get()
+    .catch(() => null);
+  if (ultimas && ultimas.data().count >= ALTAS_POR_DIA) {
+    logger.error('tope diario de altas alcanzado', { intento: slug });
+    await notificarPlataforma({
+      type: 'alta_nueva',
+      title: 'Tope de altas alcanzado',
+      body: 'Se frenaron las altas automáticas por las últimas 24 h. Revisá si es real o alguien está probando.',
+      url: '/super-admin',
+    }).catch(() => {});
+    throw new HttpsError('resource-exhausted', 'Estamos recibiendo muchas altas juntas. Escribinos y te la activamos a mano.');
+  }
+
+  const email = String(request.auth.token.email || '').toLowerCase();
+  const businessRef = db.collection('businesses').doc();
+  const businessId = businessRef.id;
+  const finPrueba = enDiasISO(DIAS_DE_PRUEBA);
+  const plan = { id: 'basico', monthlyFee: 12000, whatsappQuota: 100, maxBarbers: 2 };
+
+  // El slug se toma en una transacción: dos personas eligiendo el mismo nombre
+  // al mismo tiempo no pueden quedarse las dos con el link.
+  const slugRef = db.doc(`slugs/${slug}`);
+  await db.runTransaction(async (tx) => {
+    const tomado = await tx.get(slugRef);
+    if (tomado.exists) {
+      throw new HttpsError('already-exists', 'Ese link ya está ocupado. Probá con otro.');
+    }
+    tx.set(slugRef, { businessId });
+    tx.set(businessRef, {
+      id: businessId,
+      name: nombre,
+      slug,
+      logoUrl: null,
+      primaryColor: '#E85D2A',
+      secondaryColor: '#1A1A1A',
+      accentColor: '#E85D2A',
+      phone: telefono,
+      email,
+      address: '',
+      city: ciudad,
+      country: 'Argentina',
+      currency: 'ARS',
+      timezone: 'America/Argentina/Buenos_Aires',
+      slotInterval: 30,
+      minCancelHours: 2,
+      onlineBookingEnabled: true,
+      welcomeMessage: '',
+      socialLinks: { instagram: '', whatsapp: telefono },
+      planId: plan.id,
+      whatsappQuota: plan.whatsappQuota,
+      maxBarbers: plan.maxBarbers,
+      isFrozen: false,
+      trialEndsAt: finPrueba,
+      // De dónde salió la cuenta: las que se dan de alta solas se miran
+      // distinto en el panel global.
+      origen: 'autoservicio',
+      businessHours: HORARIO_POR_DEFECTO.map((h) => ({ ...h })),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  // Facturación: el primer vencimiento es el día que termina la prueba, así
+  // runBilling la cobra (y la congela) sola al día siguiente.
+  const lote = db.batch();
+  lote.set(db.doc(`businesses/${businessId}/private/billing`), {
+    planId: plan.id,
+    monthlyFee: plan.monthlyFee,
+    debt: 0,
+    lastPaymentDate: null,
+    nextBillingDate: finPrueba,
+  });
+  lote.set(db.doc(`businesses/${businessId}/admins/${email}`), {
+    email,
+    name: nombreDueno || nombre,
+    role: 'owner',
+    businessId,
+    professionalId: null,
+    addedAt: FieldValue.serverTimestamp(),
+  });
+
+  // Para que el link público funcione desde el minuto uno: el dueño como
+  // profesional, con horario, y unos servicios para editar.
+  const profRef = db.collection(`businesses/${businessId}/professionals`).doc();
+  lote.set(profRef, {
+    id: profRef.id,
+    name: nombreDueno || nombre,
+    specialty: '',
+    bio: '',
+    avatarUrl: null,
+    displayOrder: 1,
+    isActive: true,
+  });
+  HORARIO_POR_DEFECTO.forEach((h) => {
+    const ref = db.collection(`businesses/${businessId}/schedules`).doc();
+    lote.set(ref, { id: ref.id, professionalId: profRef.id, ...h, breakStart: null, breakEnd: null });
+  });
+  SERVICIOS_INICIALES.forEach((s, i) => {
+    const ref = db.collection(`businesses/${businessId}/services`).doc();
+    lote.set(ref, { id: ref.id, ...s, description: '', isActive: true, displayOrder: i + 1 });
+    const psRef = db.collection(`businesses/${businessId}/professionalServices`).doc();
+    lote.set(psRef, { id: psRef.id, professionalId: profRef.id, serviceId: ref.id });
+  });
+  await lote.commit();
+
+  // El permiso de verdad: sin esto entra y no ve nada.
+  // Acá NO se cortan las sesiones a propósito: la persona está en la pantalla
+  // esperando, y revocarle el token la echaría justo al crear su cuenta. El
+  // front pide un token nuevo (refreshClaims) y entra derecho al panel.
+  await getAuth().setCustomUserClaims(request.auth.uid, { businessId, role: 'owner', professionalId: null });
+
+  logger.info('alta de prueba', { businessId, slug, email });
+  await notificarPlataforma({
+    type: 'alta_nueva',
+    title: 'Barbería nueva',
+    body: `${nombre} (${email}) se dio de alta sola. Prueba hasta el ${finPrueba}.`,
+    url: '/super-admin',
+  }).catch((err) => logger.warn('no se pudo avisar del alta', { error: err.message }));
+
+  return { businessId, slug, trialEndsAt: finPrueba, diasDePrueba: DIAS_DE_PRUEBA };
+});
+
 exports.probarPush = onCall(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
 

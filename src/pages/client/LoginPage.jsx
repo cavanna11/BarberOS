@@ -148,6 +148,12 @@ export default function LoginPage() {
                 ? '¿Trabajás en la barbería? Entrá con tu usuario'
                 : 'Soy del equipo: tengo usuario y contraseña'}
             </button>
+            {!vieneDeReserva && (
+              <p className="text-sm text-secondary" style={{ marginTop: 10 }}>
+                ¿Todavía no tenés cuenta? Entrá con Google y armás tu barbería en un
+                minuto, con 5 días de prueba.
+              </p>
+            )}
           </div>
         ) : (
           <form onSubmit={handlePassword} style={{ marginTop: 'var(--space-lg)' }}>

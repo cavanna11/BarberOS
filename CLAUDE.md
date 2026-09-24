@@ -15,18 +15,27 @@ desde un panel global de plataforma.
 
 **BarberOS es el producto. SACIA es el estudio que lo desarrolla.** No mezclar.
 
-### Modelo de venta: onboarding MANUAL
+### Modelo de venta: dos puertas (23/09/2026)
 
-No hay registro self-service **y es a propósito**. El cliente se contacta, se
-cierra la venta, y Santiago prepara la cuenta desde `/super-admin` →
-"Nueva barbería".
+1. **Alta sola, con 5 días de prueba.** Quien entra con Google y no tiene
+   barbería cae en `/cuenta` y se la crea solo: nombre, link, teléfono. La
+   cuenta nace andando (el dueño cargado como primer barbero, tres servicios y
+   horario), marcada `origen: 'autoservicio'`, y a los 5 días la corta la
+   facturación sola, por el mismo camino que cualquier cuenta impaga. Cada alta
+   le avisa a la plataforma (campanita + push).
+2. **Onboarding manual**, el de siempre: el cliente escribe por WhatsApp y la
+   cuenta se prepara desde `/super-admin` → "Nueva barbería", lista para
+   entregar. El CTA de la landing sigue yendo a WhatsApp.
 
-Consecuencias que ordenan el diseño:
+La primera existe porque el barbero que entra un sábado a la noche a curiosear
+no espera al lunes. La segunda, porque al que quiere que se la dejemos lista
+conviene acompañarlo.
 
-- No construir pantallas de "creá tu cuenta", checkout de suscripción ni
-  pricing con autoservicio.
-- El CTA de la landing va a **WhatsApp**, nunca a un registro.
-- El alta tiene que dejar la cuenta lista para entregar.
+El alta sola es la ÚNICA puerta por la que alguien de afuera crea datos, así
+que tiene cuatro cerrojos (ver `crearBarberiaDePrueba`): mail verificado, una
+barbería por cuenta —chequeada contra los claims reales, no contra el token,
+que se queda viejo una hora—, slug tomado en transacción con lista de
+reservados, y tope de altas por día.
 
 ---
 
@@ -245,13 +254,12 @@ qué proveedor entró la persona.
 
 ### Quien entra y no tiene barbería
 
-No hay registro self-service **y es a propósito**, pero antes eso dejaba un
-agujero: el barbero curioso que entraba a la landing, tocaba "Iniciar Sesión" y
-se logueaba con su Google volvía a la landing **sin ningún mensaje**. Quedaba
-pensando que había fallado, y era justo el lead más caliente.
+Antes volvía a la landing **sin ningún mensaje**: quedaba pensando que había
+fallado, y era justo el lead más caliente.
 
-Ahora cae en `/cuenta`, que le explica que las cuentas las activa la plataforma
-y le da el botón de WhatsApp.
+Ahora cae en `/cuenta`, que es el alta: se crea la barbería solo, con 5 días de
+prueba, y entra derecho al panel. Abajo queda el botón de WhatsApp para el que
+prefiere que se la dejemos lista.
 
 Ojo con el detalle que casi lo rompe: `Header` es compartido entre la landing y
 la página de cada barbería. Si el link a `/login` no lleva `state.from`, un
@@ -790,16 +798,18 @@ firebase emulators:start --only auth,firestore,functions
 node scripts/test-claims-emulador.mjs      # permisos y cuentas con contraseña
 node scripts/test-reservas-emulador.mjs    # validación de turnos
 node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
+node scripts/test-alta-emulador.mjs        # alta sola con 5 días de prueba
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 77, reservas 46, facturación 11, rules 109. Todo en verde.
+Hoy: claims 77, reservas 46, facturación 12, rules 109, alta 22. Todo en verde.
 
 ---
 
 ## Qué NO hacer
 
-- ❌ NO construir registro self-service ni checkout de suscripción
+- ❌ NO construir checkout de suscripción (el alta de prueba sí existe: ver
+  `crearBarberiaDePrueba`; el cobro sigue siendo a mano)
 - ❌ NO leer Firestore desde un componente: siempre por `repository.js`
 - ❌ NO abrir `onSnapshot` fuera de `BusinessSync`
 - ❌ NO tocar `availabilityEngine.js` ni `statsCalculator.js`

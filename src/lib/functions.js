@@ -125,6 +125,11 @@ export function resetOwnerPassword({ email, password = null }) {
  * Devuelve 'applied' si la cuenta ya existía, 'pending' si nunca entró (se
  * aplica en su primer login), 'revoked' o 'not-found' al quitar.
  */
+/** Alta sola: crea la barbería con días de prueba y deja al que llama de dueño. */
+export function crearBarberiaDePrueba(datos) {
+  return llamar('crearBarberiaDePrueba', datos);
+}
+
 /** Manda un push de prueba a los teléfonos de esta misma cuenta. */
 export function probarPush() {
   return llamar('probarPush', {});

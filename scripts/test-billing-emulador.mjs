@@ -105,5 +105,12 @@ b = await leerBilling('prueba-vencida');
 chequear('prueba vencida: se le cobró', b.debt === 12000, JSON.stringify(b));
 chequear('prueba vencida: quedó suspendida', (await leerNegocio('prueba-vencida')).isFrozen === true, '');
 
+// Que se corte sola no alcanza: la plataforma tiene que enterarse ese día,
+// que es cuando conviene escribirle al dueño.
+const avisos = await db.collection('platform/notifications/items').where('type', '==', 'cuenta_suspendida').get();
+chequear('prueba vencida: avisa a la plataforma',
+  avisos.docs.some((d) => d.data().businessId === 'prueba-vencida'),
+  JSON.stringify(avisos.docs.map((d) => d.data().businessId)));
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

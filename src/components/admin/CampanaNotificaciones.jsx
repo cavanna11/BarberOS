@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications, usePlatformNotifications } from '../../hooks/useTenantData';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { markNotificationRead, markPlatformNotificationRead, markNotificationsRead } from '../../lib/repository';
+import { probarPush } from '../../lib/functions';
 import { activarPush, estadoPush, ponerBadge } from '../../lib/push';
 import { Link } from 'react-router-dom';
 
@@ -116,6 +117,29 @@ export default function CampanaNotificaciones({ modo = 'negocio' }) {
     navigate(n.url || (plataforma ? '/super-admin?tab=soporte' : '/admin/citas'));
   };
 
+  // Probar el aviso desde la misma campana: es donde uno se pregunta "¿me
+  // estará llegando?". En el panel global es el único lugar donde se puede,
+  // porque "Instalar la app" vive dentro del panel de una barbería.
+  const [probando, setProbando] = useState(false);
+  const [resultadoPush, setResultadoPush] = useState('');
+  const probar = async () => {
+    setProbando(true);
+    setResultadoPush('');
+    try {
+      const r = await probarPush();
+      setResultadoPush(
+        !r.dispositivos ? 'Este dispositivo no tiene avisos activados. Activalos acá arriba.'
+          : r.enviados > 0 ? `Enviado a ${r.enviados === 1 ? 'tu teléfono' : `tus ${r.enviados} dispositivos`}. Tendría que llegarte en unos segundos.`
+            : 'No salió a ningún dispositivo: volvé a activar los avisos acá.'
+      );
+    } catch (err) {
+      console.error('[Campana] No se pudo probar el aviso:', err);
+      setResultadoPush('No se pudo probar: ' + (err.code || err.message));
+    } finally {
+      setProbando(false);
+    }
+  };
+
   const marcarTodas = () => {
     if (!uid || (!plataforma && !businessId)) return;
     const ids = noLeidas.map((n) => n.id);
@@ -157,15 +181,44 @@ export default function CampanaNotificaciones({ modo = 'negocio' }) {
               🔕 Activar avisos en este dispositivo
             </button>
           )}
+          {push === 'activo' && (
+            <div className="campana-permiso" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-outline btn-sm" onClick={probar} disabled={probando}>
+                {probando ? 'Enviando…' : '📨 Probar el aviso'}
+              </button>
+              {resultadoPush && <span className="text-sm">{resultadoPush}</span>}
+            </div>
+          )}
           {push === 'ios-sin-instalar' && (
-            <Link className="campana-permiso" to={plataforma ? '/admin/instalar' : '/admin/instalar'} onClick={() => setAbierta(false)} style={{ display: 'block', textDecoration: 'none' }}>
-              📲 Instalá la app en tu iPhone para recibir avisos →
-            </Link>
+            plataforma ? (
+              <div className="campana-permiso">
+                📲 En iPhone los avisos solo llegan con la app instalada: abrí este panel en Safari,
+                tocá Compartir → "Agregar a inicio", y activalos desde ahí.
+              </div>
+            ) : (
+              <Link className="campana-permiso" to="/admin/instalar" onClick={() => setAbierta(false)} style={{ display: 'block', textDecoration: 'none' }}>
+                📲 Instalá la app en tu iPhone para recibir avisos →
+              </Link>
+            )
           )}
           {(push === 'bloqueado' || push === 'sin-soporte' || push === 'sin-token' || push === 'rechazado') && (
-            <Link className="campana-permiso" to="/admin/instalar" onClick={() => setAbierta(false)} style={{ display: 'block', textDecoration: 'none' }}>
-              🔕 Los avisos no están activos en este dispositivo. Ver cómo →
-            </Link>
+            plataforma ? (
+              <div className="campana-permiso">
+                🔕 Los avisos no están activos en este dispositivo.
+                {push === 'bloqueado'
+                  ? ' Están bloqueados para este sitio: habilitalos en los permisos del navegador y volvé a entrar.'
+                  : ' Probá activarlos de nuevo desde el celular donde los querés recibir.'}
+                {(push === 'sin-token' || push === 'rechazado') && (
+                  <button className="btn btn-outline btn-sm" style={{ marginTop: 8, display: 'block' }} onClick={pedirPermiso}>
+                    Activar en este dispositivo
+                  </button>
+                )}
+              </div>
+            ) : (
+              <Link className="campana-permiso" to="/admin/instalar" onClick={() => setAbierta(false)} style={{ display: 'block', textDecoration: 'none' }}>
+                🔕 Los avisos no están activos en este dispositivo. Ver cómo →
+              </Link>
+            )
           )}
 
           {notificaciones.length === 0 ? (
