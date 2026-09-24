@@ -102,11 +102,15 @@ function assertTargetEnAlcance(caller, targetClaims, businessId) {
 exports.setBusinessAdmin = onCall(async (request) => {
   const { email, businessId, role, professionalId = null, name = '' } = request.data || {};
 
+  // Primero quién llama y después qué manda: al revés, alguien sin sesión
+  // podía distinguir "datos inválidos" de "no autorizado" y usar la función
+  // para tantear. No exponía nada real, pero el orden correcto es este.
+  const caller = assertCanManageAdmins(request, businessId);
+
   if (!email || !businessId || !['owner', 'admin'].includes(role)) {
     throw new HttpsError('invalid-argument', 'Faltan email, businessId o role válido.');
   }
 
-  const caller = assertCanManageAdmins(request, businessId);
   if (caller !== 'platform' && role !== 'admin') {
     throw new HttpsError('permission-denied', 'Solo la plataforma puede designar dueños.');
   }

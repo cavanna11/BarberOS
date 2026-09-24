@@ -133,6 +133,9 @@ await esperar('dueno NO se descongela (cambio real)',    editar(duenoA, `busines
 await esperar('plataforma SI lo descongela',             editar(plat,   `businesses/${A}`, { isFrozen: false }), 'permitido');
 await esperar('dueno NO se cambia el abono',              editar(duenoA, `businesses/${A}`, { monthlyFee: 1 }), 'denegado');
 await esperar('dueno NO se cambia el plan',               editar(duenoA, `businesses/${A}`, { planId: 'premium' }), 'denegado');
+// La marca de "se dio de alta solo" es para triage de la plataforma: si el
+// dueno la pudiera borrar, una cuenta de prueba pasaria por una vendida.
+await esperar('dueno NO borra la marca de alta sola',      editar(duenoA, `businesses/${A}`, { origen: 'manual' }), 'denegado');
 await esperar('dueno NO se cambia el slug',               editar(duenoA, `businesses/${A}`, { slug: 'otro' }), 'denegado');
 await esperar('dueno SI edita su marca',                  editar(duenoA, `businesses/${A}`, { name: 'Alfa Barberia' }), 'permitido');
 // runBilling lee trialEndsAt de este documento: si el dueno lo pudiera tocar,

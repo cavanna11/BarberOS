@@ -125,7 +125,7 @@ service cloud.firestore {
         isBusinessOwner(bizId) &&
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
-                   'trialEndsAt', 'createdAt', 'maxBarbers'])
+                   'trialEndsAt', 'createdAt', 'maxBarbers', 'origen'])
       );
 
       // Facturación: solo la plataforma. Ni el dueño la lee.
