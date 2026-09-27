@@ -29,7 +29,7 @@ const chequear = (t, c, d = '') => {
   else { mal++; console.log('  FALLA', t, '\n         ', d); }
 };
 
-async function escenario({ conSena }) {
+async function escenario({ conSena, modo = 'obligatoria' }) {
   for (const col of ['appointments', 'schedules', 'services', 'professionals', 'professionalServices']) {
     for (const d of (await db.collection(`businesses/${BID}/${col}`).get()).docs) await d.ref.delete();
   }
@@ -37,7 +37,7 @@ async function escenario({ conSena }) {
     name: 'Seña Test', slug: 'senatest', isFrozen: false,
     businessHours: [{ dayOfWeek: 1, startTime: '09:00', endTime: '20:00', isActive: true }],
     mpConectado: conSena,
-    sena: conSena ? { activa: true, monto: 3000 } : { activa: false, monto: 0 },
+    sena: conSena ? { activa: true, monto: 3000, modo } : { activa: false, monto: 0 },
   });
   await db.doc(`businesses/${BID}/professionals/${PROF}`).set({ id: PROF, name: 'Lucas', isActive: true });
   await db.doc(`businesses/${BID}/services/${SRV}`).set({ id: SRV, name: 'Corte', price: 12000, durationMinutes: 30, isActive: true });
@@ -84,6 +84,26 @@ chequear('y el turno queda cancelado, sin bloquear el horario',
   tras.length === 1 && tras[0].status === 'cancelada', JSON.stringify(tras.map((a) => a.status)));
 
 // ── El horario guardado mientras se paga ────────────────────────────────────
+// Hay clientes sin Mercado Pago, o sin plata en la cuenta. Si la barbería
+// deja elegir, el que quiere pagar en el local tiene que poder reservar igual.
+console.log('\nSeña OPCIONAL (la elige el cliente):');
+await escenario({ conSena: true, modo: 'opcional' });
+r = await reservar(await cliente('c5-s@gmail.com'), { startTime: '14:00', pagarSena: false });
+chequear('el que paga en el local reserva sin pasar por Mercado Pago',
+  r.ok?.status === 'created', JSON.stringify(r));
+const sinSena = (await db.collection(`businesses/${BID}/appointments`).get()).docs.map((d) => d.data());
+chequear('y su turno queda reservado de una, sin seña',
+  sinSena.length === 1 && sinSena[0].status === 'pendiente' && !sinSena[0].sena,
+  JSON.stringify(sinSena.map((a) => [a.status, a.sena])));
+r = await reservar(await cliente('c6-s@gmail.com'), { startTime: '15:00', pagarSena: true });
+chequear('y el que elige dejar seña va al pago', r.error === 'UNAVAILABLE', JSON.stringify(r));
+
+// Con la seña obligatoria no hay elección: mandar pagarSena:false no alcanza.
+await escenario({ conSena: true, modo: 'obligatoria' });
+r = await reservar(await cliente('c7-s@gmail.com'), { startTime: '16:00', pagarSena: false });
+chequear('con seña obligatoria, no se puede esquivar el pago',
+  r.error === 'UNAVAILABLE', JSON.stringify(r));
+
 console.log('\nEl horario que se le guarda al que está pagando:');
 await escenario({ conSena: true });
 const enEspera = db.collection(`businesses/${BID}/appointments`).doc();

@@ -3979,3 +3979,20 @@ select.form-input {
   .aviso-plataforma-acciones { width: 100%; }
   .aviso-plataforma-acciones .btn { flex: 1; }
 }
+
+/* Elegir cómo se paga el turno (seña o en el local) */
+.pago-opcion {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.pago-opcion:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-light, rgba(224, 61, 0, 0.06));
+}
+.pago-opcion input { margin-top: 3px; }

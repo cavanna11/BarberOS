@@ -624,7 +624,12 @@ exports.createAppointment = onCall(async (request) => {
   // Solo si el dueño conectó su Mercado Pago Y la activó con un monto. Si
   // conectó pero no la activó, se reserva como siempre.
   const sena = negocio.sena || {};
-  const pideSena = negocio.mpConectado === true && sena.activa === true && Number(sena.monto) > 0;
+  const cobraSena = negocio.mpConectado === true && sena.activa === true && Number(sena.monto) > 0;
+  // 'opcional' = el cliente elige entre dejar la seña o pagar todo en el local.
+  // Existe porque hay clientes sin Mercado Pago o sin plata en la cuenta, y una
+  // barbería no puede perder a esa persona por cómo prefiere pagar.
+  const senaOpcional = sena.modo === 'opcional';
+  const pideSena = cobraSena && (!senaOpcional || request.data?.pagarSena === true);
   const montoSena = pideSena ? Number(sena.monto) : 0;
 
   // ── Solapamiento, en transacción ──────────────────────────────────────────

@@ -402,11 +402,20 @@ export default function BookingPage() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [reservando, setReservando] = useState(false);
+  // Con seña opcional, el cliente elige cómo paga. Arranca con la seña marcada
+  // porque es lo que le conviene a la barbería, pero se puede cambiar.
+  const [pagarSena, setPagarSena] = useState(true);
 
   // Datos ya filtrados por el negocio del slug de la URL.
   const { professionals, services, professionalServices, schedules, appointments, business, slug, businessId } =
     useTenant();
   const { step, professionalId, serviceId, date, timeSlot, personalInfo } = booking;
+
+  // Seña: solo si el dueño conectó Mercado Pago y la activó con un monto.
+  const infoSena = business?.mpConectado === true && business?.sena?.activa === true && Number(business?.sena?.monto) > 0
+    ? { monto: Number(business.sena.monto), opcional: business.sena.modo === 'opcional' }
+    : null;
+  const senaOpcional = Boolean(infoSena?.opcional);
 
   // Motivos por los que este negocio no puede tomar turnos ahora mismo.
   // Se calcula acá pero se renderiza recién después de todos los hooks: cortar
@@ -596,6 +605,7 @@ export default function BookingPage() {
       // con la consola abierta lo saltea. El precio sale del servicio, no de
       // este formulario.
       const res = await createAppointment({
+        pagarSena: senaOpcional ? pagarSena : undefined,
         businessId,
         professionalId,
         serviceId,
@@ -726,6 +736,39 @@ export default function BookingPage() {
         </div>
       )}
 
+      {/* Cómo paga. Solo aparece si la barbería dejó elegir: si la seña es
+          obligatoria no hay nada que decidir, y si no cobra seña tampoco. */}
+      {step === 6 && infoSena && senaOpcional && (
+        <div className="card mb-md" style={{ textAlign: 'left' }}>
+          <strong>¿Cómo querés reservar?</strong>
+          <label className="pago-opcion">
+            <input type="radio" name="pago" checked={pagarSena} onChange={() => setPagarSena(true)} />
+            <span>
+              <strong>Dejo una seña de {formatPrice(infoSena.monto, business.currency)}</strong>
+              <div className="text-sm text-secondary">
+                La pagás ahora por Mercado Pago y se te descuenta del total. El turno queda asegurado.
+              </div>
+            </span>
+          </label>
+          <label className="pago-opcion">
+            <input type="radio" name="pago" checked={!pagarSena} onChange={() => setPagarSena(false)} />
+            <span>
+              <strong>Pago todo en la barbería</strong>
+              <div className="text-sm text-secondary">
+                Reservás sin pagar nada ahora. Si no vas, avisá con tiempo.
+              </div>
+            </span>
+          </label>
+        </div>
+      )}
+
+      {step === 6 && infoSena && !senaOpcional && (
+        <div className="notice notice-info" style={{ marginBottom: 'var(--space-md)' }}>
+          💳 Esta barbería pide una seña de <strong>{formatPrice(infoSena.monto, business.currency)}</strong> para
+          confirmar el turno. Se paga ahora por Mercado Pago y se descuenta del total.
+        </div>
+      )}
+
       {step === 6 && selectedProfessional && selectedService && (
         <BookingSummary
           professional={selectedProfessional}
@@ -750,7 +793,11 @@ export default function BookingPage() {
           </button>
         ) : step === 6 ? (
           <button className="btn btn-primary btn-lg" onClick={handleConfirm} disabled={reservando}>
-            {reservando ? 'Confirmando…' : '✅ Confirmar Reserva'}
+            {reservando
+              ? 'Confirmando…'
+              : infoSena && (!senaOpcional || pagarSena)
+                ? `💳 Pagar seña de ${formatPrice(infoSena.monto, business.currency)}`
+                : '✅ Confirmar Reserva'}
           </button>
         ) : null}
       </div>

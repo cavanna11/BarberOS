@@ -580,6 +580,34 @@ Ojo: la consulta ordena por `createdAt`, y **Firestore excluye los documentos
 que no tienen ese campo**. Un aviso sembrado a mano sin `createdAt` no aparece
 nunca y parece que el cartel está roto.
 
+### Seña por Mercado Pago (27/09/2026)
+
+Modelo OAuth: el dueño conecta SU cuenta y la plata va DIRECTO a él. La
+plataforma no la toca ni cobra comisión (`marketplace_fee` en 0). Esto no es
+técnico: define que el cobro figura bajo el CUIT del barbero y que las
+retenciones se las hacen a él. Si algún día se cobra comisión, esa comisión sí
+es ingreso de la plataforma.
+
+- Config: `businesses/{id}.sena = { activa, monto, modo }`, con `modo`
+  `'opcional'` (el cliente elige seña o pagar en el local) u `'obligatoria'`.
+  Opcional es lo recomendado: hay clientes sin Mercado Pago.
+- Los tokens van en `businesses/{id}/private/mercadopago`, con las Rules en
+  **false**: no los lee nadie desde el browser, ni el dueño. Solo el Admin SDK.
+- El turno con seña nace `esperando_pago` + `senaExpiraEn` (15 min). `reservaViva()`
+  decide si ocupa el horario; vencido, se libera solo (lo respetan el
+  solapamiento y `getBusySlots`).
+- Confirma el WEBHOOK, nunca la vuelta del navegador: esa URL se escribe a mano.
+- Devolución: botón en Citas (`devolverSena`). No es automática — la plata sale
+  de la cuenta del barbero.
+- La plataforma puede configurar el cobro de cualquier barbería pasando el
+  businessId, con un aviso grande: **en OAuth la plata va a la cuenta de quien
+  autoriza**, así que si conecta la plataforma, los cobros caen en su cuenta.
+
+Trampa cara: `mercadopago.js` se carga ANTES que `setGlobalOptions`, así que sus
+funciones se despliegan en `us-central1` salvo que lleven `region` explícita —
+y el rewrite de `vercel.json` (`/api/mp/callback` y `/api/mp/webhook`) apunta a
+`southamerica-east1`. Sin eso, Mercado Pago vuelve a un 404.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
@@ -827,10 +855,13 @@ node scripts/test-claims-emulador.mjs      # permisos y cuentas con contraseña
 node scripts/test-reservas-emulador.mjs    # validación de turnos
 node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/test-alta-emulador.mjs        # alta sola con 5 días de prueba
+node scripts/test-mercadopago-emulador.mjs # conexión de la cuenta y sus tokens
+node scripts/test-sena-emulador.mjs        # seña: horario guardado y vencimiento
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 77, reservas 46, facturación 12, rules 110, alta 22. Todo en verde.
+Hoy: claims 77, reservas 46, facturación 12, rules 110, alta 22, mercadopago 16,
+seña 11. Todo en verde (294).
 
 ---
 

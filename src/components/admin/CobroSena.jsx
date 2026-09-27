@@ -120,6 +120,26 @@ export default function CobroSena({ business, form, editar }) {
 
           {sena.activa && (
             <div className="form-group">
+              <label className="form-label">¿Es obligatoria?</label>
+              <select
+                className="form-input"
+                style={{ maxWidth: 320 }}
+                value={sena.modo === 'obligatoria' ? 'obligatoria' : 'opcional'}
+                onChange={(e) => editar({ sena: { ...sena, activa: true, modo: e.target.value } })}
+              >
+                <option value="opcional">El cliente elige: seña o pagar todo en el local</option>
+                <option value="obligatoria">Obligatoria: sin seña no hay turno</option>
+              </select>
+              <p className="text-sm text-muted" style={{ marginTop: 6 }}>
+                {sena.modo === 'obligatoria'
+                  ? 'Cuidado: el que no tiene Mercado Pago o no tiene plata en la cuenta no va a poder reservar online. Te asegura el turno, pero perdés a esa gente.'
+                  : 'El cliente ve las dos opciones y elige. La mayoría de las barberías arranca así.'}
+              </p>
+            </div>
+          )}
+
+          {sena.activa && (
+            <div className="form-group">
               <label className="form-label">¿Cuánto? <span className="required">*</span></label>
               <input
                 className="form-input"
