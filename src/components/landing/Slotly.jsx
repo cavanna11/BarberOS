@@ -9,9 +9,15 @@ import { useEffect, useState } from 'react';
 // un psicólogo, un estudio. A esa gente no le sirve BarberOS y hoy se iba sin
 // nada.
 //
-// Slotly (lo hace el socio, sobre este mismo código) es para ellos. Así que en
-// vez de perder la visita, se la pasa. Se muestra con SUS colores a propósito:
-// tiene que leerse como otra marca, no como una sección de BarberOS.
+// Slotly, del mismo equipo, es el turnero que se adapta a cada rubro. Así que
+// en vez de perder la visita, se la pasa. Se muestra con SUS colores a
+// propósito: tiene que leerse como otra marca, no como una sección de BarberOS.
+//
+// Ojo con cómo se lo nombra: NO es "el mismo sistema" ni "esto mismo con otro
+// nombre". Se vende como un producto propio, del mismo equipo, que se adapta
+// al rubro de cada uno. Decir que es lo mismo lo abarata y confunde: el que
+// llega tiene que sentir que hay algo hecho para él, no una barbería
+// disfrazada.
 
 export const SLOTLY_URL = 'https://slotly-turnos.vercel.app/';
 
@@ -39,8 +45,7 @@ export function BarraSlotly() {
   return (
     <div className="slotly-barra">
       <span>
-        ¿No tenés una barbería? <strong>Slotly</strong> es el mismo turnero para
-        cualquier otro rubro.
+        ¿No tenés una barbería? <strong>Slotly</strong> adapta el turnero a tu rubro.
       </span>
       <a className="slotly-barra-link" href={LINK} target="_blank" rel="noreferrer">
         Conocer Slotly →
@@ -73,9 +78,9 @@ export function SeccionSlotly() {
         </h2>
         <p className="slotly-texto">
           BarberOS está hecho para barberías y así se queda: por eso habla de
-          barberos, de cortes y de sillas. Si tenés un centro de estética, un
-          consultorio, un estudio o cualquier negocio que trabaja con turnos,
-          Slotly es exactamente esto mismo, escrito para vos.
+          barberos, de cortes y de sillas. <strong>Slotly</strong> es el sistema de
+          turnos del mismo equipo, adaptado a cada rubro: tus servicios, tus
+          tiempos y tu manera de trabajar.
         </p>
 
         <ul className="slotly-rubros">
@@ -91,7 +96,8 @@ export function SeccionSlotly() {
           Ver Slotly →
         </a>
         <p className="slotly-pie">
-          Lo hace el mismo equipo. Si no sabés cuál te sirve, escribinos y te lo decimos.
+          Mismo equipo, misma forma de trabajar. Si no sabés cuál te sirve, escribinos
+          y te lo decimos.
         </p>
       </div>
     </section>
@@ -121,8 +127,8 @@ export function FlotanteSlotly({ segundos = 25 }) {
       <button className="slotly-flotante-cerrar" onClick={cerrar} aria-label="Cerrar">✕</button>
       <strong className="slotly-marca">Slotly</strong>
       <p>
-        ¿Buscabas un turnero pero lo tuyo no es una barbería? Este es el mismo
-        sistema, para cualquier rubro.
+        ¿Buscabas un turnero pero lo tuyo no es una barbería? Slotly lo adapta a tu
+        rubro. Lo hace el mismo equipo.
       </p>
       <a className="slotly-boton slotly-boton-sm" href={LINK} target="_blank" rel="noreferrer" onClick={cerrar}>
         Conocer Slotly →
