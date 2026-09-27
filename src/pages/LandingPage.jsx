@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { SeccionSlotly, FlotanteSlotly } from '../components/landing/Slotly';
 import { PLANS, FEATURES_COMUNES, OVERAGE_COST_USD } from '../config/plans';
 import HeroMotionMockup from '../components/landing/HeroMotionMockup';
 import FloatingActionWidget from '../components/landing/FloatingActionWidget';
@@ -220,6 +221,11 @@ export default function LandingPage() {
       </section>
 
       {/* ── CÓMO EMPIEZA ─────────────────────────────────────────────────── */}
+      {/* ── OTRO RUBRO → SLOTLY ──────────────────────────────────────────── */}
+      {/* Va en el medio: el que no es barbero ya entendió qué hace el sistema
+          y está justo por darse cuenta de que no es para él. */}
+      <SeccionSlotly />
+
       <section className="landing-section" id="como-arranca">
         <span className="eyebrow">• Cómo arranca</span>
         <h2 className="landing-h2">No tenés que configurar nada</h2>
@@ -335,6 +341,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── CIERRE ───────────────────────────────────────────────────────── */}
+      <FlotanteSlotly />
+
       <section className="landing-final">
         <h2 className="landing-h2">¿Cuántos turnos perdiste este mes?</h2>
         <p className="landing-lead" style={{ margin: '0 auto var(--space-lg)' }}>

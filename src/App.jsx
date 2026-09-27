@@ -6,6 +6,7 @@ import BusinessSync from './contexts/BusinessSync';
 import { isPlatformOwner } from './config/platform';
 import Header from './components/layout/Header';
 import Footer from './components/layout/Footer';
+import { BarraSlotly } from './components/landing/Slotly';
 import AdminLayout from './components/layout/AdminLayout';
 import SuperAdminLayout from './components/layout/SuperAdminLayout';
 
@@ -151,8 +152,13 @@ function EntryRoute() {
 }
 
 function ClientLayout({ children }) {
+  const { pathname } = useLocation();
+  // Solo en la portada: dentro del link de una barbería, mandar al cliente a
+  // otro turnero no tiene sentido, y en el login menos.
+  const esPortada = pathname === '/';
   return (
     <>
+      {esPortada && <BarraSlotly />}
       <Header />
       {children}
       <Footer />
