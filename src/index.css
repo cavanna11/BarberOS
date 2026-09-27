@@ -3959,3 +3959,23 @@ select.form-input {
 .slotly-flotante .slotly-boton { background: #28706f; color: #fff; }
 .slotly-flotante .slotly-boton:hover { background: #1f5a59; color: #fff; }
 .slotly-flotante .slotly-marca { color: #28706f; }
+
+/* Aviso de la plataforma para todas las barberías */
+.aviso-plataforma {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+}
+.aviso-plataforma-texto { flex: 1; min-width: 220px; }
+.aviso-plataforma-acciones {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .aviso-plataforma-acciones { width: 100%; }
+  .aviso-plataforma-acciones .btn { flex: 1; }
+}

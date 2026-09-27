@@ -401,6 +401,31 @@ export async function markNotificationsRead(ids, uid, { businessId = null } = {}
   await batch.commit();
 }
 
+// ── Avisos de la plataforma para todas las barberías ────────────────────────
+// Lo que antes se mandaba por WhatsApp uno por uno ("actualicé esto, volvé a
+// activar los avisos"). Lo escribe la plataforma y lo ve todo el staff.
+
+const avisosCol = () => collection(db, 'platform', 'avisos', 'items');
+
+export function subscribeAvisos(cb, onError) {
+  const q = query(avisosCol(), orderBy('createdAt', 'desc'), limit(10));
+  return escuchar(q, rows, cb, onError);
+}
+
+export async function publicarAviso(datos) {
+  const ref = doc(avisosCol());
+  await setDoc(ref, { ...datos, id: ref.id, activo: true, createdAt: serverTimestamp() });
+  return ref.id;
+}
+
+export async function actualizarAviso(id, cambios) {
+  await updateDoc(doc(db, 'platform', 'avisos', 'items', id), cambios);
+}
+
+export async function borrarAviso(id) {
+  await deleteDoc(doc(db, 'platform', 'avisos', 'items', id));
+}
+
 // ── Dispositivos con push ───────────────────────────────────────────────────
 // Un documento por token de FCM: /businesses/{id}/devices/{token}. El trigger
 // de Functions les manda el push (al dueño todo; al barbero, lo suyo).

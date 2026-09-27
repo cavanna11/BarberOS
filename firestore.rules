@@ -378,6 +378,16 @@ service cloud.firestore {
 
     // Notificaciones del panel global (tickets, suspensiones). Las escribe un
     // trigger; el equipo de la plataforma las lee y marca leídas.
+    // ── Avisos de la plataforma para TODAS las barberías ───────────────────
+    // "Actualizamos esto, tenés que hacer aquello". Los escribe solo la
+    // plataforma; los lee cualquiera del staff, de cualquier negocio, porque
+    // el mensaje es el mismo para todos. No hay nada sensible acá: es lo que
+    // hasta ahora se mandaba por WhatsApp uno por uno.
+    match /platform/avisos/items/{avisoId} {
+      allow read: if signedIn();
+      allow write: if isPlatform();
+    }
+
     match /platform/notifications/items/{notifId} {
       allow read: if esEquipoPlataforma();
       allow update: if esEquipoPlataforma()

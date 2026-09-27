@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { refrescarPush, desactivarPush, esAppInstalada, esIOS, esAndroid, escucharEnPrimerPlano } from '../../lib/push';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
+import AvisoPlataforma from '../admin/AvisoPlataforma';
 
 // Items visibles solo para el dueño (owner)
 const ownerNavItems = [
@@ -308,7 +309,10 @@ export default function AdminLayout() {
           </div>
         )}
 
+        {/* Novedades de la plataforma para todas las barberías. Va adentro del
+            contenido para que no empuje la barra ni el aviso de vínculo roto. */}
         <div className="admin-content">
+          <AvisoPlataforma />
           {business ? (
             <Outlet />
           ) : (

@@ -552,6 +552,34 @@ global los liste con una query simple, sin `collectionGroup` ni su índice.
 
 ---
 
+### Push: tres fallas encadenadas (26/09/2026)
+
+1. `webpush.fcm_options.link` llevaba ruta relativa y FCM exige HTTPS ahí: el
+   mensaje entero se rechaza.
+2. Se borraba el token con `invalid-argument`, que significa "el MENSAJE está
+   mal", no "el teléfono no existe". Con (1), cada envío le borraba el registro
+   a todo el equipo. Ahora solo borra `registration-token-not-registered` y
+   toda falla queda logueada con su código.
+3. Con la app ABIERTA no se mostraba nada: si hay una ventana visible, Firebase
+   no dibuja el aviso, se lo pasa a la página — y nadie usaba `onMessage`. Era
+   el caso más común. Ahora los dos layouts escuchan en primer plano.
+
+Además el mensaje viaja con `notification` (no solo `data`) para que lo dibuje
+el navegador aunque el service worker no corra, el SW tiene respaldo por si
+falla `importScripts`, y la campanita usa `showNotification` del SW porque en
+iPhone `new Notification` no existe. Todo con el mismo `tag` para no duplicar.
+
+### Avisos a todas las barberías (26/09/2026)
+
+`/super-admin` → **Avisos** publica un cartel que ve todo el staff arriba de su
+panel, con botón opcional. Reemplaza el "le escribo por WhatsApp a cada uno".
+Vive en `platform/avisos/items` (escribe la plataforma, lee cualquiera con
+sesión) y cada uno lo cierra por dispositivo (localStorage).
+
+Ojo: la consulta ordena por `createdAt`, y **Firestore excluye los documentos
+que no tienen ese campo**. Un aviso sembrado a mano sin `createdAt` no aparece
+nunca y parece que el cartel está roto.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
@@ -802,7 +830,7 @@ node scripts/test-alta-emulador.mjs        # alta sola con 5 días de prueba
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 77, reservas 46, facturación 12, rules 109, alta 22. Todo en verde.
+Hoy: claims 77, reservas 46, facturación 12, rules 110, alta 22. Todo en verde.
 
 ---
 
