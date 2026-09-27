@@ -769,6 +769,61 @@ async function notificar(bizId, datos) {
  * Los tokens que FCM da por muertos (app desinstalada, permiso revocado) se
  * borran acá mismo; si no, la lista crece para siempre.
  */
+/**
+ * Arma el mensaje de push.
+ *
+ * Lleva `notification` ADEMÁS de `data`, y ese es el punto: con un mensaje de
+ * solo datos, el aviso lo tiene que dibujar nuestro service worker, y si por lo
+ * que sea no corre —falló el importScripts, el navegador no lo despertó— el
+ * push llega y no se ve nada. Con `notification`, lo muestra el navegador solo.
+ * Nuestro código pasa a ser el respaldo y no el único camino.
+ *
+ * `data` se mantiene porque de ahí salen el link y el id para no duplicar.
+ */
+/**
+ * ¿El token está muerto de verdad?
+ *
+ * Antes también se borraba con `invalid-argument`, y ese código lo devuelve
+ * FCM cuando el MENSAJE está mal armado, no el teléfono. Con un mensaje
+ * inválido, un solo envío le borraba el registro a todo el equipo y nadie
+ * volvía a recibir nada hasta activarlo de nuevo a mano.
+ */
+function tokenMuerto(code) {
+  return String(code).includes('registration-token-not-registered')
+      || String(code).includes('invalid-registration-token');
+}
+
+// FCM exige HTTPS en `webpush.fcm_options.link`. Le veníamos mandando una ruta
+// relativa ('/admin/citas'), que es motivo de rechazo del mensaje entero.
+const SITIO = process.env.SITIO_URL || 'https://barberos.sacia.tech';
+
+function mensajePush(datos, urlPorDefecto) {
+  const ruta = String(datos.url || urlPorDefecto);
+  const url = ruta.startsWith('http') ? ruta : SITIO + (ruta.startsWith('/') ? ruta : `/${ruta}`);
+  const title = String(datos.title || 'BarberOS');
+  const body = String(datos.body || '');
+  const notificationId = String(datos.notificationId || '');
+  return {
+    data: { title, body, type: String(datos.type || ''), notificationId, url },
+    notification: { title, body },
+    webpush: {
+      headers: { Urgency: 'high', TTL: '86400' },
+      // `tag` con el id del aviso: si el mismo llega dos veces (el navegador y
+      // nuestro handler), la segunda reemplaza a la primera en vez de sumar.
+      notification: {
+        title,
+        body,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/badge-72.png',
+        tag: notificationId || undefined,
+        vibrate: [120, 60, 120],
+        data: { url },
+      },
+      fcmOptions: { link: url },
+    },
+  };
+}
+
 async function enviarPush(bizId, datos) {
   const snap = await db.collection(`businesses/${bizId}/devices`).get();
   if (snap.empty) return;
@@ -781,20 +836,7 @@ async function enviarPush(bizId, datos) {
   if (!destinatarios.length) return;
 
   const tokens = destinatarios.map((d) => d.id);
-  const mensaje = {
-    tokens,
-    data: {
-      title: String(datos.title || 'BarberOS'),
-      body: String(datos.body || ''),
-      type: String(datos.type || ''),
-      notificationId: String(datos.notificationId || ''),
-      url: '/admin/citas',
-    },
-    webpush: {
-      headers: { Urgency: 'high', TTL: '86400' },
-      fcmOptions: { link: '/admin/citas' },
-    },
-  };
+  const mensaje = { tokens, ...mensajePush(datos, '/admin/citas') };
 
   let res;
   try {
@@ -805,15 +847,16 @@ async function enviarPush(bizId, datos) {
   }
 
   const muertos = [];
+  const fallas = [];
   res.responses.forEach((r, i) => {
     if (r.success) return;
-    const code = r.error?.code || '';
-    if (code.includes('registration-token-not-registered') || code.includes('invalid-argument')) {
-      muertos.push(tokens[i]);
-    } else {
-      console.warn('[push] Falló un envío:', code);
-    }
+    const code = r.error?.code || 'desconocido';
+    fallas.push(code);
+    if (tokenMuerto(code)) muertos.push(tokens[i]);
   });
+  if (fallas.length) {
+    logger.warn('push con fallas', { bizId, enviados: res.successCount, fallidos: res.failureCount, codigos: fallas, borrados: muertos.length });
+  }
   await Promise.all(muertos.map((t) => db.doc(`businesses/${bizId}/devices/${t}`).delete().catch(() => {})));
 }
 
@@ -1074,14 +1117,13 @@ exports.probarPush = onCall(async (request) => {
   try {
     res = await getMessaging().sendEachForMulticast({
       tokens,
-      data: {
+      ...mensajePush({
         title: 'Prueba de BarberOS',
         body: 'Si ves este aviso, las notificaciones te están llegando bien.',
         type: 'prueba',
-        notificationId: '',
+        notificationId: `prueba-${Date.now()}`,
         url,
-      },
-      webpush: { headers: { Urgency: 'high', TTL: '3600' }, fcmOptions: { link: url } },
+      }, url),
     });
   } catch (err) {
     logger.error('prueba de push fallida', { uid, error: err.message });
@@ -1096,9 +1138,7 @@ exports.probarPush = onCall(async (request) => {
     if (r.success) return;
     const code = r.error?.code || 'desconocido';
     errores.push(code);
-    if (code.includes('registration-token-not-registered') || code.includes('invalid-argument')) {
-      muertos.push(tokens[i]);
-    }
+    if (tokenMuerto(code)) muertos.push(tokens[i]);
   });
   await Promise.all(muertos.map((t) => col.doc(t).delete().catch(() => {})));
 
@@ -1210,25 +1250,23 @@ async function enviarPushPlataforma(datos) {
   try {
     res = await getMessaging().sendEachForMulticast({
       tokens,
-      data: {
-        title: String(datos.title || 'BarberOS'),
-        body: String(datos.body || ''),
-        type: String(datos.type || ''),
-        notificationId: String(datos.notificationId || ''),
-        url: String(datos.url || '/super-admin'),
-      },
-      webpush: { headers: { Urgency: 'high', TTL: '86400' }, fcmOptions: { link: String(datos.url || '/super-admin') } },
+      ...mensajePush(datos, '/super-admin'),
     });
   } catch (err) {
     console.error('[push plataforma] No se pudo enviar:', err.message);
     return;
   }
   const muertos = [];
+  const fallas = [];
   res.responses.forEach((r, i) => {
     if (r.success) return;
-    const code = r.error?.code || '';
-    if (code.includes('registration-token-not-registered') || code.includes('invalid-argument')) muertos.push(tokens[i]);
+    const code = r.error?.code || 'desconocido';
+    fallas.push(code);
+    if (tokenMuerto(code)) muertos.push(tokens[i]);
   });
+  if (fallas.length) {
+    logger.warn('push de plataforma con fallas', { enviados: res.successCount, fallidos: res.failureCount, codigos: fallas, borrados: muertos.length });
+  }
   await Promise.all(muertos.map((t) => db.doc(`platformDevices/${t}`).delete().catch(() => {})));
 }
 

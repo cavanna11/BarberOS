@@ -81,9 +81,18 @@ export default function CampanaNotificaciones({ modo = 'negocio' }) {
     nuevas.forEach((n) => vistas.current.add(n.id));
     if (!nuevas.length) return;
     if (permiso !== 'granted') return;
-    try {
-      nuevas.slice(0, 3).forEach((n) => new Notification(n.title, { body: n.body, tag: n.id }));
-    } catch { /* algunos navegadores móviles no dejan crear Notification desde la página */ }
+    // Por el service worker y no con `new Notification`: en iPhone lo segundo
+    // no existe ni con la app instalada. El `tag` es el id del aviso, el mismo
+    // que usa el push, así que si llegan por los dos caminos se ve uno solo.
+    navigator.serviceWorker?.ready
+      .then((reg) => nuevas.slice(0, 3).forEach((n) => {
+        reg.showNotification(n.title, { body: n.body, tag: n.id, icon: '/icons/icon-192.png', badge: '/icons/badge-72.png' }).catch(() => {});
+      }))
+      .catch(() => {
+        try {
+          nuevas.slice(0, 3).forEach((n) => new Notification(n.title, { body: n.body, tag: n.id }));
+        } catch { /* sin service worker y sin Notification: queda la campanita */ }
+      });
   }, [notificaciones, permiso]);
 
   // Activa el push de verdad (service worker + token), no solo el permiso del

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import CampanaNotificaciones from '../admin/CampanaNotificaciones';
-import { refrescarPush, desactivarPush } from '../../lib/push';
+import { refrescarPush, desactivarPush, escucharEnPrimerPlano } from '../../lib/push';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -26,6 +26,14 @@ export default function SuperAdminLayout() {
     if (!user?.id) return;
     refrescarPush({ plataforma: true, uid: user.id, role: 'platform' });
   }, [user?.id]);
+
+  // Con el panel abierto, el aviso lo tiene que dibujar la página: Firebase no
+  // muestra nada si hay una ventana visible.
+  useEffect(() => {
+    let cortar = () => {};
+    escucharEnPrimerPlano().then((f) => { cortar = f; });
+    return () => cortar();
+  }, []);
   const navigate = useNavigate();
 
   const handleLogout = async () => {

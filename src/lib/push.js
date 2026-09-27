@@ -153,3 +153,39 @@ export function ponerBadge(n) {
   if (!('setAppBadge' in navigator)) return;
   (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
+
+/**
+ * Avisos con la app ABIERTA.
+ *
+ * Este era el agujero grande: Firebase, cuando el push llega y hay una ventana
+ * de la app visible, NO muestra nada — se lo pasa a la página y espera que la
+ * página haga algo. Nadie estaba escuchando, así que al dueño con el celular en
+ * la mano no le sonaba nada. Justo el caso más común.
+ *
+ * Se dibuja con el service worker (`showNotification`) y no con `new
+ * Notification`, porque en iPhone lo segundo no existe ni con la app instalada.
+ *
+ * Devuelve la función para dejar de escuchar.
+ */
+export async function escucharEnPrimerPlano() {
+  if (estadoPush().estado !== 'activo') return () => {};
+  try {
+    const { getMessaging, onMessage } = await import('firebase/messaging');
+    const reg = await navigator.serviceWorker.ready;
+    return onMessage(getMessaging(app), (payload) => {
+      const d = payload.data || {};
+      reg.showNotification(d.title || 'BarberOS', {
+        body: d.body || '',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/badge-72.png',
+        // El mismo tag que usa el service worker y que usa la campanita: si el
+        // aviso llega por dos caminos, se ve una sola vez.
+        tag: d.notificationId || undefined,
+        data: { url: d.url || '/admin/citas' },
+      }).catch(() => { /* permiso revocado en el medio */ });
+    });
+  } catch (err) {
+    console.warn('[push] No se pudo escuchar en primer plano:', err);
+    return () => {};
+  }
+}

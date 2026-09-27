@@ -3,7 +3,7 @@ import CampanaNotificaciones from '../admin/CampanaNotificaciones';
 import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
-import { refrescarPush, desactivarPush, esAppInstalada, esIOS, esAndroid } from '../../lib/push';
+import { refrescarPush, desactivarPush, esAppInstalada, esIOS, esAndroid, escucharEnPrimerPlano } from '../../lib/push';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 
 // Items visibles solo para el dueño (owner)
@@ -114,6 +114,15 @@ export default function AdminLayout() {
       role: user.role === 'owner' ? 'owner' : 'admin',
     });
   }, [businessId, user?.id, user?.professionalId, user?.role]);
+
+  // Con la app abierta, Firebase no dibuja nada: le pasa el aviso a la página y
+  // espera que la página lo muestre. Nadie escuchaba, así que al dueño con el
+  // celular en la mano no le sonaba nada. Esto lo escucha.
+  useEffect(() => {
+    let cortar = () => {};
+    escucharEnPrimerPlano().then((f) => { cortar = f; });
+    return () => cortar();
+  }, []);
 
   // Invitación a instalar, solo en el celular y solo si no está instalada.
   const [avisoInstalarOculto, setAvisoInstalarOculto] = useState(() => {
