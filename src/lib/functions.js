@@ -130,17 +130,17 @@ export function resetOwnerPassword({ email, password = null }) {
 // la plata. Ver functions/mercadopago.js.
 
 /** Devuelve la URL de Mercado Pago a la que hay que mandar al dueño. */
-export function urlConectarMercadoPago() {
-  return llamar('urlConectarMercadoPago', {});
+export function urlConectarMercadoPago(businessId) {
+  return llamar('urlConectarMercadoPago', { businessId });
 }
 
 /** Devuelve la seña de un turno. La plata sale de la cuenta del barbero. */
-export function devolverSena(appointmentId) {
-  return llamar('devolverSena', { appointmentId });
+export function devolverSena(appointmentId, businessId) {
+  return llamar('devolverSena', { appointmentId, businessId });
 }
 
-export function desconectarMercadoPago() {
-  return llamar('desconectarMercadoPago', {});
+export function desconectarMercadoPago(businessId) {
+  return llamar('desconectarMercadoPago', { businessId });
 }
 
 /** Alta sola: crea la barbería con días de prueba y deja al que llama de dueño. */

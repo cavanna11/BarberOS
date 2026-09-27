@@ -77,6 +77,23 @@ r = await llamar('urlConectarMercadoPago', dueno);
 chequear('el dueño conecta (o avisa que falta configurar la plataforma)',
   r.error === 'FAILED_PRECONDITION' || Boolean(r.ok?.url), JSON.stringify(r));
 
+// El dueño de la plataforma administra las cuentas y acompaña al barbero
+// cuando la configura, así que también puede — pasando de qué barbería.
+// Un moderador no: no toca plata.
+console.log('\nLa plataforma, administrando una barbería:');
+r = await llamar('urlConectarMercadoPago', plat, { businessId: BID });
+chequear('la plataforma SÍ puede conectar una barbería',
+  r.error === 'FAILED_PRECONDITION' || Boolean(r.ok?.url), JSON.stringify(r));
+r = await llamar('urlConectarMercadoPago', plat, {});
+chequear('pero tiene que decir cuál', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+const moderador = await cuenta('mod-mp@test.com', { platform: 'moderator' });
+r = await llamar('urlConectarMercadoPago', moderador, { businessId: BID });
+chequear('un moderador NO toca el cobro', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+const ajeno = await cuenta('ajeno-mp@test.com', { businessId: 'otra-barberia', role: 'owner' });
+await llamar('desconectarMercadoPago', ajeno, { businessId: BID });
+chequear('un dueño NO desconecta la barbería de otro',
+  (await db.doc(`businesses/${BID}/private/mercadopago`).get()).exists, 'le tocó la cuenta ajena');
+
 console.log('\nDesconectar deja todo limpio:');
 r = await llamar('desconectarMercadoPago', dueno);
 chequear('el dueño sí puede desconectar', r.ok?.ok === true, JSON.stringify(r));

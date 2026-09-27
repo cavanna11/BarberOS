@@ -40,15 +40,31 @@ const REDIRECT_URI = `${SITIO}/api/mp/callback`;
 const db = () => getFirestore();
 const privado = (bizId) => db().doc(`businesses/${bizId}/private/mercadopago`);
 
-/** Lo mismo que hace el resto del archivo: sin sesión no se habla. */
-function exigirDueno(request) {
+/**
+ * Quién puede tocar el cobro de una barbería, y de cuál.
+ *
+ * El dueño, sobre la suya. Y el dueño de la PLATAFORMA sobre cualquiera,
+ * pasando el businessId: es el que administra las cuentas y el que acompaña al
+ * barbero cuando la está configurando. Un moderador no, que no toca plata.
+ *
+ * Ojo con lo que esto significa y por eso está avisado en pantalla: en el flujo
+ * de OAuth, la plata va a la cuenta de Mercado Pago de QUIEN AUTORIZA. Si la
+ * plataforma conecta con su propia cuenta, los cobros de esa barbería caen ahí
+ * — que es justo lo que este diseño quiere evitar.
+ */
+function exigirDueno(request, businessIdPedido) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
   const claims = request.auth.token || {};
-  const businessId = claims.businessId;
-  if (!businessId || claims.role !== 'owner') {
-    throw new HttpsError('permission-denied', 'Solo el dueño de la barbería puede tocar el cobro.');
+
+  if (claims.platform === true) {
+    const businessId = String(businessIdPedido || '').trim();
+    if (!businessId) throw new HttpsError('invalid-argument', 'Falta la barbería.');
+    return businessId;
   }
-  return businessId;
+  // El dueño solo la suya: el businessId sale del claim, no de lo que mande.
+  if (claims.businessId && claims.role === 'owner') return claims.businessId;
+
+  throw new HttpsError('permission-denied', 'Solo el dueño de la barbería puede configurar el cobro.');
 }
 
 async function pedirMP(ruta, { metodo = 'GET', token, cuerpo, idempotencia } = {}) {
@@ -119,7 +135,7 @@ async function tokenDe(bizId) {
 exports.urlConectarMercadoPago = onCall(
   { region: REGION, secrets: [MP_CLIENT_ID] },
   async (request) => {
-    const businessId = exigirDueno(request);
+    const businessId = exigirDueno(request, request.data?.businessId);
     const clientId = MP_CLIENT_ID.value();
     if (!clientId) throw new HttpsError('failed-precondition', 'Falta configurar Mercado Pago en la plataforma.');
 
@@ -203,7 +219,7 @@ exports.callbackMercadoPago = onRequest(
 );
 
 exports.desconectarMercadoPago = onCall({ region: REGION }, async (request) => {
-  const businessId = exigirDueno(request);
+  const businessId = exigirDueno(request, request.data?.businessId);
   await privado(businessId).delete().catch(() => {});
   await db().doc(`businesses/${businessId}`).set({
     mpConectado: false,
@@ -348,9 +364,10 @@ exports.devolverSena = onCall(
   async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
     const claims = request.auth.token || {};
-    const bizId = claims.businessId;
     const { appointmentId } = request.data || {};
-    if (!bizId || !['owner', 'admin'].includes(claims.role)) {
+    const esPlataforma = claims.platform === true;
+    const bizId = esPlataforma ? String(request.data?.businessId || '') : claims.businessId;
+    if (!bizId || (!esPlataforma && !['owner', 'admin'].includes(claims.role))) {
       throw new HttpsError('permission-denied', 'Solo el staff de la barbería.');
     }
     if (!appointmentId) throw new HttpsError('invalid-argument', 'Falta el turno.');

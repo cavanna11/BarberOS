@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { urlConectarMercadoPago, desconectarMercadoPago } from '../../lib/functions';
 
 /**
@@ -13,6 +14,7 @@ import { urlConectarMercadoPago, desconectarMercadoPago } from '../../lib/functi
  * no lo puede tocar (está en las Rules). Acá solo se lee.
  */
 export default function CobroSena({ business, form, editar }) {
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [yendo, setYendo] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +34,7 @@ export default function CobroSena({ business, form, editar }) {
     setYendo(true);
     setError('');
     try {
-      const { url } = await urlConectarMercadoPago();
+      const { url } = await urlConectarMercadoPago(business?.id);
       window.location.href = url;
     } catch (err) {
       console.error('[CobroSena] No se pudo empezar la conexión:', err);
@@ -46,7 +48,7 @@ export default function CobroSena({ business, form, editar }) {
     setYendo(true);
     setError('');
     try {
-      await desconectarMercadoPago();
+      await desconectarMercadoPago(business?.id);
     } catch (err) {
       console.error('[CobroSena] No se pudo desconectar:', err);
       setError(err.message || 'No se pudo desconectar.');
@@ -79,6 +81,16 @@ export default function CobroSena({ business, form, editar }) {
         cobramos comisión por eso. El cobro queda a tu nombre, igual que si lo hubieras
         cobrado con tu QR en el local.
       </p>
+
+      {/* La plata va a la cuenta de QUIEN autoriza. Si el que está sentado acá
+          es la plataforma ayudando a configurar, tiene que quedar clarísimo. */}
+      {user?.isPlatformOwner && !conectado && (
+        <div className="notice notice-warn" style={{ marginBottom: 'var(--space-md)' }}>
+          ⚠️ Estás como plataforma. La cuenta de Mercado Pago que autorices es la que va a
+          <strong> recibir la plata de esta barbería</strong>. Si no es una cuenta de prueba,
+          que autorice el dueño desde su propia sesión.
+        </div>
+      )}
 
       {!conectado ? (
         <>

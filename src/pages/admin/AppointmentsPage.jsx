@@ -129,7 +129,7 @@ export default function AppointmentsPage() {
 Sale de tu cuenta de Mercado Pago.`)) return;
     setDevolviendo(apt.id);
     try {
-      await devolverSena(apt.id);
+      await devolverSena(apt.id, businessId);
     } catch (err) {
       console.error('[Citas] No se pudo devolver la seña:', err);
       alert('No se pudo devolver: ' + err.message);
