@@ -1,4 +1,4 @@
-import { useLocation, Link } from 'react-router-dom';
+import { useLocation, Link, useSearchParams } from 'react-router-dom';
 import { useTenant } from '../../hooks/useTenantData';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
 import FichaBarberia from '../../components/client/FichaBarberia';
@@ -8,6 +8,33 @@ export default function ConfirmationPage() {
   const { professionals, services, business, slug } = useTenant();
   const appointment = location.state?.appointment;
   const home = `/${slug}`;
+  const [params] = useSearchParams();
+
+  // Vuelta desde Mercado Pago: es una recarga completa de la página, así que no
+  // queda nada del estado del wizard. Lo único que hay es lo que trae la URL.
+  //
+  // Ojo: esto NO confirma nada. Quien confirma el pago es el aviso que Mercado
+  // Pago le manda al servidor; la URL la puede escribir cualquiera a mano. Acá
+  // solo se le cuenta al cliente qué pasó.
+  const pago = params.get('status') || params.get('collection_status');
+  if (!appointment && pago) {
+    const aprobado = pago === 'approved';
+    return (
+      <div className="confirmation-container">
+        <div className="confirmation-icon">{aprobado ? '✓' : '⏳'}</div>
+        <h1>{aprobado ? '¡Seña pagada!' : 'Estamos esperando el pago'}</h1>
+        <p className="text-secondary mt-sm mb-lg">
+          {aprobado
+            ? 'Tu turno quedó reservado. La barbería ya lo ve en su agenda.'
+            : 'Apenas Mercado Pago nos confirme el pago, el turno queda reservado. Si no se completa en 15 minutos, el horario se libera.'}
+        </p>
+        <div className="confirmation-actions">
+          <Link to={`${home}/mis-citas`} className="btn btn-primary">Ver mis turnos</Link>
+          <Link to={home} className="btn btn-outline">Volver</Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!appointment) {
     return (

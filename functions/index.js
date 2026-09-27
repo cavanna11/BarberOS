@@ -20,6 +20,8 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
+// Mercado Pago vive aparte (OAuth + cobro de la seña); se usa en createAppointment.
+const mp = require('./mercadopago');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
@@ -455,8 +457,29 @@ function diaDeLaSemana(fechaISO) {
 /** Turnos activos (hoy o después) que una cuenta puede tener en una barbería. */
 const MAX_TURNOS_ACTIVOS = 3;
 
+// Cuánto se le guarda el horario al cliente mientras paga la seña. Quince
+// minutos alcanzan para buscar la tarjeta sin dejar el horario bloqueado media
+// tarde si abandona.
+const MINUTOS_PARA_PAGAR = 15;
+
 const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const FORMATO_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * ¿Este turno ocupa el lugar?
+ *
+ * `esperando_pago` es el turno que se le guarda al cliente mientras paga la
+ * seña: ocupa el horario, pero solo hasta `senaExpiraEn`. Pasados los 15
+ * minutos el lugar vuelve a estar libre aunque el documento siga existiendo —
+ * si no, un cliente que abandona el pago le bloquea el horario al barbero para
+ * siempre.
+ */
+function reservaViva(a) {
+  if (a.status === 'pendiente' || a.status === 'confirmada') return true;
+  if (a.status !== 'esperando_pago') return false;
+  const vence = a.senaExpiraEn?.toMillis?.() ?? 0;
+  return vence > Date.now();
+}
 
 /** Hoy en Buenos Aires, como 'YYYY-MM-DD'. No sirve el hoy del servidor (UTC). */
 function hoyEnArgentina() {
@@ -597,6 +620,13 @@ exports.createAppointment = onCall(async (request) => {
     }
   }
 
+  // ── ¿Cobra seña? ──────────────────────────────────────────────────────────
+  // Solo si el dueño conectó su Mercado Pago Y la activó con un monto. Si
+  // conectó pero no la activó, se reserva como siempre.
+  const sena = negocio.sena || {};
+  const pideSena = negocio.mpConectado === true && sena.activa === true && Number(sena.monto) > 0;
+  const montoSena = pideSena ? Number(sena.monto) : 0;
+
   // ── Solapamiento, en transacción ──────────────────────────────────────────
   // Va en transacción y no en un get suelto porque dos personas mirando la
   // misma grilla pueden apretar "confirmar" con milisegundos de diferencia: sin
@@ -614,7 +644,7 @@ exports.createAppointment = onCall(async (request) => {
     const propios = await tx.get(agenda.where('userId', '==', request.auth.uid));
     const activos = propios.docs
       .map((d) => d.data())
-      .filter((a) => a.status === 'pendiente' || a.status === 'confirmada');
+      .filter(reservaViva);
 
     // Un turno activo por cliente por día en esta barbería. El front también lo
     // mira (hasAppointmentToday), pero eso se saltea con la consola abierta —
@@ -645,7 +675,7 @@ exports.createAppointment = onCall(async (request) => {
 
     for (const d of delDia.docs) {
       const a = d.data();
-      if (a.status !== 'pendiente' && a.status !== 'confirmada') continue;
+      if (!reservaViva(a)) continue;
       const aIni = timeToMinutes(a.startTime);
       const aFin = a.endTime ? timeToMinutes(a.endTime) : aIni;
       if (inicio < aFin && fin > aIni) {
@@ -671,7 +701,13 @@ exports.createAppointment = onCall(async (request) => {
       // Del token, no del cliente: que no se registre un turno con el mail de otro.
       clientEmail: String(request.auth.token.email || clientEmail || '').slice(0, 120),
       notes: String(notes).slice(0, 500),
-      status: 'pendiente',
+      // Con seña, el turno NO nace reservado: nace guardado mientras el cliente
+      // paga, y se confirma cuando Mercado Pago avisa. Si no paga, vence.
+      status: pideSena ? 'esperando_pago' : 'pendiente',
+      ...(pideSena ? {
+        sena: { monto: montoSena, estado: 'pendiente' },
+        senaExpiraEn: new Date(Date.now() + MINUTOS_PARA_PAGAR * 60000),
+      } : {}),
       // Reservado por el cliente desde el link. Los que carga el staff llevan
       // type 'manual' o 'walkin'. Sirve para que el barbero sepa, de un
       // vistazo, cuál entró solo y cuál cargó él.
@@ -689,6 +725,35 @@ exports.createAppointment = onCall(async (request) => {
     appointmentDate, startTime, endTime: minutesToTime(fin),
     appointmentId: ref.id, uid: request.auth.uid,
   });
+
+  if (pideSena) {
+    try {
+      const pago = await mp.crearPagoDeSena({
+        businessId,
+        appointmentId: ref.id,
+        monto: montoSena,
+        titulo: `Seña · ${servicio.name || 'Turno'} · ${appointmentDate} ${startTime}`,
+        emailCliente: String(request.auth.token.email || ''),
+        slug: negocio.slug || '',
+      });
+      await ref.update({ 'sena.preferenceId': pago.preferenceId });
+      return {
+        status: 'esperando_pago',
+        id: ref.id,
+        price: precio,
+        endTime: minutesToTime(fin),
+        sena: montoSena,
+        minutos: MINUTOS_PARA_PAGAR,
+        pagoUrl: pago.url,
+      };
+    } catch (err) {
+      // Si no se pudo armar el pago, el turno guardado no sirve para nada y le
+      // estaría bloqueando el horario a otro: se cancela en el acto.
+      logger.error('no se pudo crear el pago de la seña', { businessId, appointmentId: ref.id, error: err.message });
+      await ref.update({ status: 'cancelada', cancelledBy: 'sistema', cancellationReason: 'No se pudo generar el pago' }).catch(() => {});
+      throw new HttpsError('unavailable', 'No pudimos abrir el pago de la seña. Probá de nuevo en un momento.');
+    }
+  }
 
   return { status: 'created', id: ref.id, price: precio, endTime: minutesToTime(fin) };
 });
@@ -725,7 +790,7 @@ exports.getBusySlots = onCall(async (request) => {
 
   const ocupados = snap.docs
     .map((d) => d.data())
-    .filter((a) => a.status === 'pendiente' || a.status === 'confirmada')
+    .filter(reservaViva)
     .map((a) => ({ startTime: a.startTime, endTime: a.endTime || a.startTime }));
 
   return { ocupados };
@@ -1619,7 +1684,19 @@ exports.setPlatformModerator = onCall(async (request) => {
 });
 
 // ============================================================================
-// 3. RECORDATORIOS DE WHATSAPP (esqueleto)
+// 3. MERCADO PAGO (seña del turno)
+// ============================================================================
+// Vive en su propio archivo: son varias funciones y un flujo de OAuth entero.
+// La plata va DIRECTO a la cuenta del barbero; la plataforma no la toca.
+
+exports.urlConectarMercadoPago = mp.urlConectarMercadoPago;
+exports.callbackMercadoPago = mp.callbackMercadoPago;
+exports.desconectarMercadoPago = mp.desconectarMercadoPago;
+exports.webhookMercadoPago = mp.webhookMercadoPago;
+exports.devolverSena = mp.devolverSena;
+
+// ============================================================================
+// 4. RECORDATORIOS DE WHATSAPP (esqueleto)
 // ============================================================================
 // Se activa cuando Meta aprueba el número y las plantillas. El token va como
 // secret, nunca en el código:

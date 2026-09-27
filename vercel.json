@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/api/mp/callback",
+      "destination": "https://southamerica-east1-barberos-1d60e.cloudfunctions.net/callbackMercadoPago"
+    },
+    {
+      "source": "/api/mp/webhook",
+      "destination": "https://southamerica-east1-barberos-1d60e.cloudfunctions.net/webhookMercadoPago"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -5,6 +5,7 @@ import { updateAppointment, cancelAppointment } from '../../lib/repository';
 import NuevoTurnoModal from '../../components/admin/NuevoTurnoModal';
 import { formatDate, formatPrice, fechaCorta, toDateString } from '../../utils/dateUtils';
 import { origenTurno } from '../../utils/origenTurno';
+import { devolverSena } from '../../lib/functions';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 
 const STATUS_OPTIONS = [
@@ -41,6 +42,17 @@ function isAppointmentStarted(apt) {
   const [h, m]      = apt.startTime.split(':').map(Number);
   const aptDateTime = new Date(y, mo - 1, d, h, m, 0);
   return aptDateTime <= new Date();
+}
+
+/** Cómo se lee el estado de la seña en la tabla. */
+function etiquetaSena(apt, moneda) {
+  const s = apt.sena;
+  if (!s) return <span className="text-muted">—</span>;
+  const monto = formatPrice(s.monto, moneda);
+  if (s.estado === 'pagada') return <span className="badge badge-success" style={{ fontSize: 11 }}>✅ {monto}</span>;
+  if (s.estado === 'devuelta') return <span className="badge badge-neutral" style={{ fontSize: 11 }}>↩️ devuelta</span>;
+  if (s.estado === 'rechazada') return <span className="badge badge-danger" style={{ fontSize: 11 }}>✕ rechazada</span>;
+  return <span className="badge badge-warning" style={{ fontSize: 11 }}>⏳ sin pagar</span>;
 }
 
 export default function AppointmentsPage() {
@@ -108,6 +120,24 @@ export default function AppointmentsPage() {
     };
   }, [appointments, isOwner, profIdPropio, hoy]);
 
+  // La devolución sale de la cuenta de Mercado Pago del barbero, así que es
+  // una decisión suya y no automática: un botón, con confirmación.
+  const [devolviendo, setDevolviendo] = useState('');
+  const devolver = async (apt) => {
+    if (!window.confirm(`¿Devolverle la seña de ${formatPrice(apt.sena?.monto, business?.currency)} a ${apt.clientName || 'el cliente'}?
+
+Sale de tu cuenta de Mercado Pago.`)) return;
+    setDevolviendo(apt.id);
+    try {
+      await devolverSena(apt.id);
+    } catch (err) {
+      console.error('[Citas] No se pudo devolver la seña:', err);
+      alert('No se pudo devolver: ' + err.message);
+    } finally {
+      setDevolviendo('');
+    }
+  };
+
   const updateStatus = (id, status) => {
     updateAppointment(businessId, id, { status }).catch((err) => {
       console.error('[AppointmentsPage] No se pudo actualizar el turno:', err);
@@ -153,6 +183,12 @@ export default function AppointmentsPage() {
         )}
         {apt.status === 'pendiente' && (
           <button className="btn btn-sm btn-outline" title="Avisarle al cliente que el turno queda en pie" onClick={() => updateStatus(apt.id, 'confirmada')}>Confirmar</button>
+        )}
+        {apt.sena?.estado === 'pagada' && (
+          <button className="btn btn-sm btn-ghost" disabled={devolviendo === apt.id}
+            title="Devolverle la seña desde tu Mercado Pago" onClick={() => devolver(apt)}>
+            {devolviendo === apt.id ? 'Devolviendo…' : 'Devolver seña'}
+          </button>
         )}
       </div>
     );
@@ -282,6 +318,7 @@ export default function AppointmentsPage() {
               {isOwner && <th>Profesional</th>}
               <th>Cliente</th>
               <th>Lo reservó</th>
+              <th className="oculta-mobile">Seña</th>
               <th>Teléfono</th>
               <th>Servicio</th>
               <th>Precio</th>
@@ -314,6 +351,7 @@ export default function AppointmentsPage() {
                       {origen.icono} {origen.etiqueta}
                     </span>
                   </td>
+                  <td className="oculta-mobile">{etiquetaSena(apt, business?.currency)}</td>
                   <td>{apt.clientPhone || '—'}</td>
                   <td>
                     {isWalkin

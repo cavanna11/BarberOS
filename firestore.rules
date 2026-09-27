@@ -125,13 +125,23 @@ service cloud.firestore {
         isBusinessOwner(bizId) &&
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
-                   'trialEndsAt', 'createdAt', 'maxBarbers', 'origen'])
+                   'trialEndsAt', 'createdAt', 'maxBarbers', 'origen', 'mpConectado',
+                   'mpUserId'])
       );
 
       // Facturación: solo la plataforma. Ni el dueño la lee.
       match /private/billing {
         allow read: if esEquipoPlataforma();
         allow write: if isPlatform();
+      }
+
+      // Tokens de Mercado Pago del dueño. Los escribe y los lee SOLO la Cloud
+      // Function con el Admin SDK: con el access token de su cuenta se puede
+      // cobrar y mover plata, así que no sale al browser ni para el dueño.
+      // El panel se entera de si está conectado por `mpConectado`, que vive en
+      // el documento público y no sirve para operar.
+      match /private/mercadopago {
+        allow read, write: if false;
       }
 
       // ── Staff, catálogo y horarios ───────────────────────────────────────

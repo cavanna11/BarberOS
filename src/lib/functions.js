@@ -125,6 +125,24 @@ export function resetOwnerPassword({ email, password = null }) {
  * Devuelve 'applied' si la cuenta ya existía, 'pending' si nunca entró (se
  * aplica en su primer login), 'revoked' o 'not-found' al quitar.
  */
+// ── Mercado Pago ────────────────────────────────────────────────────────────
+// El dueño conecta SU cuenta: la seña va derecho a él, la plataforma no toca
+// la plata. Ver functions/mercadopago.js.
+
+/** Devuelve la URL de Mercado Pago a la que hay que mandar al dueño. */
+export function urlConectarMercadoPago() {
+  return llamar('urlConectarMercadoPago', {});
+}
+
+/** Devuelve la seña de un turno. La plata sale de la cuenta del barbero. */
+export function devolverSena(appointmentId) {
+  return llamar('devolverSena', { appointmentId });
+}
+
+export function desconectarMercadoPago() {
+  return llamar('desconectarMercadoPago', {});
+}
+
 /** Alta sola: crea la barbería con días de prueba y deja al que llama de dueño. */
 export function crearBarberiaDePrueba(datos) {
   return llamar('crearBarberiaDePrueba', datos);

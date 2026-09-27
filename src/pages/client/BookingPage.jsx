@@ -609,6 +609,14 @@ export default function BookingPage() {
       datos.price = res.price;
       datos.endTime = res.endTime;
 
+      // Con seña, el turno queda GUARDADO (no reservado) y hay que ir a pagar.
+      // Lo pendiente no se borra todavía: si abandona el pago, al volver le
+      // ofrecemos retomarlo en vez de que pierda todo lo que eligió.
+      if (res.status === 'esperando_pago' && res.pagoUrl) {
+        window.location.href = res.pagoUrl;
+        return;
+      }
+
       borrarPendiente();
       dispatch({ type: 'RESET' });
       navigate(`/${slug}/confirmacion`, {

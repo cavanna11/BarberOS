@@ -192,7 +192,15 @@ export function subscribeAllBusinesses(cb, onError) {
  * Campos que el dueño de una barbería NO puede tocar: las Rules rechazan la
  * escritura completa si vienen incluidos, así que se filtran antes de mandar.
  */
-const CAMPOS_SOLO_PLATAFORMA = ['isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id'];
+// Los mismos campos que las Rules no dejan tocar al dueño. Se filtran también
+// acá porque el formulario de Configuración manda el negocio entero: si uno de
+// estos viajara con un valor distinto, las Rules rechazan la escritura ENTERA y
+// el dueño no puede guardar ni el nombre. Si agregás uno en firestore.rules,
+// agregalo acá.
+const CAMPOS_SOLO_PLATAFORMA = [
+  'isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
+  'trialEndsAt', 'maxBarbers', 'origen', 'mpConectado', 'mpUserId',
+];
 
 export async function updateBusiness(businessId, cambios, { esPlataforma = false } = {}) {
   const payload = { ...cambios };

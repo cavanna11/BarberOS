@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { updateBusiness } from '../../lib/repository';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { getDayName } from '../../utils/dateUtils';
+import CobroSena from '../../components/admin/CobroSena';
 import { errorDeHorario } from '../../utils/horarios';
 import HorarioSemanal from '../../components/admin/HorarioSemanal';
 
@@ -203,6 +204,8 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+
+          <CobroSena business={business} form={form} editar={editar} />
 
           <div className="card mt-md">
             <h3 className="mb-lg">Horarios de la Barbería</h3>
