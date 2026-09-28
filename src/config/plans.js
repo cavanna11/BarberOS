@@ -25,6 +25,7 @@ export const FEATURES_COMUNES = [
   'Tu link público con tu marca',
   'Estadísticas de facturación',
   'Servicios sin turno en vivo (walk-in)',
+  'Seña por Mercado Pago, directo a tu cuenta',
   'Cada barbero ve solo su agenda',
   'App para el celular con avisos al instante',
 ];

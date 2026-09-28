@@ -29,7 +29,7 @@ const chequear = (t, c, d = '') => {
   else { mal++; console.log('  FALLA', t, '\n         ', d); }
 };
 
-async function escenario({ conSena, modo = 'obligatoria' }) {
+async function escenario({ conSena, modo = 'obligatoria', permiteTotal = false }) {
   for (const col of ['appointments', 'schedules', 'services', 'professionals', 'professionalServices']) {
     for (const d of (await db.collection(`businesses/${BID}/${col}`).get()).docs) await d.ref.delete();
   }
@@ -37,7 +37,7 @@ async function escenario({ conSena, modo = 'obligatoria' }) {
     name: 'Seña Test', slug: 'senatest', isFrozen: false,
     businessHours: [{ dayOfWeek: 1, startTime: '09:00', endTime: '20:00', isActive: true }],
     mpConectado: conSena,
-    sena: conSena ? { activa: true, monto: 3000, modo } : { activa: false, monto: 0 },
+    sena: conSena ? { activa: true, monto: 3000, modo, permiteTotal } : { activa: false, monto: 0 },
   });
   await db.doc(`businesses/${BID}/professionals/${PROF}`).set({ id: PROF, name: 'Lucas', isActive: true });
   await db.doc(`businesses/${BID}/services/${SRV}`).set({ id: SRV, name: 'Corte', price: 12000, durationMinutes: 30, isActive: true });
@@ -88,21 +88,39 @@ chequear('y el turno queda cancelado, sin bloquear el horario',
 // deja elegir, el que quiere pagar en el local tiene que poder reservar igual.
 console.log('\nSeña OPCIONAL (la elige el cliente):');
 await escenario({ conSena: true, modo: 'opcional' });
-r = await reservar(await cliente('c5-s@gmail.com'), { startTime: '14:00', pagarSena: false });
+r = await reservar(await cliente('c5-s@gmail.com'), { startTime: '14:00', pagar: 'local' });
 chequear('el que paga en el local reserva sin pasar por Mercado Pago',
   r.ok?.status === 'created', JSON.stringify(r));
 const sinSena = (await db.collection(`businesses/${BID}/appointments`).get()).docs.map((d) => d.data());
 chequear('y su turno queda reservado de una, sin seña',
   sinSena.length === 1 && sinSena[0].status === 'pendiente' && !sinSena[0].sena,
   JSON.stringify(sinSena.map((a) => [a.status, a.sena])));
-r = await reservar(await cliente('c6-s@gmail.com'), { startTime: '15:00', pagarSena: true });
+r = await reservar(await cliente('c6-s@gmail.com'), { startTime: '15:00', pagar: 'sena' });
 chequear('y el que elige dejar seña va al pago', r.error === 'UNAVAILABLE', JSON.stringify(r));
 
 // Con la seña obligatoria no hay elección: mandar pagarSena:false no alcanza.
 await escenario({ conSena: true, modo: 'obligatoria' });
-r = await reservar(await cliente('c7-s@gmail.com'), { startTime: '16:00', pagarSena: false });
+r = await reservar(await cliente('c7-s@gmail.com'), { startTime: '16:00', pagar: 'local' });
 chequear('con seña obligatoria, no se puede esquivar el pago',
   r.error === 'UNAVAILABLE', JSON.stringify(r));
+
+// Pagar el turno entero: mismo camino, otro monto. Y si la barbería no lo
+// habilitó, pedirlo no alcanza — cobra la seña igual.
+console.log('\nPagar el turno completo:');
+await escenario({ conSena: true, modo: 'opcional', permiteTotal: true });
+r = await reservar(await cliente('c8-s@gmail.com'), { startTime: '17:00', pagar: 'total' });
+chequear('el que quiere pagar todo va al pago', r.error === 'UNAVAILABLE', JSON.stringify(r));
+let creados = (await db.collection(`businesses/${BID}/appointments`).get()).docs.map((d) => d.data());
+chequear('y el monto es el del servicio, no el de la seña',
+  creados.length === 1 && creados[0].sena?.monto === 12000 && creados[0].sena?.tipo === 'total',
+  JSON.stringify(creados.map((a) => a.sena)));
+
+await escenario({ conSena: true, modo: 'opcional', permiteTotal: false });
+r = await reservar(await cliente('c9-s@gmail.com'), { startTime: '18:00', pagar: 'total' });
+creados = (await db.collection(`businesses/${BID}/appointments`).get()).docs.map((d) => d.data());
+chequear('sin habilitar el total, se cobra la seña igual',
+  creados.length === 1 && creados[0].sena?.monto === 3000 && creados[0].sena?.tipo === 'sena',
+  JSON.stringify(creados.map((a) => a.sena)));
 
 console.log('\nEl horario que se le guarda al que está pagando:');
 await escenario({ conSena: true });

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" width="100%" height="100%">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', sans-serif; }
+      .font-mono { font-family: 'Space Mono', monospace; }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="280" height="120" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+
+  <!-- Pantalla de la reserva con el pago elegido -->
+  <g transform="translate(18, 16)">
+    <rect x="0" y="0" width="128" height="88" rx="7" fill="#ffffff" stroke="rgba(0,0,0,0.08)"/>
+    <text x="12" y="20" class="font-mono" font-size="7" fill="#aaaaaa" letter-spacing="0.8">COMO PAGAS</text>
+
+    <!-- Opción elegida: seña -->
+    <rect x="10" y="27" width="108" height="24" rx="5" fill="#fff4ef" stroke="#e03d00" stroke-width="1.2"/>
+    <circle cx="21" cy="39" r="4.5" fill="#ffffff" stroke="#e03d00" stroke-width="1.5"/>
+    <circle cx="21" cy="39" r="2.2" fill="#e03d00"/>
+    <text x="31" y="37" class="font-sans" font-size="7.5" font-weight="700" fill="#0a0a0a">Seña $3.000</text>
+    <text x="31" y="46" class="font-sans" font-size="6.5" fill="#555555">Se descuenta del total</text>
+
+    <!-- Otra opción -->
+    <rect x="10" y="55" width="108" height="22" rx="5" fill="#ffffff" stroke="rgba(0,0,0,0.12)"/>
+    <circle cx="21" cy="66" r="4.5" fill="#ffffff" stroke="#cccccc" stroke-width="1.5"/>
+    <text x="31" y="69" class="font-sans" font-size="7.5" fill="#555555">Pago en la barbería</text>
+  </g>
+
+  <!-- Comprobante del cobro, ya acreditado -->
+  <g transform="translate(160, 24)">
+    <rect x="0" y="0" width="100" height="72" rx="7" fill="#0a0a0a"/>
+    <text x="12" y="19" class="font-mono" font-size="6.5" fill="#888888" letter-spacing="0.8">COBRADO</text>
+    <text x="12" y="38" class="font-sans" font-size="17" font-weight="700" fill="#ffffff">$3.000</text>
+
+    <!-- Tilde de acreditado -->
+    <circle cx="80" cy="20" r="9" fill="#22c55e"/>
+    <path d="M76 20 l3 3 l6 -6" stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <line x1="12" y1="48" x2="88" y2="48" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>
+    <text x="12" y="62" class="font-sans" font-size="7" fill="#aaaaaa">A tu cuenta, al instante</text>
+  </g>
+</svg>

@@ -35,7 +35,7 @@ export default function CobroSena({ business, form, editar }) {
     setError('');
     try {
       const { url } = await urlConectarMercadoPago(business?.id);
-      window.location.href = url;
+      window.location.assign(url);
     } catch (err) {
       console.error('[CobroSena] No se pudo empezar la conexión:', err);
       setError(err.message || 'No se pudo abrir Mercado Pago.');
@@ -154,6 +154,23 @@ export default function CobroSena({ business, form, editar }) {
               <p className="text-sm text-muted" style={{ marginTop: 6 }}>
                 El mismo monto para todos tus servicios. Se lo descontás del precio cuando
                 atiende. Si el cliente no paga en 15 minutos, el horario se libera solo.
+              </p>
+            </div>
+          )}
+
+          {sena.activa && (
+            <div className="form-group">
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={sena.permiteTotal === true}
+                  onChange={(e) => editar({ sena: { ...sena, permiteTotal: e.target.checked } })}
+                />
+                Dejar que el cliente pague el turno completo
+              </label>
+              <p className="text-sm text-muted" style={{ marginTop: 6 }}>
+                Suma una opción más: en vez de la seña, paga todo ahora y llega con la
+                cuenta saldada. Cobrás el precio del servicio que eligió.
               </p>
             </div>
           )}

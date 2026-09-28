@@ -64,6 +64,12 @@ const BENEFICIOS = [
     proximamente: true,
   },
   {
+    imagen: '/img/benefit-pago.svg',
+    alt: 'El cliente eligiendo dejar una seña y el cobro acreditado en la cuenta de la barbería',
+    titulo: 'Cobrá una seña al reservar',
+    texto: 'Con Mercado Pago, el cliente deja una seña —o paga el corte entero— cuando saca el turno. La plata entra directo a tu cuenta, no a la nuestra. Vos elegís si es obligatoria o si la puede elegir el cliente.',
+  },
+  {
     imagen: '/img/benefit-schedule.svg',
     alt: 'Vista previa de la grilla de días y horarios de atención por barbero',
     titulo: 'Sabe quién trabaja cuándo',
@@ -103,6 +109,10 @@ const FAQ = [
   {
     q: '¿Y yo, tengo que bajarme algo?',
     a: 'Tampoco. Pero podés instalar BarberOS en tu celular como una app —Android o iPhone, en cuatro toques, sin tienda— y te llega un aviso cada vez que un cliente reserva o cancela, aunque la tengas cerrada. Adentro del panel está el paso a paso.',
+  },
+  {
+    q: '¿Puedo pedir una seña para que no me falten?',
+    a: 'Sí. Conectás tu cuenta de Mercado Pago desde el panel y el cliente deja una seña al reservar —o paga el corte completo, si lo habilitás—. La plata va derecho a tu cuenta: nosotros no la tocamos ni te cobramos comisión por eso. Y elegís si la seña es obligatoria o si el cliente puede optar por pagar todo en el local, para no perder al que no usa Mercado Pago.',
   },
   {
     q: 'Mis clientes son grandes, ¿lo van a poder usar?',

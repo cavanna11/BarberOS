@@ -49,7 +49,18 @@ function etiquetaSena(apt, moneda) {
   const s = apt.sena;
   if (!s) return <span className="text-muted">—</span>;
   const monto = formatPrice(s.monto, moneda);
-  if (s.estado === 'pagada') return <span className="badge badge-success" style={{ fontSize: 11 }}>✅ {monto}</span>;
+  if (s.estado === 'pagada') {
+    const total = s.tipo === 'total';
+    return (
+      <span
+        className={`badge ${total ? 'badge-primary' : 'badge-success'}`}
+        style={{ fontSize: 11 }}
+        title={total ? 'Pagó el turno completo: no le cobres nada' : 'Dejó seña: descontásela del total'}
+      >
+        {total ? '💳 pagado' : '✅'} {monto}
+      </span>
+    );
+  }
   if (s.estado === 'devuelta') return <span className="badge badge-neutral" style={{ fontSize: 11 }}>↩️ devuelta</span>;
   if (s.estado === 'rechazada') return <span className="badge badge-danger" style={{ fontSize: 11 }}>✕ rechazada</span>;
   return <span className="badge badge-warning" style={{ fontSize: 11 }}>⏳ sin pagar</span>;

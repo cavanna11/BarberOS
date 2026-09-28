@@ -623,14 +623,26 @@ exports.createAppointment = onCall(async (request) => {
   // ── ¿Cobra seña? ──────────────────────────────────────────────────────────
   // Solo si el dueño conectó su Mercado Pago Y la activó con un monto. Si
   // conectó pero no la activó, se reserva como siempre.
+  // ── ¿Cómo paga? ───────────────────────────────────────────────────────────
+  // Tres caminos: dejar la seña, pagar el turno entero ahora, o pagar en el
+  // local. Qué está habilitado lo decide la barbería; cuál de esos usa, el
+  // cliente (salvo que la seña sea obligatoria).
   const sena = negocio.sena || {};
-  const cobraSena = negocio.mpConectado === true && sena.activa === true && Number(sena.monto) > 0;
-  // 'opcional' = el cliente elige entre dejar la seña o pagar todo en el local.
-  // Existe porque hay clientes sin Mercado Pago o sin plata en la cuenta, y una
-  // barbería no puede perder a esa persona por cómo prefiere pagar.
+  const cobraOnline = negocio.mpConectado === true && sena.activa === true && Number(sena.monto) > 0;
+  // 'opcional' existe porque hay clientes sin Mercado Pago o sin plata en la
+  // cuenta: una barbería no puede perder a esa persona por cómo prefiere pagar.
   const senaOpcional = sena.modo === 'opcional';
-  const pideSena = cobraSena && (!senaOpcional || request.data?.pagarSena === true);
-  const montoSena = pideSena ? Number(sena.monto) : 0;
+  const permiteTotal = sena.permiteTotal === true;
+
+  const pedido = String(request.data?.pagar || (request.data?.pagarSena === false ? 'local' : 'sena'));
+  let tipoPago = null;
+  if (cobraOnline) {
+    if (pedido === 'total' && permiteTotal) tipoPago = 'total';
+    else if (pedido === 'local' && senaOpcional) tipoPago = null;
+    else tipoPago = 'sena';
+  }
+  const pideSena = tipoPago !== null;
+  const montoSena = tipoPago === 'total' ? precio : (pideSena ? Number(sena.monto) : 0);
 
   // ── Solapamiento, en transacción ──────────────────────────────────────────
   // Va en transacción y no en un get suelto porque dos personas mirando la
@@ -710,7 +722,9 @@ exports.createAppointment = onCall(async (request) => {
       // paga, y se confirma cuando Mercado Pago avisa. Si no paga, vence.
       status: pideSena ? 'esperando_pago' : 'pendiente',
       ...(pideSena ? {
-        sena: { monto: montoSena, estado: 'pendiente' },
+        // `tipo` distingue la seña del turno pagado entero: cambia lo que ve el
+        // barbero en la agenda (si le queda algo por cobrar o no).
+        sena: { monto: montoSena, estado: 'pendiente', tipo: tipoPago },
         senaExpiraEn: new Date(Date.now() + MINUTOS_PARA_PAGAR * 60000),
       } : {}),
       // Reservado por el cliente desde el link. Los que carga el staff llevan
@@ -737,7 +751,7 @@ exports.createAppointment = onCall(async (request) => {
         businessId,
         appointmentId: ref.id,
         monto: montoSena,
-        titulo: `Seña · ${servicio.name || 'Turno'} · ${appointmentDate} ${startTime}`,
+        titulo: `${tipoPago === 'total' ? 'Turno' : 'Seña'} · ${servicio.name || 'Turno'} · ${appointmentDate} ${startTime}`,
         emailCliente: String(request.auth.token.email || ''),
         slug: negocio.slug || '',
       });
@@ -748,6 +762,7 @@ exports.createAppointment = onCall(async (request) => {
         price: precio,
         endTime: minutesToTime(fin),
         sena: montoSena,
+        tipoPago,
         minutos: MINUTOS_PARA_PAGAR,
         pagoUrl: pago.url,
       };
