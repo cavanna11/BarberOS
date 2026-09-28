@@ -13,8 +13,20 @@ const LogoutIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
 );
 
+// Cada sección es una ruta. Antes era una sola pantalla con ocho pestañas
+// apiladas arriba, que en cualquier monitor normal terminaban en una barra de
+// scroll horizontal: imposible ver dónde estabas parado.
+//
+// `soloModerador: false` = lo que un moderador no puede hacer, así que ni lo ve.
 const navItems = [
-  { to: '/super-admin', icon: <DashboardIcon />, label: 'Super Dashboard', end: true },
+  { to: '/super-admin',            icon: <DashboardIcon />, label: 'Resumen', end: true },
+  { to: '/super-admin/barberias',  icon: '🏪', label: 'Barberías' },
+  { to: '/super-admin/turnos',     icon: '📅', label: 'Turnos' },
+  { to: '/super-admin/soporte',    icon: '💬', label: 'Soporte' },
+  { to: '/super-admin/avisos',     icon: '📣', label: 'Avisos', soloDueno: true },
+  { to: '/super-admin/equipo',     icon: '🛡️', label: 'Equipo', soloDueno: true },
+  { to: '/super-admin/whatsapp',   icon: '🟢', label: 'WhatsApp', soloDueno: true },
+  { to: '/super-admin/mensajes',   icon: '📨', label: 'Historial', soloDueno: true },
 ];
 
 export default function SuperAdminLayout() {
@@ -66,7 +78,7 @@ export default function SuperAdminLayout() {
         </div>
 
         <nav className="admin-nav">
-          {navItems.map((item) => (
+          {navItems.filter((i) => !i.soloDueno || !user?.isModerator).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -216,7 +216,17 @@ export default function App() {
             <SuperAdminLayout />
           </ProtectedRoute>
         }>
+          {/* Una ruta por sección: el panel global dejó de ser una sola
+              pantalla con ocho pestañas. `?tab=` sigue funcionando para los
+              links viejos de la campanita. */}
           <Route index element={<SuperAdminDashboard />} />
+          <Route path="barberias" element={<SuperAdminDashboard seccion="tenants" />} />
+          <Route path="turnos" element={<SuperAdminDashboard seccion="citas" />} />
+          <Route path="soporte" element={<SuperAdminDashboard seccion="soporte" />} />
+          <Route path="avisos" element={<SuperAdminDashboard seccion="avisos" />} />
+          <Route path="equipo" element={<SuperAdminDashboard seccion="equipo" />} />
+          <Route path="whatsapp" element={<SuperAdminDashboard seccion="whatsapp" />} />
+          <Route path="mensajes" element={<SuperAdminDashboard seccion="logs" />} />
         </Route>
 
         {/* ── Rutas públicas de cliente, por negocio ──────────────── */}

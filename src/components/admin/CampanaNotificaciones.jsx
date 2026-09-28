@@ -123,7 +123,7 @@ export default function CampanaNotificaciones({ modo = 'negocio' }) {
         setMarcadas((s) => { const c = new Set(s); c.delete(n.id); return c; });
       });
     }
-    navigate(n.url || (plataforma ? '/super-admin?tab=soporte' : '/admin/citas'));
+    navigate(n.url || (plataforma ? '/super-admin/soporte' : '/admin/citas'));
   };
 
   // Probar el aviso desde la misma campana: es donde uno se pregunta "¿me

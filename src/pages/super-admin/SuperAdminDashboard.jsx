@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBusiness } from '../../contexts/BusinessContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,17 +38,33 @@ const DebtIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
 );
 
-export default function SuperAdminDashboard() {
+/** Lo que un moderador no puede hacer, así que tampoco ve. */
+const SECCIONES_DEL_DUENO = ['avisos', 'equipo', 'whatsapp', 'logs'];
+
+/** Qué dice el encabezado en cada sección. */
+const TITULOS = {
+  resumen: { titulo: 'Resumen', bajada: 'Cómo viene la plataforma: cuentas, cobros y actividad.' },
+  tenants: { titulo: 'Barberías', bajada: 'Altas, planes, cobros y suspensiones.' },
+  citas: { titulo: 'Turnos', bajada: 'Lo que está pasando en las agendas.' },
+  whatsapp: { titulo: 'WhatsApp', bajada: 'Configuración de la API de mensajes.' },
+  logs: { titulo: 'Historial de mensajes', bajada: 'Todo lo que se envió y cómo salió.' },
+  soporte: { titulo: 'Soporte', bajada: 'Los tickets que abren las barberías.' },
+  avisos: { titulo: 'Avisos', bajada: 'Lo que ve todo el staff arriba de su panel.' },
+  equipo: { titulo: 'Equipo', bajada: 'Quién entra a este panel y con qué permisos.' },
+};
+
+export default function SuperAdminDashboard({ seccion = null }) {
   const { state, dispatch } = useBusiness();
   const navigate = useNavigate();
   const { businesses, whatsappConfig, whatsappLogs, appointments, professionals, services } = state;
 
-  // La campanita manda a /super-admin?tab=soporte (o tenants): la pestaña se
-  // lee de la URL al montar y cada vez que cambia.
+  // Qué sección mostrar sale de la RUTA, no de un estado: cada una tiene su
+  // dirección propia (/super-admin/barberias, /soporte, …) y se navega desde el
+  // menú lateral. Antes eran ocho pestañas apiladas arriba de una sola página,
+  // que en pantallas normales ya no entraban y salía una barra de scroll
+  // horizontal. Se sigue aceptando ?tab= porque la campanita vieja lo manda.
   const [searchParams] = useSearchParams();
-  const tabDeUrl = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState(tabDeUrl || 'resumen');
-  useEffect(() => { if (tabDeUrl) setActiveTab(tabDeUrl); }, [tabDeUrl]);
+  const activeTab = seccion || searchParams.get('tab') || 'resumen';
 
   // Un moderador entra al panel para VER y para atender soporte. Todo lo que
   // mueve plata, cuentas o suspensiones queda escondido. Esto es UI: la
@@ -328,15 +344,17 @@ export default function SuperAdminDashboard() {
       <div className="admin-page-header" style={{ marginBottom: 'var(--space-lg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span>Panel Global</span>
+            <span>{TITULOS[activeTab]?.titulo || 'Panel Global'}</span>
           </h1>
-          <span className="text-secondary text-sm">Control de establecimientos, facturación y automatización.</span>
+          <span className="text-secondary text-sm">
+            {TITULOS[activeTab]?.bajada || 'Control de establecimientos, facturación y automatización.'}
+          </span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {soloLectura && (
             <span className="badge badge-warning">Moderador · solo lectura y soporte</span>
           )}
-          {!soloLectura && (
+          {!soloLectura && (activeTab === 'resumen' || activeTab === 'tenants') && (
             <button
               onClick={() => setShowNewBusiness(true)}
               className="btn btn-primary"
@@ -352,71 +370,15 @@ export default function SuperAdminDashboard() {
         </div>
       </div>
 
-      {/* Tabs Menu */}
-      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-color)', paddingBottom: 1, marginBottom: 'var(--space-lg)', overflowX: 'auto' }}>
-        <button 
-          onClick={() => setActiveTab('resumen')}
-          className={`btn ${activeTab === 'resumen' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          Resumen Plataforma
-        </button>
-        <button 
-          onClick={() => setActiveTab('tenants')}
-          className={`btn ${activeTab === 'tenants' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          Gestionar Barberías ({totalBusinesses})
-        </button>
-        <button 
-          onClick={() => setActiveTab('citas')}
-          className={`btn ${activeTab === 'citas' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          Monitoreo de Turnos ({appointments?.length || 0})
-        </button>
-        {!soloLectura && (<>
-        <button 
-          onClick={() => setActiveTab('whatsapp')}
-          className={`btn ${activeTab === 'whatsapp' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          API WhatsApp Cloud
-        </button>
-        <button 
-          onClick={() => setActiveTab('logs')}
-          className={`btn ${activeTab === 'logs' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          Historial Mensajes ({totalMsgs})
-        </button>
-        </>)}
-        <button
-          onClick={() => setActiveTab('soporte')}
-          className={`btn ${activeTab === 'soporte' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          Soporte
-        </button>
-        {!soloLectura && (
-          <button
-            onClick={() => setActiveTab('avisos')}
-            className={`btn ${activeTab === 'avisos' ? 'btn-primary' : 'btn-outline'}`}
-            style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            Avisos
-          </button>
-        )}
-        {!soloLectura && (
-          <button
-            onClick={() => setActiveTab('equipo')}
-            className={`btn ${activeTab === 'equipo' ? 'btn-primary' : 'btn-outline'}`}
-            style={{ borderRadius: '8px 8px 0 0', borderBottom: 'none', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            Equipo
-          </button>
-        )}
-      </div>
+      {/* Un moderador que escribe la dirección a mano de una sección que no le
+          toca veía la página en blanco. El permiso real está en las Rules y en
+          las Functions; esto es para que entienda qué pasó. */}
+      {soloLectura && SECCIONES_DEL_DUENO.includes(activeTab) && (
+        <div className="notice notice-warn">
+          Esta sección es del dueño de la plataforma. Como moderador podés ver las barberías,
+          los turnos y atender el soporte.
+        </div>
+      )}
 
       {activeTab === 'avisos' && !soloLectura && <AvisosPanel />}
       {activeTab === 'equipo' && !soloLectura && <TeamPanel />}

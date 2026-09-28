@@ -580,6 +580,19 @@ Ojo: la consulta ordena por `createdAt`, y **Firestore excluye los documentos
 que no tienen ese campo**. Un aviso sembrado a mano sin `createdAt` no aparece
 nunca y parece que el cartel está roto.
 
+### El panel global, por secciones (28/09/2026)
+
+Era UNA pantalla con ocho pestañas arriba: en cualquier monitor normal no
+entraban y salía una barra de scroll horizontal. Ahora cada sección es una ruta
+(`/super-admin/barberias`, `/turnos`, `/soporte`, `/avisos`, `/equipo`,
+`/whatsapp`, `/mensajes`) y se navega desde el menú lateral, igual que el panel
+de la barbería.
+
+`SuperAdminDashboard` sigue siendo un solo componente grande y recibe `seccion`
+por prop desde la ruta; se mantiene el `?tab=` para los links viejos de la
+campanita. El menú esconde lo que un moderador no puede hacer, y si escribe la
+dirección a mano le explica por qué no ve nada (antes: página en blanco).
+
 ### Seña por Mercado Pago (27/09/2026)
 
 Modelo OAuth: el dueño conecta SU cuenta y la plata va DIRECTO a él. La

@@ -402,7 +402,7 @@ async function procesarFacturacion() {
       title: 'Cuenta suspendida por deuda',
       body: `${s.name} quedó suspendida. Debe $${Number(s.debt).toLocaleString('es-AR')}.`,
       businessId: s.id,
-      url: '/super-admin?tab=tenants',
+      url: '/super-admin/barberias',
     }).catch((err) => console.error('[billing] No se pudo avisar la suspensión:', err.message));
   }
 }
@@ -1364,7 +1364,7 @@ exports.onTicketNuevo = onDocumentCreated('tickets/{ticketId}', async (event) =>
     body: String(t.subject || '').slice(0, 140) || 'Sin asunto',
     businessId: t.businessId || null,
     ticketId: event.params.ticketId,
-    url: '/super-admin?tab=soporte',
+    url: '/super-admin/soporte',
   });
 });
 
@@ -1388,7 +1388,7 @@ exports.onMensajeDeTicket = onDocumentCreated('tickets/{ticketId}/messages/{msgI
     body: `${t.subject ? t.subject + ': ' : ''}${String(m.text || '').slice(0, 120)}`,
     businessId: t.businessId || null,
     ticketId: event.params.ticketId,
-    url: '/super-admin?tab=soporte',
+    url: '/super-admin/soporte',
   });
 });
 
