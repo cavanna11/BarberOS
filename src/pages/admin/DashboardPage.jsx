@@ -4,9 +4,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { createAppointment, updateAppointment } from '../../lib/repository';
 import { calculateStats } from '../../utils/statsCalculator';
+import { ingresosDelMes, historialPorMes, variacionMensual, nombreDeMes, mesActual } from '../../utils/ingresos';
 import { formatPrice, formatDate, toDateString } from '../../utils/dateUtils';
 import NuevoTurnoModal from '../../components/admin/NuevoTurnoModal';
 import AgendaDelDia from '../../components/admin/AgendaDelDia';
+import HistorialIngresos from '../../components/admin/HistorialIngresos';
 
 const STATUS_BADGES = {
   pendiente:  'badge-warning',
@@ -216,6 +218,13 @@ export default function DashboardPage() {
   // ══════════════════════════════════════════════════════════════════════════
   const stats = calculateStats(visibleAppointments, professionals, services);
 
+  // El mes en curso, aparte del total histórico. El total de toda la vida sirve
+  // una vez; lo que el dueño mira todos los días es cómo viene ESTE mes.
+  const mes = mesActual();
+  const delMes = ingresosDelMes(visibleAppointments, mes);
+  const historial = historialPorMes(visibleAppointments);
+  const variacion = variacionMensual(historial);
+
   const maxRevProf = Math.max(...stats.ingresosPorProfesional.map(p => p.total), 1);
   const maxRevSrv  = Math.max(...stats.ingresosPorServicio.map(s => s.total), 1);
 
@@ -268,7 +277,10 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {setupSteps.map(step => (
               <div
-                key={step.to}
+                // Por la etiqueta y no por `to`: dos pasos distintos mandan a
+                // /admin/profesionales (cargar el equipo y asignarle servicios),
+                // así que con `to` React veía dos hijos con la misma clave.
+                key={step.label}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, flexWrap: 'wrap' }}
               >
                 <span style={{ fontSize: 15 }}>{step.done ? '✅' : '⬜'}</span>
@@ -340,10 +352,22 @@ export default function DashboardPage() {
             {stats.total > 0 ? ((stats.completadas / stats.total) * 100).toFixed(0) : 0}% del total
           </div>
         </div>
+        {/* Primero el mes, que es lo que se mira todos los días; el histórico
+            al lado, para no perderlo de vista. */}
+        <div className="stat-card">
+          <div className="stat-card-icon" style={{ background: 'var(--success-light)', color: 'var(--success)' }}>💵</div>
+          <div className="stat-card-value">{formatPrice(delMes.total, business.currency)}</div>
+          <div className="stat-card-label">Ingresos de {nombreDeMes(mes)}</div>
+          <div className={`stat-card-change ${variacion !== null && variacion < 0 ? 'negative' : 'positive'}`}>
+            {delMes.count} {delMes.count === 1 ? 'turno' : 'turnos'}
+            {variacion !== null && ` · ${variacion >= 0 ? '+' : ''}${variacion}% vs. ${nombreDeMes(historial[1].mes)}`}
+          </div>
+        </div>
         <div className="stat-card">
           <div className="stat-card-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>💰</div>
           <div className="stat-card-value">{formatPrice(stats.ingresosTotales, business.currency)}</div>
           <div className="stat-card-label">Ingresos Totales</div>
+          <div className="stat-card-change positive">Desde que abriste la cuenta</div>
         </div>
         <div className="stat-card">
           <div className="stat-card-icon" style={{ background: 'var(--danger-light)', color: 'var(--danger)' }}>❌</div>
@@ -362,6 +386,12 @@ export default function DashboardPage() {
           <div className="stat-card-label">Canceladas</div>
           <div className="stat-card-change negative">{stats.tasaCancelacion}%</div>
         </div>
+      </div>
+
+      {/* Mes por mes. Va antes del desglose por profesional y por servicio
+          porque es la pregunta que se hace primero: "¿cómo vengo?". */}
+      <div style={{ marginBottom: 'var(--space-xl)' }}>
+        <HistorialIngresos appointments={visibleAppointments} currency={business.currency} />
       </div>
 
       {/* Revenue */}

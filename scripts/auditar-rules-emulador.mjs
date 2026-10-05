@@ -142,6 +142,10 @@ await esperar('dueno SI edita su marca',                  editar(duenoA, `busine
 // se ponia la prueba en 2099 y no pagaba nunca.
 await esperar('dueno NO se extiende la prueba gratis',    editar(duenoA, `businesses/${A}`, { trialEndsAt: '2099-01-01' }), 'denegado');
 await esperar('dueno NO se sube el tope de barberos',     editar(duenoA, `businesses/${A}`, { maxBarbers: 99 }), 'denegado');
+await esperar('dueno NO se sube el tope de sucursales',  editar(duenoA, `businesses/${A}`, { maxSucursales: 9 }), 'denegado');
+// El peor de todos: de `grupoId` salen los claims de una cuenta con sucursales,
+// así que escribirlo es meterse la barbería de otro adentro de la cuenta propia.
+await esperar('dueno NO se escribe el grupoId',           editar(duenoA, `businesses/${A}`, { grupoId: B }), 'denegado');
 await esperar('plataforma SI extiende la prueba',         editar(plat,   `businesses/${A}`, { trialEndsAt: '2026-12-31' }), 'permitido');
 
 console.log('\n-- Turnos: cliente --');
@@ -213,6 +217,16 @@ await esperar('moderador tambien',                         consultar(moderador, 
 await esperar('moderador marca leida',                     editar(moderador, 'platform/notifications/items/pn-1', { leidaPor: { [moderador.uid]: true } }), 'permitido');
 await esperar('dueno de barberia NO las lee',              leer(duenoA, 'platform/notifications/items/pn-1'), 'denegado');
 await esperar('nadie las crea desde el browser',           crear(plat, 'platform/notifications/items', { title: 'x' }), 'denegado');
+
+// Cobros de la plataforma: es plata, así que no sale del equipo. El dueño de la
+// barbería no los ve ni para sus propios pagos, igual que la facturación.
+await db.doc('platform/cobros/items/cob-1').set({ businessId: A, monto: 25000, fecha: '2026-10-01' });
+await esperar('plataforma registra un cobro',              crear(plat, 'platform/cobros/items', { businessId: A, monto: 1000, fecha: '2026-10-02' }), 'permitido');
+await esperar('plataforma lista los cobros',               consultar(plat, 'platform/cobros', 'items'), 'permitido');
+await esperar('moderador lee los cobros',                  consultar(moderador, 'platform/cobros', 'items'), 'permitido');
+await esperar('moderador NO registra un cobro',            crear(moderador, 'platform/cobros/items', { businessId: A, monto: 1, fecha: '2026-10-02' }), 'denegado');
+await esperar('dueno de barberia NO lee los cobros',       leer(duenoA, 'platform/cobros/items/cob-1'), 'denegado');
+await esperar('anonimo NO lee los cobros',                 leer(null, 'platform/cobros/items/cob-1'), 'denegado');
 await esperar('plataforma registra SU dispositivo',        crear(plat, 'platformDevices', { uid: plat.uid, role: 'platform', token: 't' }), 'permitido');
 await esperar('dueno de barberia NO registra ahi',         crear(duenoA, 'platformDevices', { uid: duenoA.uid, role: 'platform', token: 't' }), 'denegado');
 await esperar('nadie lista los tokens de la plataforma',   consultar(plat, '', 'platformDevices'), 'denegado');

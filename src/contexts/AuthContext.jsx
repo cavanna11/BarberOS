@@ -148,6 +148,19 @@ export function AuthProvider({ children }) {
           ? 'moderator'
           : (hasClaims ? claims.role : null) || 'client',
       businessId: platformOwner || moderator ? null : (claims.businessId || null),
+      // Cuenta con sucursales (Plan Empresarial): el dueño lleva la lista entera
+      // en el claim `businessIds`, además del `businessId` suelto que apunta a la
+      // principal. Para una cuenta de una sola barbería la lista es esa misma
+      // barbería, así que el resto del código no tiene que preguntar si es un
+      // grupo o no: siempre hay una lista.
+      //
+      // Un barbero NUNCA la lleva: su claim nombra una sola sucursal.
+      businessIds: platformOwner || moderator
+        ? []
+        : Array.isArray(claims.businessIds) && claims.businessIds.length > 0
+          ? claims.businessIds
+          : (claims.businessId ? [claims.businessId] : []),
+      grupoId: platformOwner || moderator ? null : (claims.grupoId || null),
       professionalId: platformOwner || moderator ? null : (claims.professionalId || null),
       isPlatformOwner: platformOwner,
       isModerator: moderator,

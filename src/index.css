@@ -1497,6 +1497,60 @@ select.form-input {
 }
 
 /* Revenue Bars */
+/* ── Sucursales (cuenta empresarial) ─────────────────────────────────────── */
+.sucursales-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+/* Los números de una sucursal: etiqueta chica arriba, número abajo. En el
+   celular se reacomodan solos por el auto-fit. */
+.sucursal-numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 10px;
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+}
+
+.sucursal-numeros > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sucursal-numeros span { font-size: 11px; }
+.sucursal-numeros strong { font-size: 14px; }
+
+/* El selector de sucursal, arriba del menú del panel. */
+.selector-sucursal {
+  padding: 0 var(--space-md) var(--space-md);
+}
+
+.selector-sucursal label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.selector-sucursal select {
+  width: 100%;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .revenue-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1710,7 +1764,16 @@ select.form-input {
   }
 
   .stats-grid {
-    grid-template-columns: 1fr 1fr;
+    /* minmax(0, 1fr) y no 1fr: `1fr` es minmax(AUTO, 1fr), así que la columna
+       nunca baja del ancho del contenido. Con los importes de seis o siete
+       cifras ("$ 672.500") la grilla se pasaba del ancho de la pantalla y
+       aparecía la barra de scroll horizontal en el celular. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stat-card-value {
+    font-size: 1.35rem;
+    overflow-wrap: anywhere;
   }
 
   .confirmation-actions {
@@ -2007,6 +2070,71 @@ select.form-input {
   color: var(--text-secondary);
   margin-bottom: var(--space-lg);
   flex: 1;
+}
+
+/* Cuatro planes de suscripción en una fila. Más angosto que .landing-grid-3
+   (266px) porque son cuatro tarjetas y no tres: con el ancho de antes, en un
+   monitor normal la cuarta se caía sola a un renglón aparte y parecía otra
+   categoría. */
+.landing-grid-planes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+  text-align: left;
+}
+
+.landing-price.empresarial {
+  border-color: var(--text);
+}
+
+/* "Consultanos" en lugar de un precio: más chico que un número, porque la
+   tipografía de 2.3rem estaba pensada para cuatro dígitos. */
+.landing-price-consulta {
+  font-size: 1.45rem;
+}
+
+.landing-price-consulta span {
+  display: block;
+  margin-top: 2px;
+}
+
+/* La capacidad del plan, que es lo único que de verdad cambia entre uno y otro. */
+.landing-price-capacidad {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  margin-bottom: var(--space-md);
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.landing-price-capacidad strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+/* Plan a medida: no es una tarjeta de precio, es una invitación a hablar. */
+.landing-plan-medida {
+  margin-top: var(--space-lg);
+  padding: var(--space-lg);
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: var(--space-lg);
+  align-items: center;
+  text-align: left;
+  border-style: dashed;
+  border-width: 2px;
+}
+
+@media (max-width: 760px) {
+  .landing-plan-medida {
+    grid-template-columns: 1fr;
+    gap: var(--space-md);
+  }
 }
 
 .landing-comunes {

@@ -148,6 +148,24 @@ export function crearBarberiaDePrueba(datos) {
   return llamar('crearBarberiaDePrueba', datos);
 }
 
+/**
+ * Abre una sucursal nueva dentro de la misma cuenta (Plan Empresarial).
+ *
+ * Del lado del servidor y no con una escritura del browser porque el tope de
+ * sucursales es plata: en la interfaz se saltea con la consola abierta. Además
+ * crea el negocio, el slug y la facturación en una sola operación, y le escribe
+ * al dueño los claims con la sucursal nueva adentro — sin eso entra y no la ve.
+ *
+ * `copiarServiciosDe` es opcional: copia el catálogo de otra sucursal de la
+ * misma cuenta como punto de partida, en documentos nuevos e independientes.
+ *
+ * Devuelve { businessId, slug, grupoId, serviciosCopiados }. Después hay que
+ * llamar a `refreshClaims()` para que el token traiga la sucursal.
+ */
+export function crearSucursal({ nombre, slug, telefono = '', direccion = '', ciudad = '', businessId = null, copiarServiciosDe = null }) {
+  return llamar('crearSucursal', { nombre, slug, telefono, direccion, ciudad, businessId, copiarServiciosDe });
+}
+
 /** Manda un push de prueba a los teléfonos de esta misma cuenta. */
 export function probarPush() {
   return llamar('probarPush', {});

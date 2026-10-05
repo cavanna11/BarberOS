@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useBusiness } from '../../contexts/BusinessContext';
-import { PLANS, DEFAULT_PLAN_ID, getPlan, DEFAULT_BUSINESS_HOURS } from '../../config/plans';
+import { PLANS, DEFAULT_PLAN_ID, getPlan, DEFAULT_BUSINESS_HOURS, precioLindo } from '../../config/plans';
 import { isPlatformOwner } from '../../config/platform';
 import { slugify, isReservedSlug } from '../../utils/slug';
 import { createBusiness, isSlugAvailable } from '../../lib/repository';
@@ -20,6 +20,12 @@ const EMPTY_FORM = {
   address: '',
   city: '',
   planId: DEFAULT_PLAN_ID,
+  // El abono acordado, en pesos. Se propone el del plan cuando tiene precio de
+  // lista; los planes nuevos todavía no lo tienen definido (y el Personalizado
+  // nunca va a tenerlo), así que se tipea. Vacío lo rechaza la validación: con
+  // abono 0 la cuenta no acumula deuda, no se suspende nunca y la prueba no
+  // corta — es una cuenta gratis para siempre sin querer.
+  monthlyFee: String(getPlan(DEFAULT_PLAN_ID)?.monthlyFee ?? ''),
   // Arranca con los colores de BarberOS; el cliente los cambia si tiene marca propia.
   primaryColor: '#e03d00',
   secondaryColor: '#ff5c1a',
@@ -105,6 +111,14 @@ export default function NewBusinessModal({ onClose, onCreated }) {
 
     if (!form.ownerName.trim()) e.ownerName = 'Poné el nombre del dueño.';
 
+    // El abono tiene que ser un número mayor a cero. Con 0, runBilling nunca le
+    // suma deuda, la cuenta no se suspende nunca y los días de prueba no cortan
+    // nada: queda gratis para siempre sin que nadie se entere.
+    const abono = Number(form.monthlyFee);
+    if (!Number.isFinite(abono) || abono <= 0) {
+      e.monthlyFee = 'Poné el abono mensual acordado. Con 0 la cuenta nunca se suspende por falta de pago.';
+    }
+
     const pass = form.passwordElegida.trim();
     if (form.accesoPor === 'password' && pass && pass.length < 8) {
       e.passwordElegida = 'Si la elegís vos, tiene que tener al menos 8 caracteres.';
@@ -148,7 +162,17 @@ export default function NewBusinessModal({ onClose, onCreated }) {
       },
       // Público: la UI del negocio muestra el plan y su cuota de mensajes.
       planId: plan.id,
-      whatsappQuota: plan.whatsappQuota,
+      whatsappQuota: plan.whatsappQuota ?? 0,
+      // Los topes quedan ESCRITOS en el documento y no solo implícitos en el
+      // plan: así una cuenta conserva lo que compró aunque el plan cambie de
+      // topes más adelante, y se le puede hacer una excepción sin inventar un
+      // plan nuevo. Solo la plataforma los puede tocar (Rules).
+      maxBarbers: plan.maxBarbers ?? null,
+      maxSucursales: plan.maxSucursales ?? 1,
+      // Sin sucursales todavía. Lo escribe `crearSucursal` cuando se abre la
+      // primera, y de ahí salen los permisos del dueño: el dueño NO lo puede
+      // tocar.
+      grupoId: null,
       isFrozen: false,
       // Va en el documento público para que el panel pueda mostrar los días que
       // quedan sin una lectura extra. No es dato sensible.
@@ -160,7 +184,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     // documento público. El doc público lo puede leer cualquier cliente.
     const billing = {
       planId: plan.id,
-      monthlyFee: plan.monthlyFee,
+      monthlyFee: Number(form.monthlyFee) || 0,
       debt: 0,
       lastPaymentDate: null,
       // Con prueba, el primer vencimiento cae el día que termina: runBilling no
@@ -435,16 +459,50 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                   type="radio"
                   name="planId"
                   checked={form.planId === plan.id}
-                  onChange={() => set({ planId: plan.id })}
+                  onChange={() => set({
+                    planId: plan.id,
+                    // Se propone el precio de lista del plan; si no tiene, se
+                    // deja el campo vacío para que se tipee el acordado.
+                    monthlyFee: String(plan.monthlyFee ?? ''),
+                  })}
                 />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 'bold', fontSize: 13 }}>{plan.label}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    {plan.description} · ${plan.monthlyFee.toLocaleString('es-AR')} ARS/mes
+                    {plan.description} ·{' '}
+                    {plan.maxSucursales === null
+                      ? 'sucursales a convenir'
+                      : plan.maxSucursales === 1 ? '1 barbería' : `hasta ${plan.maxSucursales} sucursales`}
+                    {' · '}
+                    {plan.maxBarbers === null
+                      ? 'barberos sin límite'
+                      : plan.maxBarbers === 1 ? '1 barbero' : `hasta ${plan.maxBarbers} barberos`}
+                    {' · '}
+                    {precioLindo(plan.monthlyFee)
+                      ? `${precioLindo(plan.monthlyFee)} ARS/mes`
+                      : 'precio a convenir'}
                   </div>
                 </div>
               </label>
             ))}
+          </div>
+
+          <div className="form-group" style={{ marginTop: 'var(--space-md)' }}>
+            <label className="form-label">Abono mensual acordado (ARS)</label>
+            <input
+              type="number"
+              min="0"
+              className="form-input"
+              value={form.monthlyFee}
+              onChange={(e) => set({ monthlyFee: e.target.value })}
+              placeholder="25000"
+            />
+            {errors.monthlyFee && <div className="form-error">{errors.monthlyFee}</div>}
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Es lo que se le va a cobrar por mes. Los planes nuevos todavía no tienen
+              precio de lista, así que se escribe el que acordaste. Va en la facturación
+              privada, no en el documento público.
+            </p>
           </div>
 
           {/* Cómo entra el dueño */}

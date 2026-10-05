@@ -55,8 +55,23 @@ service cloud.firestore {
     }
 
     // Pertenece a este negocio (con cualquier rol de staff)
+    //
+    // Dos formas de pertenecer, y la segunda existe por las cuentas con
+    // sucursales (Plan Empresarial): un dueño con varias barberías lleva en el
+    // token `businessIds: ['biz-a', 'biz-b', …]` además del `businessId` suelto,
+    // que sigue apuntando a la principal porque es lo que entiende el resto del
+    // código.
+    //
+    // Quién escribe esa lista: SOLO las Cloud Functions con el Admin SDK, y la
+    // calculan preguntándole a la base qué negocios comparten `grupoId` — un
+    // campo que las Rules no le dejan tocar al dueño (ver más abajo). Un barbero
+    // nunca lleva `businessIds`: su claim nombra una sola barbería, así que no
+    // puede ver la agenda de otra sucursal ni queriendo.
     function inBusiness(bizId) {
-      return signedIn() && claims().get('businessId', '') == bizId;
+      return signedIn() && (
+        claims().get('businessId', '') == bizId
+        || bizId in claims().get('businessIds', [])
+      );
     }
 
     function isBusinessOwner(bizId) {
@@ -121,12 +136,19 @@ service cloud.firestore {
       // `trialEndsAt` está en la lista por una razón concreta: runBilling lo
       // lee de ESTE documento para saber si cobrar. Sin protegerlo, un dueño
       // con la consola abierta se ponía la prueba en 2099 y no pagaba nunca.
+      //
+      // `grupoId` es más grave todavía, y es el peor agujero posible acá: los
+      // claims de una cuenta con sucursales se calculan preguntándole a la base
+      // qué negocios tienen ese grupoId. Si el dueño pudiera escribirlo, se
+      // pondría el grupoId de OTRA barbería y en el próximo recálculo de
+      // permisos se llevaría su negocio adentro de sus claims. Lo escribe solo
+      // `crearSucursal` con el Admin SDK.
       allow update: if isPlatform() || (
         isBusinessOwner(bizId) &&
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
-                   'trialEndsAt', 'createdAt', 'maxBarbers', 'origen', 'mpConectado',
-                   'mpUserId'])
+                   'trialEndsAt', 'createdAt', 'maxBarbers', 'maxSucursales', 'origen',
+                   'mpConectado', 'mpUserId', 'grupoId'])
       );
 
       // Facturación: solo la plataforma. Ni el dueño la lee.
@@ -332,18 +354,23 @@ service cloud.firestore {
     // where('businessId','==',suId) — si no, Firestore rechaza toda la consulta.
     match /tickets/{ticketId} {
       allow get: if esEquipoPlataforma() || inBusiness(resource.data.businessId);
+      // inBusiness y no la comparación suelta: una cuenta con sucursales abre
+      // tickets desde cualquiera de ellas y las tiene que poder ver todas.
       allow list: if esEquipoPlataforma()
-                     || (signedIn() && resource.data.businessId == claims().get('businessId', ''));
+                     || (signedIn() && inBusiness(resource.data.businessId));
 
       // Lo abre la barbería (o vos en su nombre, al preparar la cuenta).
       //
-      // El `!= ''` no sobra: el default de claims().get() para alguien SIN claim
-      // es la cadena vacía, así que un cliente cualquiera mandando
-      // businessId: '' cumplía la igualdad y podía crear tickets basura.
+      // El `!= ''` no sobra, y menos ahora que la pertenencia pasa por
+      // inBusiness(): el default de claims().get() para alguien SIN claim es la
+      // cadena vacía, así que un cliente cualquiera mandando businessId: ''
+      // cumpliría la igualdad de adentro de inBusiness y podría crear tickets
+      // basura. Se compara contra el dato que llega, no contra el claim.
       allow create: if esEquipoPlataforma()
                        || (signedIn()
-                           && claims().get('businessId', '') != ''
-                           && request.resource.data.businessId == claims().get('businessId', ''));
+                           && request.resource.data.businessId is string
+                           && request.resource.data.businessId != ''
+                           && inBusiness(request.resource.data.businessId));
 
       // Cerrar, reabrir, marcar leído. Nadie borra tickets: quedan de historial.
       allow update: if esEquipoPlataforma() || inBusiness(resource.data.businessId);
@@ -396,6 +423,19 @@ service cloud.firestore {
     match /platform/avisos/items/{avisoId} {
       allow read: if signedIn();
       allow write: if isPlatform();
+    }
+
+    // ── Cobros de la plataforma ────────────────────────────────────────────
+    // Un asiento por cada pago que registra el panel global: con esto se puede
+    // decir cuánto facturó BarberOS este mes y los anteriores. Antes solo
+    // quedaba `lastPaymentDate` en la facturación del negocio, que se pisa en
+    // cada cobro.
+    //
+    // Es plata, así que no sale del equipo de la plataforma. El dueño de la
+    // barbería no lo ve ni para sus propios pagos — igual que /private/billing.
+    match /platform/cobros/items/{cobroId} {
+      allow read: if esEquipoPlataforma();
+      allow create, update, delete: if isPlatform();
     }
 
     match /platform/notifications/items/{notifId} {

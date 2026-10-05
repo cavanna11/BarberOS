@@ -10,7 +10,7 @@ import {
   removeStaffContact,
 } from '../../lib/repository';
 import { getDayName, generateId } from '../../utils/dateUtils';
-import { getPlan } from '../../config/plans';
+import { limitesDelNegocio } from '../../config/plans';
 import FotoPerfil from '../../components/admin/FotoPerfil';
 import HorarioSemanal from '../../components/admin/HorarioSemanal';
 import { estadoPushDelEquipo } from '../../lib/functions';
@@ -34,8 +34,12 @@ export default function ProfessionalsPage() {
   // interfaz. Alguien con la consola abierta podría saltearlo, igual que
   // cualquier tope de plan en una app de browser. Lo que protege los datos son
   // las Rules, y este número no es un dato a proteger.
-  const plan = getPlan(business?.planId);
-  const topeBarberos = plan?.maxBarbers ?? null;
+  // Del negocio y no del plan a secas: lo que esté escrito en el documento
+  // manda (campo `maxBarbers`, que solo puede escribir la plataforma). Así una
+  // cuenta vieja conserva el tope que compró y se le puede hacer una excepción
+  // a alguien sin cambiarle el plan. En una cuenta con sucursales el tope es
+  // POR SUCURSAL: cada una tiene su propio equipo.
+  const { maxBarbers: topeBarberos } = limitesDelNegocio(business);
   const activos = professionals.filter((p) => p.isActive !== false).length;
   const llegoAlTope = topeBarberos !== null && activos >= topeBarberos;
 

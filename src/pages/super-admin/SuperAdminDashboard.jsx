@@ -4,8 +4,15 @@ import { useBusiness } from '../../contexts/BusinessContext';
 import { useAuth } from '../../contexts/AuthContext';
 import TeamPanel from './TeamPanel';
 import AvisosPanel from './AvisosPanel';
-import { PLANS, OVERAGE_COST_USD, findPlanByQuota } from '../../config/plans';
+import { PLANS, OVERAGE_COST_USD, findPlanByQuota, getPlan, precioLindo } from '../../config/plans';
 import { formatPrice, formatDate } from '../../utils/dateUtils';
+import {
+  cobradoEnElMes,
+  cobradoHistorico,
+  cobrosPorMes,
+  mesActual,
+  nombreDeMes,
+} from '../../utils/ingresos';
 import {
   setBusinessFrozen,
   recordPayment,
@@ -56,7 +63,7 @@ const TITULOS = {
 export default function SuperAdminDashboard({ seccion = null }) {
   const { state, dispatch } = useBusiness();
   const navigate = useNavigate();
-  const { businesses, whatsappConfig, whatsappLogs, appointments, professionals, services } = state;
+  const { businesses, whatsappConfig, whatsappLogs, appointments, professionals, services, cobros } = state;
 
   // Qué sección mostrar sale de la RUTA, no de un estado: cada una tiene su
   // dirección propia (/super-admin/barberias, /soporte, …) y se navega desde el
@@ -116,6 +123,25 @@ export default function SuperAdminDashboard({ seccion = null }) {
   const projectedRevenue = businesses?.reduce((sum, b) => sum + (b.monthlyFee || 0), 0) || 0;
   const totalDebt = businesses?.reduce((sum, b) => sum + (b.debt || 0), 0) || 0;
 
+  // Lo COBRADO, que no es lo mismo que lo proyectado: la proyección es la suma
+  // de los abonos (lo que debería entrar si pagan todos), esto es la plata que
+  // de verdad entró. Sale de los cobros que se registran en este panel.
+  //
+  // Es la caja de la PLATAFORMA. No tiene nada que ver con lo que factura una
+  // barbería cortando pelo (eso vive en el panel de cada una): sumar las dos
+  // cosas en un mismo número no querría decir nada.
+  const mesEnCurso = mesActual();
+  const cobradoMes = cobradoEnElMes(cobros, mesEnCurso);
+  const cobradoTotal = cobradoHistorico(cobros);
+  const historialCobros = cobrosPorMes(cobros);
+  const nombreDelNegocio = (id) => businesses?.find((b) => b.id === id)?.name || id;
+
+  // Cuentas empresariales: un grupo es un conjunto de sucursales de la misma
+  // cuenta. `grupoId` apunta al negocio principal, así que el principal es el
+  // que tiene `grupoId === id`.
+  const sucursales = businesses?.filter((b) => b.grupoId && b.grupoId !== b.id) || [];
+  const gruposEmpresariales = new Set(sucursales.map((b) => b.grupoId)).size;
+
   // Monthly WhatsApp message counting helper
   const getCurrentMonthStr = () => {
     const d = new Date();
@@ -141,8 +167,26 @@ export default function SuperAdminDashboard({ seccion = null }) {
   // --- Handlers ---
   const handleToggleFreeze = async (id) => {
     const biz = businesses.find((b) => b.id === id);
+    const nuevo = !biz?.isFrozen;
+
+    // Si es la barbería PRINCIPAL de una cuenta con sucursales, el cambio va a
+    // todas: el plan es uno y la deuda es una. Suspender solo la principal
+    // dejaría a las sucursales tomando turnos, que es justo la palanca de cobro
+    // desarmada; y descongelarla sin las otras dejaría al dueño con tres cuartos
+    // de su cuenta cerrada sin entender por qué.
+    const delGrupo = biz?.grupoId === id
+      ? businesses.filter((b) => b.grupoId === id)
+      : [biz];
+
+    if (delGrupo.length > 1) {
+      const texto = nuevo ? 'suspender' : 'reactivar';
+      if (!window.confirm(`Esta cuenta tiene ${delGrupo.length} sucursales. Se van a ${texto} todas. ¿Seguimos?`)) return;
+    }
+
     try {
-      await setBusinessFrozen(id, !biz?.isFrozen);
+      for (const n of delGrupo) {
+        if (n) await setBusinessFrozen(n.id, nuevo);
+      }
     } catch (err) {
       console.error('[super-admin] No se pudo cambiar el estado:', err);
       alert('No se pudo cambiar el estado de la cuenta: ' + err.message);
@@ -197,14 +241,13 @@ export default function SuperAdminDashboard({ seccion = null }) {
 
   const handleOpenUpgradeModal = (biz) => {
     setSelectedBusiness(biz);
-    const plan = findPlanByQuota(biz.whatsappQuota);
-    if (plan) {
-      setSelectedPlan(plan.id);
-    } else {
-      setSelectedPlan('personalizado');
-      setUpgradeQuota(String(biz.whatsappQuota ?? ''));
-      setUpgradeFee(String(biz.monthlyFee ?? ''));
-    }
+    // Por el planId, que es el dato real; la cuota queda de respaldo para las
+    // cuentas viejas que lo tengan vacío. Antes se adivinaba SOLO por la cuota,
+    // y con dos planes compartiendo cuota el modal preseleccionaba el que no era.
+    const plan = getPlan(biz.planId) || findPlanByQuota(biz.whatsappQuota);
+    setUpgradeQuota(String(biz.whatsappQuota ?? ''));
+    setUpgradeFee(String(biz.monthlyFee ?? ''));
+    setSelectedPlan(plan && plan.id !== 'personalizado' ? plan.id : 'personalizado');
     setModalType('upgrade');
   };
 
@@ -251,16 +294,29 @@ export default function SuperAdminDashboard({ seccion = null }) {
 
   const handleRecordUpgrade = async () => {
     // Los planes vienen de src/config/plans.js; solo "personalizado" se escribe a mano.
-    const plan = PLANS.find((p) => p.id === selectedPlan);
-    const quota = plan ? plan.whatsappQuota : Number(upgradeQuota) || 0;
-    const fee = plan ? plan.monthlyFee : Number(upgradeFee) || 0;
+    const plan = PLANS.find((p) => p.id === selectedPlan) || null;
+    // El plan manda cuando tiene el dato; si no lo tiene (los planes nuevos
+    // todavía no tienen precio de lista, y el Personalizado nunca va a tenerlo),
+    // vale lo que se tipeó en el modal.
+    const quota = plan && plan.whatsappQuota != null ? plan.whatsappQuota : Number(upgradeQuota) || 0;
+    const fee = plan && plan.monthlyFee != null ? plan.monthlyFee : Number(upgradeFee) || 0;
     const planLabel = plan ? plan.label : 'Plan Personalizado';
+
+    // Con abono 0 la cuenta no acumula deuda y no se suspende nunca: queda
+    // gratis sin que nadie se dé cuenta hasta mirar la facturación.
+    if (!(fee > 0)) {
+      alert('Poné el abono mensual acordado: con 0 la cuenta nunca se suspende por falta de pago.');
+      return;
+    }
 
     try {
       await upgradePlan(selectedBusiness.id, {
         planId: plan ? plan.id : 'personalizado',
         whatsappQuota: quota,
         monthlyFee: fee,
+        // Los topes de capacidad, que es lo que el negocio de verdad compra.
+        maxBarbers: plan ? plan.maxBarbers ?? null : null,
+        maxSucursales: plan ? plan.maxSucursales ?? 1 : 1,
       });
     } catch (err) {
       console.error('[super-admin] No se pudo cambiar el plan:', err);
@@ -303,8 +359,11 @@ export default function SuperAdminDashboard({ seccion = null }) {
   };
 
   const filteredBusinesses = businesses?.filter(b => {
-    const matchesSearch = b.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          b.slug.toLowerCase().includes(searchTerm.toLowerCase());
+    // Con `|| ''`: un documento sin nombre o sin slug (uno sembrado a mano, o
+    // un alta que quedó a medias) hacía reventar el filtro y con él la pantalla
+    // entera del panel global — pantalla en blanco, sin ningún mensaje.
+    const matchesSearch = (b.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (b.slug || '').toLowerCase().includes(searchTerm.toLowerCase());
     
     let matchesStatus = true;
     if (tenantStatusFilter === 'active') matchesStatus = !b.isFrozen;
@@ -421,16 +480,118 @@ export default function SuperAdminDashboard({ seccion = null }) {
               <div className="stat-card-value">{suspendedCount}</div>
               <div className="stat-card-label">Cuentas Suspendidas</div>
             </div>
+            {/* Cobrado va ANTES de proyectado: lo que entró manda sobre lo que
+                debería entrar. */}
+            <div className="stat-card">
+              <div className="stat-card-icon" style={{ background: 'var(--success-light)', color: 'var(--success)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><RevenueIcon /></div>
+              <div className="stat-card-value">{formatPrice(cobradoMes.total)}</div>
+              <div className="stat-card-label">Cobrado en {nombreDeMes(mesEnCurso)}</div>
+              <div className="stat-card-change positive">
+                {cobradoMes.count} {cobradoMes.count === 1 ? 'cobro' : 'cobros'} registrados
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-icon" style={{ background: 'var(--bg-secondary)', color: 'var(--text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><RevenueIcon /></div>
+              <div className="stat-card-value">{formatPrice(cobradoTotal.total)}</div>
+              <div className="stat-card-label">Cobrado histórico</div>
+              <div className="stat-card-change positive">
+                {cobradoTotal.count} {cobradoTotal.count === 1 ? 'cobro' : 'cobros'} en total
+              </div>
+            </div>
             <div className="stat-card">
               <div className="stat-card-icon" style={{ background: 'var(--bg-secondary)', color: 'var(--text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><RevenueIcon /></div>
               <div className="stat-card-value">{formatPrice(projectedRevenue)}</div>
               <div className="stat-card-label">Suscripción Mensual Proyectada</div>
+              <div className="stat-card-change positive">Si pagan todas</div>
             </div>
             <div className="stat-card">
               <div className="stat-card-icon" style={{ background: 'var(--danger-light)', color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><DebtIcon /></div>
               <div className="stat-card-value" style={{ color: totalDebt > 0 ? 'var(--danger)' : 'inherit' }}>{formatPrice(totalDebt)}</div>
               <div className="stat-card-label">Deuda Total por Cobrar</div>
             </div>
+            {gruposEmpresariales > 0 && (
+              <div className="stat-card">
+                <div className="stat-card-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><BusinessIcon /></div>
+                <div className="stat-card-value">{gruposEmpresariales}</div>
+                <div className="stat-card-label">Cuentas con sucursales</div>
+                <div className="stat-card-change positive">
+                  {sucursales.length} {sucursales.length === 1 ? 'sucursal' : 'sucursales'} aparte de la principal
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Historial de cobros, mes por mes */}
+          <div className="card" style={{ padding: 'var(--space-md)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <h3>Historial de ingresos de la plataforma</h3>
+              <span className="text-muted" style={{ fontSize: 12 }}>
+                Lo que BarberOS le cobró a las barberías
+              </span>
+            </div>
+
+            {historialCobros.length === 0 ? (
+              <p className="text-secondary" style={{ fontSize: 13, marginTop: 8 }}>
+                Todavía no hay ningún cobro registrado. Cada vez que uses{' '}
+                <strong>Registrar pago</strong> en una barbería, el monto queda anotado acá
+                y suma al mes correspondiente.
+              </p>
+            ) : (
+              <div style={{ marginTop: 'var(--space-md)' }}>
+                {(() => {
+                  const maximo = Math.max(...historialCobros.map((m) => m.total), 1);
+                  return historialCobros.map((m) => (
+                    <div key={m.mes} className="revenue-bar-item">
+                      <div className="revenue-bar-header">
+                        <span style={{ fontWeight: m.mes === mesEnCurso ? 700 : 400 }}>
+                          {nombreDeMes(m.mes)}
+                          {m.mes === mesEnCurso && (
+                            <span className="badge badge-primary" style={{ fontSize: 10, marginLeft: 6 }}>en curso</span>
+                          )}
+                        </span>
+                        <span className="text-secondary">
+                          {formatPrice(m.total)} ({m.count} {m.count === 1 ? 'cobro' : 'cobros'})
+                        </span>
+                      </div>
+                      <div className="revenue-bar-track">
+                        <div className="revenue-bar-fill" style={{ width: `${(m.total / maximo) * 100}%` }} />
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
+
+            {/* Los últimos cobros, uno por uno: sirve para encontrar el que se
+                cargó mal sin salir de la pantalla. */}
+            {cobros?.length > 0 && (
+              <details style={{ marginTop: 'var(--space-sm)' }}>
+                <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                  Ver los últimos cobros uno por uno
+                </summary>
+                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {cobros.slice(0, 20).map((c) => (
+                    <div
+                      key={c.id}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', gap: 8,
+                        fontSize: 13, padding: '6px 10px', borderRadius: 6,
+                        background: 'var(--bg-secondary)', flexWrap: 'wrap',
+                      }}
+                    >
+                      <span>{c.fecha} · {nombreDelNegocio(c.businessId)}</span>
+                      <strong>{formatPrice(c.monto)}</strong>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+
+            <p className="text-muted" style={{ fontSize: 12, marginTop: 'var(--space-sm)' }}>
+              El historial arranca el día que se puso esta pantalla: antes solo se guardaba
+              la fecha del último pago de cada barbería, así que los cobros anteriores no se
+              pueden reconstruir.
+            </p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-lg)' }}>
@@ -642,6 +803,19 @@ export default function SuperAdminDashboard({ seccion = null }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 4 }}>
                     <div>
                       <strong style={{ fontSize: 16, color: 'var(--text)' }}>{b.name}</strong>
+                      {/* A qué cuenta pertenece. Sin esto, cuatro sucursales de la
+                          misma barbería parecen cuatro clientes distintos — y una
+                          de ellas, la que paga, es la única con abono. */}
+                      {b.grupoId && b.grupoId !== b.id && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          Sucursal de <strong>{nombreDelNegocio(b.grupoId)}</strong> · el abono lo paga la principal
+                        </div>
+                      )}
+                      {b.grupoId && b.grupoId === b.id && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          Cuenta con {businesses.filter((o) => o.grupoId === b.id).length} sucursales
+                        </div>
+                      )}
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                         URL: <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)' }}>/{b.slug}</span>
                       </div>
@@ -1290,7 +1464,10 @@ export default function SuperAdminDashboard({ seccion = null }) {
                 <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Seleccionar Plan de Upgrade</label>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {PLANS.map(plan => (
+                  {/* El Personalizado no sale de la lista: tiene su propia opción
+                      acá abajo, con los campos de cuota y abono a medida. Si
+                      apareciera en las dos, habría dos radios con el mismo valor. */}
+                  {PLANS.filter(p => p.id !== 'personalizado').map(plan => (
                     <label
                       key={plan.id}
                       className="card card-selectable"
@@ -1300,12 +1477,23 @@ export default function SuperAdminDashboard({ seccion = null }) {
                         type="radio"
                         name="upgradePlan"
                         checked={selectedPlan === plan.id}
-                        onChange={() => setSelectedPlan(plan.id)}
+                        onChange={() => {
+                          setSelectedPlan(plan.id);
+                          if (plan.monthlyFee != null) setUpgradeFee(String(plan.monthlyFee));
+                        }}
                       />
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 'bold', fontSize: 13 }}>{plan.label}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          {plan.description} · ${plan.monthlyFee.toLocaleString('es-AR')} ARS/mes
+                          {plan.maxSucursales === 1 ? '1 barbería' : `hasta ${plan.maxSucursales} sucursales`}
+                          {' · '}
+                          {plan.maxBarbers === null
+                            ? 'barberos sin límite'
+                            : plan.maxBarbers === 1 ? '1 barbero' : `hasta ${plan.maxBarbers} barberos`}
+                          {' · '}
+                          {precioLindo(plan.monthlyFee)
+                            ? `${precioLindo(plan.monthlyFee)} ARS/mes`
+                            : 'abono a convenir'}
                         </div>
                       </div>
                     </label>
@@ -1326,8 +1514,12 @@ export default function SuperAdminDashboard({ seccion = null }) {
                 </div>
               </div>
 
-              {selectedPlan === 'personalizado' && (
+              {/* El abono se pide siempre que el plan elegido no traiga precio de
+                  lista: los planes nuevos todavía no lo tienen. La cuota de
+                  WhatsApp solo en el Personalizado, porque los demás la traen. */}
+              {(selectedPlan === 'personalizado' || getPlan(selectedPlan)?.monthlyFee == null) && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 'var(--space-md)' }}>
+                  {selectedPlan === 'personalizado' && (
                   <div className="form-group">
                     <label className="form-label">Límite WhatsApp</label>
                     <input
@@ -1339,6 +1531,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
                       required
                     />
                   </div>
+                  )}
                   <div className="form-group">
                     <label className="form-label">Abono Mensual (ARS)</label>
                     <input

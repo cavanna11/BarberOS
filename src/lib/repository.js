@@ -183,6 +183,35 @@ export function subscribeBusiness(businessId, cb, onError) {
   return escuchar(businessDoc(businessId), unDoc, cb, onError);
 }
 
+/**
+ * Escucha VARIOS negocios puntuales, por id.
+ *
+ * Para las cuentas con sucursales: el dueño tiene hasta cuatro barberías y el
+ * panel necesita las cuatro para el selector y para la pantalla que las muestra
+ * juntas. No se puede resolver con una sola consulta a la colección: listar
+ * `businesses` solo se le permite al panel global (si no, cualquiera se baja la
+ * cartera de clientes). Son N lecturas de un documento cada una, que es
+ * exactamente lo que se necesita y nada más.
+ *
+ * Emite en el orden de `ids` para que la lista no cambie de orden entre
+ * renders según cuál llegó primero.
+ */
+export function subscribeBusinesses(ids, cb, onError) {
+  const datos = new Map();
+  const offs = ids.map((id) =>
+    subscribeBusiness(
+      id,
+      (negocio) => {
+        if (negocio) datos.set(id, negocio);
+        else datos.delete(id);
+        cb(ids.map((i) => datos.get(i)).filter(Boolean));
+      },
+      onError
+    )
+  );
+  return () => offs.forEach((off) => off());
+}
+
 /** Escucha TODOS los negocios. Solo el dueño de plataforma puede listar. */
 export function subscribeAllBusinesses(cb, onError) {
   return escuchar(businessesCol(), rows, cb, onError);
@@ -199,7 +228,10 @@ export function subscribeAllBusinesses(cb, onError) {
 // agregalo acá.
 const CAMPOS_SOLO_PLATAFORMA = [
   'isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
-  'trialEndsAt', 'maxBarbers', 'origen', 'mpConectado', 'mpUserId',
+  'trialEndsAt', 'maxBarbers', 'maxSucursales', 'origen', 'mpConectado', 'mpUserId',
+  // `grupoId` ata la barbería a una cuenta con sucursales y de ahí salen los
+  // claims del dueño. Lo escribe solo la function `crearSucursal`.
+  'grupoId',
 ];
 
 export async function updateBusiness(businessId, cambios, { esPlataforma = false } = {}) {
@@ -245,15 +277,65 @@ export async function recordPayment(businessId, monto, fecha) {
     lastPaymentDate: fecha,
   });
 
+  // El cobro queda anotado aparte, como un asiento más del libro. Antes lo
+  // único que sobrevivía era `lastPaymentDate`, que se pisa en cada cobro: la
+  // plata cobrada el mes pasado no quedaba en ningún lado y no había forma de
+  // decir cuánto facturó la plataforma en septiembre. El historial arranca el
+  // día que esto se puso: los cobros anteriores no se pueden reconstruir.
+  await registrarCobro({ businessId, monto, fecha });
+
   if (nuevaDeuda === 0) await setBusinessFrozen(businessId, false);
   return nuevaDeuda;
 }
 
-export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFee }) {
+// ============================================================================
+// COBROS DE LA PLATAFORMA (lo que BarberOS le factura a las barberías)
+// ============================================================================
+// Un documento por cobro en /platform/cobros/items. No se mezcla con lo que
+// factura la barbería cortando pelo: son dos cajas distintas.
+
+const cobrosCol = () => collection(db, 'platform', 'cobros', 'items');
+
+export async function registrarCobro({ businessId, monto, fecha, nota = '' }) {
+  const ref = doc(cobrosCol());
+  await setDoc(ref, {
+    businessId,
+    monto: Number(monto) || 0,
+    // 'YYYY-MM-DD' (la fecha del cobro, que puede no ser hoy) y además el
+    // instante real, para ordenar sin ambigüedad cuando hay varios el mismo día.
+    fecha,
+    nota,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/**
+ * Los cobros registrados, del más nuevo al más viejo.
+ *
+ * Ojo con el `orderBy('fecha')`: Firestore EXCLUYE los documentos que no tienen
+ * ese campo. Todos los que escribe `registrarCobro` lo llevan; uno sembrado a
+ * mano sin `fecha` no aparecería nunca y parecería que el historial está roto.
+ */
+export function subscribeCobros(cb, onError) {
+  const q = query(cobrosCol(), orderBy('fecha', 'desc'), limit(500));
+  return escuchar(q, rows, cb, onError);
+}
+
+export async function borrarCobro(id) {
+  await deleteDoc(doc(db, 'platform', 'cobros', 'items', id));
+}
+
+export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFee, maxBarbers = null, maxSucursales = 1 }) {
   const batch = writeBatch(db);
-  // La cuota vive en el documento público porque la UI del negocio la muestra;
-  // el abono en el privado porque es plata.
-  batch.update(businessDoc(businessId), { planId, whatsappQuota });
+  // La cuota y los TOPES viven en el documento público porque el panel del
+  // negocio los muestra y los hace cumplir; el abono en el privado porque es
+  // plata.
+  //
+  // Los topes se escriben acá y no se dejan implícitos en el plan: si el día que
+  // se cambia la escalera comercial una cuenta tiene que conservar lo que
+  // compró, tiene que estar escrito en su documento.
+  batch.update(businessDoc(businessId), { planId, whatsappQuota, maxBarbers, maxSucursales });
   batch.set(billingDoc(businessId), { monthlyFee, planId }, { merge: true });
   await batch.commit();
 }
@@ -261,6 +343,22 @@ export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFe
 // ============================================================================
 // SUBCOLECCIONES DEL NEGOCIO
 // ============================================================================
+
+/**
+ * Lee una subcolección UNA vez, sin dejar un listener abierto.
+ *
+ * Para la pantalla que muestra todas las sucursales juntas: necesita los turnos
+ * y el equipo de cada una, y dejar cuatro suscripciones vivas por eso sería
+ * pagar la agenda entera de cuatro barberías en cada pantalla del panel, no solo
+ * en esta. Se lee al entrar y hay un botón para volver a leer.
+ *
+ * (No rompe la regla de "las suscripciones viven en BusinessSync": esto no es
+ * una suscripción, es una lectura, como `getBusinessIdBySlug`.)
+ */
+export async function obtenerSubcoleccion(businessId, name) {
+  const snap = await getDocs(subCol(businessId, name));
+  return rows(snap);
+}
 
 /** Escucha una subcolección del negocio (professionals, services, etc.). */
 export function subscribeSubcollection(businessId, name, cb, onError) {

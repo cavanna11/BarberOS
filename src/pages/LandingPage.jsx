@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { SeccionSlotly, FlotanteSlotly } from '../components/landing/Slotly';
-import { PLANS, FEATURES_COMUNES, OVERAGE_COST_USD } from '../config/plans';
+import { PLANS, FEATURES_COMUNES, OVERAGE_COST_USD, precioLindo } from '../config/plans';
 import HeroMotionMockup from '../components/landing/HeroMotionMockup';
 import FloatingActionWidget from '../components/landing/FloatingActionWidget';
 
@@ -76,6 +76,12 @@ const BENEFICIOS = [
     texto: 'Cargás el horario de cada barbero, sus descansos y qué servicios hace. La agenda no ofrece turnos que no se pueden atender.',
   },
   {
+    imagen: '/img/benefit-sucursales.svg',
+    alt: 'Una cuenta administrando cuatro sucursales, cada una con su equipo y sus turnos',
+    titulo: 'Varias sucursales, una cuenta',
+    texto: 'Si tenés más de un local, entrás con un solo usuario y cambiás de sucursal en el panel. Cada una tiene su equipo, sus servicios, sus horarios y su agenda, separados. Y ves los números de cada una o de todas juntas.',
+  },
+  {
     imagen: '/img/benefit-roles.svg',
     alt: 'Vista previa de los roles de dueño y barberos',
     titulo: 'Cada uno ve lo suyo',
@@ -119,6 +125,10 @@ const FAQ = [
     a: 'Son cuatro pasos: barbero, servicio, día y hora. Nada de formularios ni contraseñas nuevas. Y el que prefiere llamarte, te sigue llamando: vos cargás ese turno a mano en dos toques.',
   },
   {
+    q: 'Tengo dos locales, ¿puedo manejar los dos?',
+    a: 'Sí, con el Plan Empresarial: hasta cuatro sucursales con una sola cuenta. Entrás una vez y cambiás de sucursal desde el panel. Cada una es independiente de verdad — su equipo, sus servicios, sus horarios y su agenda, con su propio link para los clientes. Y tenés una pantalla que te muestra las cuatro juntas, con los ingresos del mes de cada una.',
+  },
+  {
     q: '¿Y si ya tengo turnos anotados?',
     a: 'Los pasamos nosotros en el armado. No arrancás con la agenda vacía.',
   },
@@ -140,11 +150,91 @@ const FAQ = [
 // cargues en "Días de prueba sin cargo" al dar de alta la barbería.
 const DIAS_DEMO = 10;
 
-function CTAWhatsApp({ children = 'Hablemos por WhatsApp', clase = 'btn-primary btn-lg' }) {
+function CTAWhatsApp({ children = 'Hablemos por WhatsApp', clase = 'btn-primary btn-lg', mensaje = null }) {
+  const href = mensaje
+    ? `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(mensaje)}`
+    : LINK_WA;
   return (
-    <a href={LINK_WA} target="_blank" rel="noreferrer" className={`btn ${clase}`} style={{ textDecoration: 'none' }}>
+    <a href={href} target="_blank" rel="noreferrer" className={`btn ${clase}`} style={{ textDecoration: 'none' }}>
       {children} →
     </a>
+  );
+}
+
+/** 1 → "1 barbero", 3 → "Hasta 3 barberos", null → "Barberos sin límite". */
+function textoBarberos(max) {
+  if (max === null || max === undefined) return 'Barberos sin límite';
+  return max === 1 ? '1 barbero' : `Hasta ${max} barberos`;
+}
+
+/** 1 → "1 barbería", 4 → "Hasta 4 sucursales", null → "Las que necesites". */
+function textoSucursales(max) {
+  if (max === null || max === undefined) return 'Las sucursales que necesites';
+  return max === 1 ? '1 barbería' : `Hasta ${max} sucursales`;
+}
+
+/**
+ * Una tarjeta de plan.
+ *
+ * El precio puede no existir todavía (`monthlyFee: null`): en ese caso dice
+ * "Consultanos" y no un número inventado. Inventar un precio en la landing es
+ * la clase de cosa que después hay que desdecir en la primera charla.
+ */
+function TarjetaPlan({ plan }) {
+  const precio = precioLindo(plan.monthlyFee);
+  const esEmpresarial = plan.empresarial === true;
+
+  return (
+    <div className={`card landing-price ${plan.destacado ? 'destacado' : ''} ${esEmpresarial ? 'empresarial' : ''}`}>
+      {plan.destacado && <span className="landing-price-tag">El más elegido</span>}
+      {esEmpresarial && <span className="landing-price-tag">Varias sucursales</span>}
+
+      <h3>{plan.label.replace('Plan ', '')}</h3>
+
+      {precio ? (
+        <div className="landing-price-amount">
+          {precio}
+          <span>/mes</span>
+        </div>
+      ) : (
+        <div className="landing-price-amount landing-price-consulta">
+          Consultanos
+          <span>precio según tu caso</span>
+        </div>
+      )}
+
+      <p className="landing-price-desc">{plan.description}</p>
+
+      {/* La capacidad arriba y en grande: es lo único que de verdad cambia
+          entre planes, así que es lo que hay que poder comparar de un vistazo. */}
+      <div className="landing-price-capacidad">
+        <span>🏠 <strong>{textoSucursales(plan.maxSucursales)}</strong></span>
+        <span>👤 <strong>{textoBarberos(plan.maxBarbers)}</strong></span>
+      </div>
+
+      <ul className="landing-price-list">
+        {plan.features.map((feat) => {
+          // Una feature puede venir como texto o como objeto con
+          // `proximamente`: lo que todavía no anda se marca en vez de venderse
+          // como disponible.
+          const texto = typeof feat === 'string' ? feat : feat.texto;
+          const pronto = typeof feat === 'object' && feat.proximamente;
+          return (
+            <li key={texto} style={pronto ? { opacity: 0.7 } : undefined}>
+              {pronto ? '○' : '✓'} {texto}
+              {pronto && <span className="badge badge-warning landing-soon">pronto</span>}
+            </li>
+          );
+        })}
+      </ul>
+
+      <CTAWhatsApp
+        clase={plan.destacado || esEmpresarial ? 'btn-primary btn-full' : 'btn-outline btn-full'}
+        mensaje={`Hola, me interesa el ${plan.label} de BarberOS.`}
+      >
+        {precio ? 'Lo quiero' : 'Pedir precio'}
+      </CTAWhatsApp>
+    </div>
   );
 }
 
@@ -268,9 +358,9 @@ export default function LandingPage() {
         <span className="eyebrow">• Precios</span>
         <h2 className="landing-h2">Sin letra chica</h2>
         <p className="landing-sub">
-          Mes a mes, sin permanencia. La diferencia entre planes es la capacidad
-          de tu barbería: cuántos barberos y qué tan lejos llegan las
-          estadísticas.
+          Mes a mes, sin permanencia. Lo único que cambia entre planes es la
+          capacidad: cuántas sucursales y cuántos barberos. Las funciones son
+          las mismas para todos.
         </p>
 
         {/* La prueba sin cargo no se activa sola: la damos nosotros al preparar
@@ -289,37 +379,43 @@ export default function LandingPage() {
           </CTAWhatsApp>
         </div>
 
-        <div className="landing-grid-3">
-          {PLANS.map((plan, i) => (
-            <div key={plan.id} className={`card landing-price ${i === 1 ? 'destacado' : ''}`}>
-              {i === 1 && <span className="landing-price-tag">El más elegido</span>}
-              <h3>{plan.label.replace('Plan ', '')}</h3>
-              <div className="landing-price-amount">
-                ${plan.monthlyFee.toLocaleString('es-AR')}
-                <span>/mes</span>
-              </div>
-              <p className="landing-price-desc">{plan.description}</p>
-              <ul className="landing-price-list">
-                {plan.features.map((feat) => {
-                  // Una feature puede venir como texto o como objeto con
-                  // `proximamente`: lo que todavía no anda se marca en vez de
-                  // venderse como disponible.
-                  const texto = typeof feat === 'string' ? feat : feat.texto;
-                  const pronto = typeof feat === 'object' && feat.proximamente;
-                  return (
-                    <li key={texto} style={pronto ? { opacity: 0.7 } : undefined}>
-                      {pronto ? '○' : '✓'} {texto}
-                      {pronto && <span className="badge badge-warning landing-soon">pronto</span>}
-                    </li>
-                  );
-                })}
-              </ul>
-              <CTAWhatsApp clase={i === 1 ? 'btn-primary btn-full' : 'btn-outline btn-full'}>
-                Lo quiero
-              </CTAWhatsApp>
-            </div>
+        {/* Los cuatro planes de suscripción. El Personalizado va aparte, abajo:
+            no es una suscripción con precio de lista, es una conversación. */}
+        <div className="landing-grid-planes">
+          {PLANS.filter((p) => !p.aMedida).map((plan) => (
+            <TarjetaPlan key={plan.id} plan={plan} />
           ))}
         </div>
+
+        {/* Plan a medida: CTA comercial, sin precio ni tarjeta de suscripción. */}
+        {PLANS.filter((p) => p.aMedida).map((plan) => (
+          <div key={plan.id} className="card landing-plan-medida">
+            <div>
+              <span className="eyebrow">• A medida</span>
+              <h3 style={{ margin: '6px 0 8px' }}>{plan.label.replace('Plan ', '')}</h3>
+              <p className="landing-price-desc" style={{ marginBottom: 0 }}>
+                Si tu barbería necesita algo que no entra en los planes de arriba, lo
+                charlamos y lo armamos. No hay precio de lista porque no hay dos casos
+                iguales: depende de qué haya que construir.
+              </p>
+            </div>
+            <div>
+              <ul className="landing-price-list" style={{ marginBottom: 'var(--space-md)' }}>
+                {plan.features.map((f) => (
+                  <li key={typeof f === 'string' ? f : f.texto}>
+                    ✓ {typeof f === 'string' ? f : f.texto}
+                  </li>
+                ))}
+              </ul>
+              <CTAWhatsApp
+                clase="btn-primary btn-full"
+                mensaje="Hola, necesito algo a medida para mi barbería y quiero consultar por el Plan Personalizado."
+              >
+                Contactanos
+              </CTAWhatsApp>
+            </div>
+          </div>
+        ))}
 
         {/* Lo que no cambia entre planes va una sola vez: así cada tarjeta
             muestra únicamente por qué elegirla, y no se promete como exclusivo

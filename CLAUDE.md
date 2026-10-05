@@ -174,6 +174,13 @@ Google.
   tablas de gestión esconden columnas secundarias (`.oculta-mobile`), las
   grillas inline de dos columnas pasan a una, y el stepper de reserva se
   reparte el ancho.
+- **Cuentas con sucursales** (Plan Empresarial): hasta 4 barberías con una
+  sola cuenta, cada una con su equipo, servicios, horarios, agenda y link.
+  Selector de sucursal en el panel y pantalla **Mis sucursales** con el
+  consolidado. El abono lo paga la principal y la suspensión arrastra a todo
+  el grupo.
+- **Ingresos del mes** e historial mes por mes, en el panel de la barbería y
+  en el panel global (ahí, lo que BarberOS le cobró a las barberías).
 - Sistema de tickets de soporte (chat barbería ↔ plataforma).
 - Landing pública de venta en la raíz.
 - Identidad visual de SACIA aplicada.
@@ -518,7 +525,9 @@ src/
 
 ```
 /slugs/{slug}                     → { businessId }        ⚠️ lectura pública
-/businesses/{id}                  → marca, horarios, isFrozen  ⚠️ pública
+/businesses/{id}                  → marca, horarios, isFrozen,
+                                    grupoId (cuenta con sucursales),
+                                    maxBarbers / maxSucursales  ⚠️ pública
   /private/billing                → deuda, abono           🔒 solo plataforma
   /professionals /services /schedules /professionalServices   ⚠️ públicas
   /staffContacts/{profId}         🔒 teléfono y mail del staff — NO va en
@@ -533,6 +542,7 @@ src/
 /tickets/{id}                     🔒 su barbería + plataforma
   /messages/{id}
 /platform/{doc}                   🔒 solo plataforma
+  /cobros/items/{id}              🔒 un asiento por cada cobro de abono
   /notifications/items/{id}       🔒 campanita del panel global (dueño y
                                      moderadores); las escribe un trigger
 /platformDevices/{token}          🔒 push del equipo de la plataforma
@@ -579,6 +589,131 @@ sesión) y cada uno lo cierra por dispositivo (localStorage).
 Ojo: la consulta ordena por `createdAt`, y **Firestore excluye los documentos
 que no tienen ese campo**. Un aviso sembrado a mano sin `createdAt` no aparece
 nunca y parece que el cartel está roto.
+
+### Cuentas con sucursales — Plan Empresarial (05/10/2026)
+
+Una cuenta puede administrar hasta cuatro barberías. Cada sucursal es una
+barbería COMPLETA y separada —su equipo, sus servicios, sus horarios, su agenda,
+su link público, su configuración— y lo único que comparten es quién entra y el
+abono.
+
+**Cómo se atan.** Cada negocio del grupo lleva `grupoId`, que es el id del
+negocio PRINCIPAL. Así el principal se reconoce solo (`grupoId === id`) y no hace
+falta un flag aparte que pueda contradecir a la realidad.
+
+**El permiso.** El dueño lleva en sus claims:
+
+```
+{ businessId: <principal>, role: 'owner', grupoId, businessIds: [...] }
+```
+
+`businessId` sigue existiendo y apuntando a una sola porque es lo que entiende
+todo el código anterior; `businessIds` es la lista y es lo que miran las Rules
+(`inBusiness` acepta las dos formas). **Un barbero NUNCA lleva `businessIds`**:
+su claim nombra una sola barbería, así que el aislamiento entre sucursales le
+sale gratis y no depende de ningún filtro del frontend.
+
+**El agujero que esto abre, y cómo está cerrado.** Los claims del dueño se
+calculan preguntándole a la base qué negocios comparten `grupoId`. Si el dueño
+pudiera escribir ese campo, se metería la barbería de otro adentro de su cuenta y
+en el siguiente recálculo se llevaría sus datos. Por eso `grupoId` (y
+`maxSucursales`) están en la lista de campos que las Rules no le dejan tocar, en
+`firestore.rules` y en `CAMPOS_SOLO_PLATAFORMA` de `repository.js`. Hay casos en
+las dos suites.
+
+**Abrir una sucursal** es `crearSucursal` (callable), no una escritura del
+browser, por tres razones y cada una alcanza sola: el tope del plan es plata y en
+la interfaz se saltea con la consola abierta; crear una barbería es documento +
+slug + facturación en una sola operación y a medias queda inservible; y los
+claims solo los escribe el Admin SDK. El tope se chequea DENTRO de la
+transacción: dos pestañas creando la cuarta y la quinta a la vez pasarían las dos
+un chequeo hecho antes. Nace vacía de equipo y catálogo (son datos de la
+sucursal, no del grupo); lo único que se copia, y solo si lo piden, es la lista
+de servicios, en documentos nuevos e independientes.
+
+**La facturación es de la CUENTA.** El plan lo paga el principal y las sucursales
+van con abono 0. `procesarFacturacion` hace dos pasadas: primero la deuda de cada
+una, después la suspensión — y una sucursal se congela si debe el principal. Sin
+eso, el dueño deja de pagar, se congela el principal y las otras tres siguen
+tomando turnos: la palanca de cobro desarmada. Lo mismo vale para el botón de
+suspender del panel global, que avisa y aplica a todo el grupo.
+
+**Borrar.** La barbería principal de un grupo con sucursales NO se puede borrar
+(quedarían sin plan, sin abono y sin forma de cobrarlas): primero las sucursales.
+Y al borrar una sucursal, al dueño se le SACA esa de su lista en vez de vaciarle
+los claims — antes, borrar una sucursal lo echaba de su propia cuenta.
+
+**En el panel.** Selector de sucursal arriba del menú (cambia
+`currentBusinessId`, el mismo mecanismo con el que la plataforma administra una
+barbería) y una sección **Mis sucursales** con el consolidado de todas y los
+números de cada una. Esa pantalla lee los turnos de a una y de UNA sola vez
+(`obtenerSubcoleccion`), no con suscripciones: dejar cuatro agendas escuchando en
+todas las pantallas del panel sería pagar cuatro veces lo mismo todo el tiempo.
+El consolidado es una SUMA de números ya calculados por sucursal, nunca una
+consulta que junte turnos de todas en una misma bolsa.
+
+Trampa que costó un rato: entrar a la sucursal recién creada no se puede hacer en
+el mismo momento de crearla. `SET_CURRENT_BUSINESS` se valida contra la lista de
+negocios que tiene la app, y esa lista llega un instante después (primero el
+token nuevo, después los datos). El dispatch se descartaba en silencio y uno
+quedaba parado en la sucursal anterior. Ahora se espera a que aparezca.
+
+```bash
+node scripts/test-sucursales-emulador.mjs     # 60 casos
+node scripts/sembrar-sucursales-emulador.mjs  # escenario para mirar en el browser
+```
+
+### Planes por capacidad e ingresos del mes (05/10/2026)
+
+La escalera comercial dejó de ser "tres planes con cuota de WhatsApp" y pasó a
+ordenarse por CAPACIDAD, que es lo único que el sistema hace cumplir de verdad:
+
+| | sucursales | barberos | abono |
+|---|---|---|---|
+| Básico | 1 | 1 | a definir |
+| Intermedio | 1 | 3 | a definir |
+| Full | 1 | sin límite | $25.000 |
+| Empresarial | 4 | sin límite | a definir |
+| Personalizado | a convenir | a convenir | sin precio de lista (CTA) |
+
+Un `monthlyFee` en null significa "precio todavía no definido": la landing
+muestra **Consultanos** en vez de un número inventado y el alta pide tipear el
+abono acordado. **El abono no puede quedar en 0**: `runBilling` suma el abono a
+la deuda y congela cuando la deuda es mayor a cero, así que con 0 la cuenta queda
+gratis para siempre y los días de prueba no cortan nada. Lo valida el alta y el
+cambio de plan.
+
+Los topes se ESCRIBEN en el documento del negocio (`maxBarbers`,
+`maxSucursales`) y no se dejan implícitos en el plan: así una cuenta conserva lo
+que compró aunque la escalera cambie, y se le puede hacer una excepción sin
+inventar un plan nuevo. `limitesDelNegocio()` resuelve la precedencia (el
+documento manda sobre el plan) en el front, y `functions/planes.js` repite los
+topes del lado del servidor — duplicado a propósito: las Functions no pueden
+importar del bundle de Vite.
+
+Los planes viejos (`pro`, `business`) quedan en `PLANES_HISTORICOS` y no se
+borran: si el id desapareciera, `getPlan` daría null, el tope quedaría en "sin
+límite" y el panel dejaría sumar barberos de gratis. **Ojo con `basico`**: el id
+se reusa con un tope más bajo (2 barberos → 1). Como el tope se compara al
+AGREGAR y no al editar, nadie pierde un barbero que ya tenga, pero a una cuenta
+vieja de Básico con dos barberos hay que pasarla a Intermedio o dejarle el tope
+viejo escrito en el documento.
+
+**Ingresos del mes.** El panel de la barbería muestra lo facturado en el mes en
+curso (con la variación contra el anterior) además del total histórico, y un
+historial mes por mes. Está en `utils/ingresos.js`, aparte de
+`statsCalculator.js` —que sigue marcado para no tocar— y con la misma regla:
+recibe arrays y no sabe de dónde salen. Cuenta solo los turnos `completada`,
+igual que el total que ya se mostraba.
+
+**Ingresos de la plataforma.** Son otra caja: lo que BarberOS le cobra a las
+barberías. Antes no existían como dato — `recordPayment` solo pisaba
+`lastPaymentDate`, que se sobreescribe en cada cobro, así que no había forma de
+decir cuánto se facturó en septiembre. Ahora cada cobro deja un asiento en
+`platform/cobros/items` (solo el equipo de la plataforma lo lee; solo el dueño lo
+escribe) y el panel global muestra cobrado del mes, cobrado histórico e historial
+por mes. **El historial arranca el día que esto se puso**: los cobros anteriores
+no se pueden reconstruir.
 
 ### El panel global, por secciones (28/09/2026)
 
@@ -812,11 +947,12 @@ Email/Password habilitado, alcance del barbero cerrado en Rules.
 
 3. **Días de demo.** La landing dice `DIAS_DEMO = 10`; en el alta se tipean cada
    vez. Elegir un número y usar siempre ese.
-4. **Planes.** Lo único que el sistema hace cumplir es `maxBarbers`. La landing
-   ya lo refleja: cada tarjeta muestra solo lo que la diferencia (barberos,
-   cuota de avisos "pronto", soporte) y lo común va en un bloque aparte
-   (`FEATURES_COMUNES`). Cuando lleguen los avisos por WhatsApp, la cuota es la
-   segunda diferencia real. No restar funciones al Básico para diferenciar.
+4. **Precio de tres planes.** La escalera nueva (Básico / Intermedio / Full /
+   Empresarial / Personalizado) está construida y la landing la muestra, pero
+   solo el Full tiene precio cerrado ($25.000). Los otros tres dicen
+   "Consultanos" hasta que se definan: son tres números en `config/plans.js`.
+   Mientras tanto, el alta sola sigue creando cuentas con $12.000 provisorios
+   (el precio del Básico viejo), que es lo que hace que la prueba corte.
 5. **Seña por Mercado Pago.** No empezado. El modelo correcto es OAuth de
    Mercado Pago ("Conectar con Mercado Pago" en Configuración): el dueño
    autoriza con su cuenta, MP le da a la plataforma un token de SU cuenta y la
@@ -870,11 +1006,12 @@ node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
 node scripts/test-alta-emulador.mjs        # alta sola con 5 días de prueba
 node scripts/test-mercadopago-emulador.mjs # conexión de la cuenta y sus tokens
 node scripts/test-sena-emulador.mjs        # seña: horario guardado y vencimiento
+node scripts/test-sucursales-emulador.mjs  # cuentas con sucursales: aislamiento y topes
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 ```
 
-Hoy: claims 77, reservas 46, facturación 12, rules 110, alta 22, mercadopago 16,
-seña 11. Todo en verde (294).
+Hoy: claims 77, reservas 46, facturación 12, rules 118, alta 22, mercadopago 16,
+seña 14, sucursales 60. Todo en verde (365).
 
 ---
 

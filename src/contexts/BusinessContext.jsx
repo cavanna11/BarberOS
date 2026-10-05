@@ -63,6 +63,9 @@ const NO_PERSISTIR = [
   'appointments',
   'admins',
   'authorizedAdmins',
+  // Los cobros de la plataforma viven en Firestore. Una copia vieja en el
+  // navegador mostraría ingresos que ya no son.
+  'cobros',
 ];
 
 function saveData(state) {

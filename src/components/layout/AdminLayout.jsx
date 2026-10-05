@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import CampanaNotificaciones from '../admin/CampanaNotificaciones';
 import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBusiness } from '../../contexts/BusinessContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
+import { permiteSucursales } from '../../config/plans';
 import { refrescarPush, desactivarPush, esAppInstalada, esIOS, esAndroid, escucharEnPrimerPlano } from '../../lib/push';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 import AvisoPlataforma from '../admin/AvisoPlataforma';
@@ -12,6 +14,9 @@ const ownerNavItems = [
   { to: '/admin',               icon: '📊', label: 'Dashboard',        end: true },
   // Citas va segundo a propósito: es la pantalla que más se abre en el día.
   { to: '/admin/citas',         icon: '📅', label: 'Citas' },
+  // Solo para las cuentas que pueden tener más de una barbería: al que tiene
+  // una sola, una sección llamada "Sucursales" no le dice nada.
+  { to: '/admin/sucursales',    icon: '🏠', label: 'Mis sucursales', soloSucursales: true },
   { to: '/admin/profesionales', icon: '👥', label: 'Profesionales' },
   { to: '/admin/servicios',     icon: '✂️', label: 'Servicios' },
   { to: '/admin/admins',        icon: '🛡️', label: 'Administradores' },
@@ -61,7 +66,18 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout, refreshClaims } = useAuth();
   const navigate = useNavigate();
-  const { business, businessId, isPlatformOwner: platformOwner } = useCurrentBusiness();
+  const { business, businessId, isPlatformOwner: platformOwner, sucursales, esMultiSucursal } = useCurrentBusiness();
+  const { state: bizState, dispatch } = useBusiness();
+
+  // Al recargar la página, los negocios todavía no llegaron de Firestore (no se
+  // guardan en el navegador a propósito: una copia vieja taparía la real). En
+  // ese hueco `business` es null, y hasta ahora se mostraba "No hay ningún
+  // negocio asignado a tu cuenta" — un cartel que dice justo lo contrario de lo
+  // que pasa, y que el dueño ve cada vez que aprieta F5. Mismo criterio que
+  // TenantRoute con el slug: el error, recién cuando se SABE.
+  const esperandoNegocios = !business && (
+    platformOwner ? bizState.negociosCargados !== true : (user?.businessIds?.length || 0) > 0
+  );
   const vinculo = useVinculoBarbero();
   const [revisandoVinculo, setRevisandoVinculo] = useState(false);
   const [vinculoSigueRoto, setVinculoSigueRoto] = useState(false);
@@ -94,7 +110,11 @@ export default function AdminLayout() {
   };
 
   const isOwner = user?.role === 'owner';
-  const navItems = isOwner ? ownerNavItems : adminNavItems;
+  // "Mis sucursales" aparece si la cuenta ya tiene más de una, o si el plan las
+  // permite (así el del Plan Empresarial encuentra dónde abrir la primera).
+  const muestraSucursales = isOwner && (esMultiSucursal || permiteSucursales(business));
+  const navItems = (isOwner ? ownerNavItems : adminNavItems)
+    .filter((item) => !item.soloSucursales || muestraSucursales);
   const roleInfo = ROLE_LABELS[user?.role] || ROLE_LABELS.admin;
 
   const handleLogout = async () => {
@@ -157,6 +177,29 @@ export default function AdminLayout() {
             {roleInfo.text}
           </span>
         </div>
+
+        {/* Cambiar de sucursal sin cerrar sesión. Va arriba del menú porque
+            define sobre QUÉ barbería opera todo lo de abajo: si estuviera al
+            final, se toca la pantalla equivocada. */}
+        {esMultiSucursal && (
+          <div className="selector-sucursal">
+            <label htmlFor="selector-sucursal">Sucursal</label>
+            <select
+              id="selector-sucursal"
+              value={businessId || ''}
+              onChange={(e) => {
+                dispatch({ type: 'SET_CURRENT_BUSINESS', payload: e.target.value });
+                setSidebarOpen(false);
+              }}
+            >
+              {sucursales.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}{s.isFrozen ? ' (suspendida)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <nav className="admin-nav">
           {navItems.map((item) => (
@@ -315,6 +358,10 @@ export default function AdminLayout() {
           <AvisoPlataforma />
           {business ? (
             <Outlet />
+          ) : esperandoNegocios ? (
+            <div className="empty-state" style={{ padding: 'var(--space-2xl)' }}>
+              <p>Cargando…</p>
+            </div>
           ) : (
             // Punto único de control: ninguna página de admin se renderiza sin
             // un negocio resuelto, así no hay que defenderse de `business` nulo

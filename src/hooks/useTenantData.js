@@ -69,7 +69,7 @@ export function useAuthorizedAdmins() {
  * para que los componentes no tengan que cambiar.
  */
 export function useTenant() {
-  const { business, businessId, slug, isPlatformOwner, resolved } = useCurrentBusiness();
+  const { business, businessId, slug, isPlatformOwner, resolved, sucursales, esMultiSucursal } = useCurrentBusiness();
   const professionals = useProfessionals();
   const services = useServices();
   const appointments = useAppointments();
@@ -84,6 +84,9 @@ export function useTenant() {
       slug,
       isPlatformOwner,
       resolved,
+      // Las barberías de esta cuenta. Una sola, salvo Plan Empresarial.
+      sucursales,
+      esMultiSucursal,
       professionals,
       services,
       appointments,
@@ -97,6 +100,8 @@ export function useTenant() {
       slug,
       isPlatformOwner,
       resolved,
+      sucursales,
+      esMultiSucursal,
       professionals,
       services,
       appointments,

@@ -22,6 +22,7 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 // Mercado Pago vive aparte (OAuth + cobro de la seña); se usa en createAppointment.
 const mp = require('./mercadopago');
+const { limitesDelNegocio } = require('./planes');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
@@ -83,6 +84,60 @@ function assertTargetEnAlcance(caller, targetClaims, businessId) {
   if (targetClaims?.businessId && targetClaims.businessId !== businessId) {
     throw new HttpsError('permission-denied', 'Esa cuenta pertenece a otro negocio.');
   }
+}
+
+// ============================================================================
+// CUENTAS CON SUCURSALES
+// ============================================================================
+// Una cuenta empresarial es un GRUPO de barberías administradas por el mismo
+// dueño. Cada sucursal es una barbería completa y separada —su equipo, sus
+// servicios, sus horarios, su agenda, su link público— y lo único que comparten
+// es quién entra.
+//
+// Cómo se ata: cada negocio del grupo lleva `grupoId`, que es el id del negocio
+// PRINCIPAL. Así el principal se reconoce solo (`grupoId === id`) y no hace
+// falta un flag aparte que se pueda contradecir con la realidad.
+//
+// El permiso: el dueño lleva en sus claims
+//
+//   { businessId: <principal>, role: 'owner', grupoId, businessIds: [...] }
+//
+// `businessId` sigue existiendo y apuntando a uno solo porque es lo que
+// entiende todo el código viejo; `businessIds` es la lista completa y es lo que
+// miran las Rules (`bizId in businessIds`). Un barbero NUNCA lleva
+// `businessIds`: su claim nombra una sola barbería, así que el aislamiento
+// entre sucursales le sale gratis.
+
+/**
+ * Los claims que le corresponden a alguien en este negocio, resolviendo el
+ * grupo si lo hay.
+ *
+ * Se recalcula desde la base y no se arrastra lo que viniera de antes: es la
+ * única forma de que un claim no quede viejo. `setCustomUserClaims` REEMPLAZA
+ * todo, así que armar esto mal no "pierde" un permiso: lo borra.
+ *
+ * Solo el dueño recibe la lista: un barbero pertenece a UNA sucursal.
+ */
+async function claimsDeNegocio({ businessId, role, professionalId = null }) {
+  const base = { businessId, role, professionalId: professionalId ?? null };
+  if (role !== 'owner') return base;
+
+  const snap = await db.doc(`businesses/${businessId}`).get();
+  const grupoId = snap.exists ? snap.get('grupoId') || null : null;
+  if (!grupoId) return base;
+
+  const hermanas = await db.collection('businesses').where('grupoId', '==', grupoId).get();
+  const ids = hermanas.docs.map((d) => d.id);
+  if (ids.length < 2) return { ...base, grupoId };
+
+  // El `businessId` suelto apunta al principal del grupo si está entre las
+  // suyas: es el que abre el panel por defecto y el que tiene el plan.
+  return {
+    ...base,
+    businessId: ids.includes(grupoId) ? grupoId : businessId,
+    grupoId,
+    businessIds: ids,
+  };
 }
 
 // ============================================================================
@@ -184,7 +239,12 @@ exports.setBusinessAdmin = onCall(async (request) => {
 
   // Un usuario pertenece a un solo negocio. Si ya administraba otro, esto lo
   // reemplaza: es intencional, evita accesos cruzados olvidados.
-  await getAuth().setCustomUserClaims(targetUser.uid, claims);
+  //
+  // La excepción son las SUCURSALES de la misma cuenta: si este negocio es
+  // parte de un grupo, el dueño recibe la lista entera (claimsDeNegocio la
+  // resuelve leyendo `grupoId`). Sin eso, nombrar de nuevo al dueño de una
+  // sucursal le borraba el acceso a las otras tres.
+  await getAuth().setCustomUserClaims(targetUser.uid, await claimsDeNegocio(claims));
 
   // El token del cliente sigue teniendo los claims viejos hasta que se
   // refresca. El frontend tiene que llamar a getIdToken(true) — o cerrar y
@@ -261,7 +321,14 @@ exports.applyPendingClaims = onCall(async (request) => {
     ? { platform: true }
     : datos.platform === 'moderator'
       ? { platform: 'moderator' }
-      : { businessId: datos.businessId, role: datos.role, professionalId: datos.professionalId ?? null };
+      // Si la barbería es parte de una cuenta con sucursales, el dueño entra
+      // con todas: la lista se resuelve ahora, no cuando se dejó el pendiente
+      // (entre las dos cosas pueden haber abierto una sucursal más).
+      : await claimsDeNegocio({
+          businessId: datos.businessId,
+          role: datos.role,
+          professionalId: datos.professionalId ?? null,
+        });
 
   await getAuth().setCustomUserClaims(request.auth.uid, claims);
   await pendingRef.delete();
@@ -329,8 +396,16 @@ async function procesarFacturacion() {
 
   let enPrueba = 0;
 
+  // Dos pasadas: primero la deuda de cada negocio, después a quién se congela.
+  // Hace falta separarlas por las cuentas con sucursales: para decidir si una
+  // sucursal sigue abierta hay que saber la deuda del principal, que puede
+  // aparecer más adelante en la lista.
+  const estado = new Map();
+
   businesses.docs.forEach((doc, i) => {
     const biz = doc.data();
+    const fila = { doc, biz, debt: 0, enPrueba: false };
+    estado.set(doc.id, fila);
 
     // Cuenta de prueba: ni se cobra ni se congela hasta que termine. El
     // primer vencimiento se fija en trialEndsAt al darla de alta, así que al
@@ -338,6 +413,7 @@ async function procesarFacturacion() {
     // queda congelada — que es justamente lo que corta la prueba.
     if (biz.trialEndsAt && today <= biz.trialEndsAt) {
       enPrueba++;
+      fila.enPrueba = true;
       return;
     }
 
@@ -371,14 +447,34 @@ async function procesarFacturacion() {
       escrituras.push({ ref: billingSnap.ref, datos: { debt, nextBillingDate }, merge: true });
     }
 
+    fila.debt = debt;
+  });
+
+  // Segunda pasada: la suspensión.
+  //
+  // En una cuenta con sucursales el plan lo paga el PRINCIPAL y las sucursales
+  // van con abono 0. Si cada una mirara solo su propia deuda, el día que el
+  // dueño deja de pagar se congelaría el principal y las otras tres seguirían
+  // tomando turnos — que es exactamente la palanca de cobro desarmada. La deuda
+  // que manda es la del principal del grupo.
+  for (const fila of estado.values()) {
+    const { doc, biz } = fila;
+    const principal = biz.grupoId ? estado.get(biz.grupoId) : null;
+
+    // La prueba es de la cuenta entera: una sucursal no se congela mientras el
+    // principal esté en período de prueba (ni al revés).
+    if (fila.enPrueba || (principal && principal.enPrueba)) continue;
+
+    const deudaQueManda = Math.max(fila.debt, principal ? principal.debt : 0);
+
     // `isFrozen` vive en el documento público porque las Rules y la página de
     // reservas lo necesitan para bloquear el link.
-    const shouldFreeze = debt > 0;
+    const shouldFreeze = deudaQueManda > 0;
     if (Boolean(biz.isFrozen) !== shouldFreeze) {
       escrituras.push({ ref: doc.ref, datos: { isFrozen: shouldFreeze }, merge: true });
-      if (shouldFreeze) suspendidos.push({ id: doc.id, name: biz.name || doc.id, debt });
+      if (shouldFreeze) suspendidos.push({ id: doc.id, name: biz.name || doc.id, debt: deudaQueManda });
     }
-  });
+  }
 
   for (let i = 0; i < escrituras.length; i += LIMITE) {
     const batch = db.batch();
@@ -1071,7 +1167,17 @@ exports.crearBarberiaDePrueba = onCall(async (request) => {
   const businessRef = db.collection('businesses').doc();
   const businessId = businessRef.id;
   const finPrueba = enDiasISO(DIAS_DE_PRUEBA);
-  const plan = { id: 'basico', monthlyFee: 12000, whatsappQuota: 100, maxBarbers: 2 };
+  // La cuenta nace en el Básico de la escalera nueva: una barbería, un barbero
+  // (el dueño, que es el que se carga solo acá abajo). Si quiere sumar equipo,
+  // el panel se lo dice y le deja el botón para escribir — que es justo el
+  // momento de hablar del plan.
+  //
+  // El abono NO puede ser 0: runBilling suma `monthlyFee` a la deuda y congela
+  // cuando la deuda es mayor a cero, así que con 0 la cuenta de prueba quedaría
+  // gratis para siempre y la prueba no cortaría nunca. Los $12.000 son el precio
+  // que tenía el Básico viejo y quedan como provisorios hasta que se defina el
+  // de la escalera nueva (hoy `monthlyFee: null` en src/config/plans.js).
+  const plan = { id: 'basico', monthlyFee: 12000, whatsappQuota: 100, maxBarbers: 1, maxSucursales: 1 };
 
   // El slug se toma en una transacción: dos personas eligiendo el mismo nombre
   // al mismo tiempo no pueden quedarse las dos con el link.
@@ -1105,6 +1211,10 @@ exports.crearBarberiaDePrueba = onCall(async (request) => {
       planId: plan.id,
       whatsappQuota: plan.whatsappQuota,
       maxBarbers: plan.maxBarbers,
+      maxSucursales: plan.maxSucursales,
+      // Sin grupo: es una barbería sola. El campo existe desde el alta para que
+      // una consulta por `grupoId` no dependa de si la clave está o no.
+      grupoId: null,
       isFrozen: false,
       trialEndsAt: finPrueba,
       // De dónde salió la cuenta: las que se dan de alta solas se miran
@@ -1173,6 +1283,263 @@ exports.crearBarberiaDePrueba = onCall(async (request) => {
   }).catch((err) => logger.warn('no se pudo avisar del alta', { error: err.message }));
 
   return { businessId, slug, trialEndsAt: finPrueba, diasDePrueba: DIAS_DE_PRUEBA };
+});
+
+// ============================================================================
+// SUCURSALES (Plan Empresarial)
+// ============================================================================
+
+/**
+ * Le vuelve a escribir los claims a los dueños de un grupo, para que la lista de
+ * sucursales que llevan en el token sea la que está en la base.
+ *
+ * Se llama después de agregar o quitar una sucursal. Mira la subcolección
+ * `admins` del principal, que es el registro de quién es dueño; si la persona
+ * nunca entró, el permiso queda pendiente igual que en `setBusinessAdmin`.
+ *
+ * NO corta las sesiones a propósito: el dueño está en la pantalla esperando que
+ * la sucursal aparezca, y revocarle el token lo echaría del panel justo ahí. El
+ * frontend pide un token nuevo (`refreshClaims`) al volver.
+ */
+async function sincronizarClaimsDelGrupo(grupoId) {
+  const admins = await db.collection(`businesses/${grupoId}/admins`)
+    .where('role', '==', 'owner').get();
+
+  const claims = await claimsDeNegocio({ businessId: grupoId, role: 'owner', professionalId: null });
+  let aplicados = 0;
+
+  for (const d of admins.docs) {
+    const email = d.id;
+    try {
+      const usuario = await getAuth().getUserByEmail(email);
+      await getAuth().setCustomUserClaims(usuario.uid, claims);
+      aplicados++;
+    } catch (err) {
+      if (err.code !== 'auth/user-not-found') throw err;
+      // Nunca entró: queda pendiente y se aplica en su primer login.
+      await db.doc(`pendingAdmins/${email}`).set({
+        businessId: grupoId,
+        role: 'owner',
+        professionalId: null,
+        email,
+        createdAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+  }
+
+  return { aplicados, claims };
+}
+
+/**
+ * Abre una sucursal nueva dentro de la misma cuenta.
+ *
+ * Esto NO podía ser una escritura del browser por tres razones, y cada una
+ * alcanza sola:
+ *
+ *   1. El tope de sucursales es plata. Si viviera en la interfaz, con la consola
+ *      abierta se abren cuarenta.
+ *   2. Crear una barbería es un documento público + el slug + la facturación en
+ *      una sola operación. A medias queda una cuenta inutilizable.
+ *   3. Los claims solo los escribe el Admin SDK, y sin el claim nuevo el dueño
+ *      no ve la sucursal que acaba de crear.
+ *
+ * La sucursal nace VACÍA de equipo y catálogo, a propósito: son datos de esa
+ * sucursal y no del grupo. Lo único que se copia, y solo si lo piden, es la
+ * lista de servicios — como punto de partida, en documentos nuevos e
+ * independientes. Cambiarle el precio en una no toca a la otra.
+ */
+exports.crearSucursal = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
+
+  const token = request.auth.token || {};
+  const esPlataforma = token.platform === true;
+
+  if (!esPlataforma && token.email_verified !== true) {
+    throw new HttpsError('failed-precondition', 'Necesitamos un mail verificado. Entrá con Google.');
+  }
+
+  // De qué cuenta. El dueño abre sucursales de la suya; la plataforma puede
+  // hacerlo por cualquiera, pasando el negocio explícitamente.
+  const businessIdPedido = String(request.data?.businessId || '').trim();
+  const businessId = esPlataforma
+    ? (businessIdPedido || token.businessId || '')
+    : (token.businessId || '');
+
+  if (!businessId) throw new HttpsError('invalid-argument', 'Falta saber de qué cuenta es la sucursal.');
+  if (!esPlataforma) {
+    if (token.role !== 'owner') {
+      throw new HttpsError('permission-denied', 'Solo el dueño de la cuenta puede abrir sucursales.');
+    }
+    // Una sucursal del grupo también vale como punto de partida, pero no la
+    // barbería de otro.
+    const propias = Array.isArray(token.businessIds) ? token.businessIds : [token.businessId];
+    if (businessIdPedido && !propias.includes(businessIdPedido)) {
+      throw new HttpsError('permission-denied', 'Esa barbería no es de tu cuenta.');
+    }
+  }
+
+  const snap = await db.doc(`businesses/${businessId}`).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Esa barbería no existe.');
+  const biz = snap.data();
+
+  // El principal del grupo es el que tiene el plan y el que paga. Si la cuenta
+  // todavía no es un grupo, el principal es esta misma barbería.
+  const grupoId = biz.grupoId || businessId;
+  const principalRef = db.doc(`businesses/${grupoId}`);
+  const principalSnap = grupoId === businessId ? snap : await principalRef.get();
+  if (!principalSnap.exists) throw new HttpsError('not-found', 'No se encontró la barbería principal de la cuenta.');
+  const principal = principalSnap.data();
+
+  const { maxSucursales } = limitesDelNegocio(principal);
+  if (maxSucursales !== null && maxSucursales <= 1) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Tu plan es de una sola barbería. Con el Plan Empresarial podés tener hasta 4 sucursales.'
+    );
+  }
+
+  const nombre = limpiar(request.data?.nombre, 60);
+  const slug = limpiar(request.data?.slug, 30).toLowerCase();
+  const copiarServiciosDe = String(request.data?.copiarServiciosDe || '').trim();
+
+  if (nombre.length < 2) throw new HttpsError('invalid-argument', 'Poné el nombre de la sucursal.');
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug) || slug.length < 3) {
+    throw new HttpsError('invalid-argument', 'El link solo puede tener letras, números y guiones (mínimo 3).');
+  }
+  if (SLUGS_RESERVADOS.includes(slug)) {
+    throw new HttpsError('already-exists', 'Ese link está reservado por el sistema. Probá con otro.');
+  }
+
+  const nuevaRef = db.collection('businesses').doc();
+  const nuevoId = nuevaRef.id;
+  const slugRef = db.doc(`slugs/${slug}`);
+
+  // El slug y el tope se chequean DENTRO de la transacción: dos pestañas
+  // abiertas creando la cuarta y la quinta sucursal al mismo tiempo pasarían
+  // las dos un chequeo hecho antes.
+  await db.runTransaction(async (tx) => {
+    const tomado = await tx.get(slugRef);
+    if (tomado.exists) {
+      throw new HttpsError('already-exists', 'Ese link ya está ocupado. Probá con otro.');
+    }
+
+    const hermanas = await tx.get(db.collection('businesses').where('grupoId', '==', grupoId));
+    // Cuando la cuenta todavía no es un grupo la consulta trae 0 y la barbería
+    // que ya existe cuenta igual: es la primera de las cuatro.
+    const actuales = Math.max(1, hermanas.size);
+
+    if (maxSucursales !== null && actuales >= maxSucursales) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Tu plan permite hasta ${maxSucursales} sucursales y ya tenés ${actuales}.`
+      );
+    }
+
+    tx.set(slugRef, { businessId: nuevoId });
+
+    tx.set(nuevaRef, {
+      id: nuevoId,
+      name: nombre,
+      slug,
+      // La marca se hereda del principal: es la misma barbería en otra esquina.
+      // Todo lo demás (equipo, servicios, horarios) nace vacío y propio.
+      logoUrl: principal.logoUrl ?? null,
+      primaryColor: principal.primaryColor || '#E85D2A',
+      secondaryColor: principal.secondaryColor || '#1A1A1A',
+      accentColor: principal.accentColor || '#E85D2A',
+      phone: limpiar(request.data?.telefono, 40) || principal.phone || '',
+      email: principal.email || '',
+      address: limpiar(request.data?.direccion, 120),
+      city: limpiar(request.data?.ciudad, 60) || principal.city || '',
+      country: principal.country || 'Argentina',
+      currency: principal.currency || 'ARS',
+      timezone: principal.timezone || 'America/Argentina/Buenos_Aires',
+      slotInterval: principal.slotInterval || 30,
+      minCancelHours: principal.minCancelHours ?? 2,
+      onlineBookingEnabled: true,
+      welcomeMessage: '',
+      socialLinks: { instagram: '', whatsapp: principal.socialLinks?.whatsapp || '' },
+      // El plan es de la CUENTA: la sucursal lo lleva copiado para que el panel
+      // sepa sus topes, pero el abono se cobra una vez, en el principal.
+      planId: principal.planId || null,
+      whatsappQuota: 0,
+      maxBarbers: limitesDelNegocio(principal).maxBarbers,
+      // Si la cuenta está suspendida por deuda, la sucursal nace suspendida:
+      // abrir una sucursal nueva no puede ser la forma de destrabar el link.
+      isFrozen: principal.isFrozen === true,
+      trialEndsAt: principal.trialEndsAt || null,
+      origen: 'sucursal',
+      grupoId,
+      businessHours: (principal.businessHours || HORARIO_POR_DEFECTO).map((h) => ({ ...h })),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    // Facturación propia pero en cero: el plan lo paga el principal. runBilling
+    // le hace seguir la suerte del principal (si el principal debe, la sucursal
+    // también se congela).
+    tx.set(db.doc(`businesses/${nuevoId}/private/billing`), {
+      planId: principal.planId || null,
+      monthlyFee: 0,
+      debt: 0,
+      lastPaymentDate: null,
+      nextBillingDate: null,
+      esSucursal: true,
+      grupoId,
+    });
+
+    // El grupo se forma recién ahora: hasta la primera sucursal, la barbería
+    // original es una cuenta común sin `grupoId`.
+    if (!principal.grupoId) {
+      tx.update(principalRef, { grupoId });
+    }
+  });
+
+  // Los dueños del principal, en la sucursal nueva.
+  const lote = db.batch();
+  const duenos = await db.collection(`businesses/${grupoId}/admins`).where('role', '==', 'owner').get();
+  for (const d of duenos.docs) {
+    lote.set(db.doc(`businesses/${nuevoId}/admins/${d.id}`), {
+      ...d.data(),
+      businessId: nuevoId,
+      professionalId: null,
+      addedAt: FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Servicios como punto de partida, si lo pidieron. Documentos NUEVOS: no se
+  // comparte nada: tocarle el precio en una sucursal no toca la otra.
+  let serviciosCopiados = 0;
+  if (copiarServiciosDe) {
+    const permitido = copiarServiciosDe === grupoId
+      || (await db.doc(`businesses/${copiarServiciosDe}`).get()).get('grupoId') === grupoId;
+    if (!permitido) {
+      throw new HttpsError('permission-denied', 'Solo podés copiar los servicios de una sucursal de tu cuenta.');
+    }
+    const origen = await db.collection(`businesses/${copiarServiciosDe}/services`).get();
+    origen.docs.forEach((d, i) => {
+      const ref = db.collection(`businesses/${nuevoId}/services`).doc();
+      const datos = d.data();
+      lote.set(ref, { ...datos, id: ref.id, displayOrder: datos.displayOrder ?? i + 1 });
+      serviciosCopiados++;
+    });
+  }
+
+  await lote.commit();
+
+  // Y el permiso: sin esto el dueño entra y no ve la sucursal que creó.
+  await sincronizarClaimsDelGrupo(grupoId);
+
+  logger.info('sucursal creada', { grupoId, nuevoId, slug, serviciosCopiados });
+
+  await notificarPlataforma({
+    type: 'alta_nueva',
+    title: 'Sucursal nueva',
+    body: `${principal.name || grupoId} abrió la sucursal "${nombre}".`,
+    businessId: nuevoId,
+    url: '/super-admin/barberias',
+  }).catch((err) => logger.warn('no se pudo avisar la sucursal', { error: err.message }));
+
+  return { businessId: nuevoId, slug, grupoId, serviciosCopiados };
 });
 
 exports.probarPush = onCall(async (request) => {
@@ -1561,16 +1928,63 @@ exports.deleteBusiness = onCall(async (request) => {
     throw new HttpsError('failed-precondition', 'El nombre no coincide.');
   }
 
-  const resumen = { usuarios: 0, tickets: 0, pendientes: 0 };
+  // Borrar la barbería PRINCIPAL de una cuenta con sucursales dejaría a las
+  // otras colgadas: sin plan, sin abono (el abono vive en la principal) y con un
+  // `grupoId` que apunta a un documento que ya no existe — es decir, andando
+  // gratis y sin que nadie las pueda cobrar ni suspender. Se borran las
+  // sucursales primero, a conciencia, una por una.
+  const esPrincipal = negocio.grupoId && negocio.grupoId === businessId;
+  if (esPrincipal) {
+    const hermanas = await db.collection('businesses').where('grupoId', '==', businessId).get();
+    const otras = hermanas.docs.filter((d) => d.id !== businessId);
+    if (otras.length > 0) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Esta es la barbería principal de una cuenta con ${otras.length} sucursal(es): ` +
+        otras.map((d) => d.get('name') || d.id).join(', ') +
+        '. Borrá primero las sucursales.'
+      );
+    }
+  }
+
+  const resumen = { usuarios: 0, tickets: 0, pendientes: 0, reasignados: 0 };
 
   // 1. Claims: todos los usuarios cuyo businessId sea este. Se buscan en Auth
   //    y no solo en /admins, porque el registro de /admins puede estar
   //    incompleto y el claim es lo que da acceso.
+  //
+  //    Con cuentas de varias sucursales hay un caso más: el dueño lleva la lista
+  //    `businessIds`. Si se borra UNA sucursal no hay que dejarlo sin acceso a
+  //    las otras — hay que sacarle esa de la lista. Vaciarle los claims, como se
+  //    hacía antes, lo echaba de su propia cuenta por borrar una sucursal.
   let pageToken;
   do {
     const page = await getAuth().listUsers(1000, pageToken);
     for (const u of page.users) {
-      if (u.customClaims?.businessId === businessId) {
+      const c = u.customClaims || {};
+      const lista = Array.isArray(c.businessIds) ? c.businessIds : [];
+      const quedan = lista.filter((id) => id !== businessId);
+
+      const loNombra = c.businessId === businessId || lista.includes(businessId);
+      if (!loNombra) continue;
+
+      if (quedan.length > 0) {
+        // Le queda cuenta: se le reasigna la principal que siga existiendo.
+        // Las claves se arman a mano y no con un spread + undefined: un
+        // `undefined` adentro de los claims es un campo que queda escrito como
+        // nulo o directamente rechazado, según la versión del SDK.
+        const nuevos = {
+          businessId: quedan.includes(c.grupoId) ? c.grupoId : quedan[0],
+          role: c.role || 'owner',
+          professionalId: c.professionalId ?? null,
+        };
+        if (quedan.length > 1) {
+          nuevos.businessIds = quedan;
+          if (c.grupoId) nuevos.grupoId = c.grupoId;
+        }
+        await getAuth().setCustomUserClaims(u.uid, nuevos);
+        resumen.reasignados++;
+      } else {
         await getAuth().setCustomUserClaims(u.uid, {});
         await getAuth().revokeRefreshTokens(u.uid);
         resumen.usuarios++;

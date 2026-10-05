@@ -5,12 +5,14 @@ import { useAuth } from './AuthContext';
 import {
   subscribeAllBusinesses,
   subscribeBusiness,
+  subscribeBusinesses,
   subscribeBilling,
   subscribeSubcollection,
   subscribeAppointmentsDeProfesional,
   subscribeMyAppointments,
   subscribeNotifications,
   subscribePlatformNotifications,
+  subscribeCobros,
   getBusinessIdBySlug,
 } from '../lib/repository';
 
@@ -56,6 +58,10 @@ export default function BusinessSync() {
 
   const esPlataforma = user?.isPlatformTeam === true;
   const businessIdPropio = user?.businessId || null;
+  // Como string y no como array: el array cambia de identidad en cada LOGIN
+  // aunque tenga los mismos ids, y eso volvería a suscribir todo. Mismo criterio
+  // que con `uid`, `rol` y `profId` más abajo.
+  const idsPropios = (user?.businessIds || []).join(',');
 
   // Evita re-suscribirse en loop cuando el slug resuelve al mismo negocio.
   const slugResuelto = useRef({ slug: null, businessId: null });
@@ -102,6 +108,13 @@ export default function BusinessSync() {
         onError
       );
 
+      // Los cobros registrados: de ahí sale "cuánto facturó la plataforma este
+      // mes" y el historial por mes. Son pocos documentos (uno por pago).
+      const desuscribirCobros = subscribeCobros(
+        (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { cobros: filas } }),
+        onError
+      );
+
       const desuscribirLista = subscribeAllBusinesses((lista) => {
         negocios = lista;
         // Para que la página pública no diga "no existe" mientras la lista
@@ -139,6 +152,7 @@ export default function BusinessSync() {
 
       return () => {
         desuscribirNotifs();
+        desuscribirCobros();
         desuscribirLista();
         for (const off of subsBilling.values()) off();
       };
@@ -147,10 +161,24 @@ export default function BusinessSync() {
     // 2. Staff de un negocio, en su panel: solo el suyo. Si está parado en el
     //    link público de OTRA barbería (/:slug), va por el camino 3 como
     //    cualquier visitante: la página pública muestra lo que dice la URL.
+    //
+    //    Una cuenta con sucursales escucha las suyas, que son las que dice su
+    //    claim `businessIds` (hasta cuatro). El barbero nunca lleva esa lista,
+    //    así que para él esto es exactamente lo de antes: un solo negocio.
     if (businessIdPropio && !slug) {
-      return subscribeBusiness(
-        businessIdPropio,
-        (negocio) => dispatch({ type: 'SET_BUSINESSES', payload: negocio ? [negocio] : [] }),
+      const ids = idsPropios ? idsPropios.split(',') : [businessIdPropio];
+
+      if (ids.length === 1) {
+        return subscribeBusiness(
+          ids[0],
+          (negocio) => dispatch({ type: 'SET_BUSINESSES', payload: negocio ? [negocio] : [] }),
+          onError
+        );
+      }
+
+      return subscribeBusinesses(
+        ids,
+        (lista) => dispatch({ type: 'SET_BUSINESSES', payload: lista }),
         onError
       );
     }
@@ -202,7 +230,7 @@ export default function BusinessSync() {
 
     // 4. Nadie logueado y sin slug: no hay nada que mostrar.
     dispatch({ type: 'SET_BUSINESSES', payload: [] });
-  }, [loading, esPlataforma, businessIdPropio, slug, user?.isBypass, dispatch]);
+  }, [loading, esPlataforma, businessIdPropio, idsPropios, slug, user?.isBypass, dispatch]);
 
   // ── Subcolecciones del negocio activo ────────────────────────────────────
   // Se suscriben acá, en un solo lugar, y no dentro de cada hook: si cada
