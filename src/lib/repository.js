@@ -229,6 +229,9 @@ export function subscribeAllBusinesses(cb, onError) {
 const CAMPOS_SOLO_PLATAFORMA = [
   'isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
   'trialEndsAt', 'maxBarbers', 'maxSucursales', 'origen', 'mpConectado', 'mpUserId',
+  // Qué funciones tiene habilitadas el plan. Es lo que miran las Rules para
+  // dejar o no subir una foto, poner colores propios o un logo.
+  'capacidades',
   // `grupoId` ata la barbería a una cuenta con sucursales y de ahí salen los
   // claims del dueño. Lo escribe solo la function `crearSucursal`.
   'grupoId',
@@ -326,7 +329,7 @@ export async function borrarCobro(id) {
   await deleteDoc(doc(db, 'platform', 'cobros', 'items', id));
 }
 
-export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFee, maxBarbers = null, maxSucursales = 1 }) {
+export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFee, maxBarbers = null, maxSucursales = 1, capacidades = null }) {
   const batch = writeBatch(db);
   // La cuota y los TOPES viven en el documento público porque el panel del
   // negocio los muestra y los hace cumplir; el abono en el privado porque es
@@ -335,9 +338,74 @@ export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFe
   // Los topes se escriben acá y no se dejan implícitos en el plan: si el día que
   // se cambia la escalera comercial una cuenta tiene que conservar lo que
   // compró, tiene que estar escrito en su documento.
-  batch.update(businessDoc(businessId), { planId, whatsappQuota, maxBarbers, maxSucursales });
+  batch.update(businessDoc(businessId), {
+    planId, whatsappQuota, maxBarbers, maxSucursales,
+    // Las funciones que el plan habilita (foto, colores, logo). Las Rules leen
+    // ESTE campo: sin escribirlo, cambiar de plan no cambiaría nada de lo que
+    // la base acepta.
+    ...(capacidades ? { capacidades } : {}),
+  });
   batch.set(billingDoc(businessId), { monthlyFee, planId }, { merge: true });
   await batch.commit();
+}
+
+// ============================================================================
+// RESEÑAS
+// ============================================================================
+// Una por turno. El id del documento ES el id del turno: con eso, la segunda
+// reseña del mismo turno es imposible sin contar nada ni confiar en el
+// frontend — Firestore no deja crear dos documentos con el mismo id, y las
+// Rules solo permiten actualizar al que la escribió.
+
+const reviewDoc = (businessId, appointmentId) =>
+  doc(db, 'businesses', businessId, 'reviews', appointmentId);
+
+/**
+ * Deja (o corrige) la reseña de un turno.
+ *
+ * El profesional, el servicio y el negocio NO se aceptan de quien llama: salen
+ * del turno. Las Rules lo vuelven a verificar contra el documento del turno,
+ * así que una reseña no puede quedar colgada del barbero equivocado.
+ */
+export async function guardarResena(businessId, turno, { stars, comment = '' }) {
+  const ref = reviewDoc(businessId, turno.id);
+  const existente = await getDoc(ref);
+
+  const datos = {
+    stars: Number(stars),
+    comment: String(comment || '').slice(0, 600),
+  };
+
+  if (existente.exists()) {
+    await updateDoc(ref, { ...datos, updatedAt: serverTimestamp() });
+    return { id: ref.id, actualizada: true };
+  }
+
+  await setDoc(ref, {
+    ...datos,
+    id: turno.id,
+    businessId,
+    appointmentId: turno.id,
+    userId: turno.userId,
+    professionalId: turno.professionalId,
+    serviceId: turno.serviceId ?? null,
+    clientName: turno.clientName || '',
+    appointmentDate: turno.appointmentDate,
+    createdAt: serverTimestamp(),
+  });
+  return { id: ref.id, actualizada: false };
+}
+
+/** Las reseñas que dejó esta persona en esta barbería. */
+export async function misResenas(businessId, uid) {
+  const q = query(subCol(businessId, 'reviews'), where('userId', '==', uid));
+  return rows(await getDocs(q));
+}
+
+/** Todas las reseñas de una barbería, de la más nueva a la más vieja. */
+export async function obtenerResenas(businessId) {
+  const filas = rows(await getDocs(subCol(businessId, 'reviews')));
+  return filas.sort((a, b) => String(b.appointmentDate || '').localeCompare(String(a.appointmentDate || '')));
 }
 
 // ============================================================================

@@ -87,6 +87,21 @@ export function useResolvedBusiness() {
     business = null;
   }
 
+  // Las sucursales de la cuenta que se está mirando.
+  //
+  // Para el dueño salen de su claim. Para la PLATAFORMA no hay claim que mirar
+  // —no pertenece a ninguna barbería—, así que el grupo se arma desde el
+  // negocio que está administrando: las que comparten su `grupoId`. Sin esto, el
+  // panel de sucursales abierto por la plataforma mostraba la cuenta vacía y
+  // "Nueva sucursal" fallaba con "no sabemos a qué cuenta", que es exactamente
+  // el error que apareció al probarlo.
+  const grupoActivo = business?.grupoId || null;
+  const sucursales = useMemo(() => {
+    if (propias.length) return propias;
+    if (platformOwner && grupoActivo) return businesses.filter((b) => b.grupoId === grupoActivo);
+    return business ? [business] : [];
+  }, [propias, platformOwner, grupoActivo, businesses, business]);
+
   return {
     business,
     businessId: business?.id || null,
@@ -94,9 +109,11 @@ export function useResolvedBusiness() {
     isPlatformOwner: platformOwner,
     resolved: Boolean(business),
     /** Las barberías de esta cuenta (1 si no es una cuenta con sucursales). */
-    sucursales: propias,
+    sucursales,
     /** ¿Esta cuenta administra más de una barbería? */
-    esMultiSucursal: propias.length > 1,
+    esMultiSucursal: sucursales.length > 1,
+    /** El id de la barbería principal del grupo, o el negocio activo si no hay grupo. */
+    principalId: grupoActivo || business?.id || null,
   };
 }
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { formatDate, toDateString, timeToMinutes, fechaCorta } from '../../utils/dateUtils';
 import { origenTurno } from '../../utils/origenTurno';
+import WhatsAppTurno from './WhatsAppTurno';
 
 /**
  * La agenda de un día, como un calendario: una fila por franja horaria, con
@@ -240,6 +241,16 @@ export default function AgendaDelDia({
                             <a className="agenda-turno-tel" href={`tel:${a.clientPhone}`} onClick={(e) => e.stopPropagation()}>
                               📞 {a.clientPhone}
                             </a>
+                          )}
+                          {/* Recordarle el turno al que viene en un rato, sin
+                              salir de la agenda ni buscar el número a mano. */}
+                          {!walkin && (
+                            <WhatsAppTurno
+                              turno={a}
+                              business={business}
+                              servicio={services.find((s) => s.id === a.serviceId) || null}
+                              compacto
+                            />
                           )}
                         </div>
                         <div className="agenda-turno-lateral">

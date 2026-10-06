@@ -11,10 +11,14 @@ import {
 } from '../../lib/repository';
 import { useTenant } from '../../hooks/useTenantData';
 import { getDayName, generateId } from '../../utils/dateUtils';
+import { puede } from '../../config/plans';
 
 export default function ProfileSettingsPage() {
   const { user } = useAuth();
-  const { professionals, schedules, businessId } = useTenant();
+  const { professionals, schedules, businessId, business } = useTenant();
+  // La foto va con el plan (desde el Intermedio). Las Rules rechazan el campo si
+  // no está incluido, así que acá se muestra apagado en vez de dejar al barbero
+  // subiendo una foto que el servidor va a rebotar.
   const [guardando, setGuardando] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -138,7 +142,7 @@ export default function ProfileSettingsPage() {
           <div className="card">
             <h3 className="mb-lg">Datos Personales</h3>
             <div className="flex flex-col gap-md">
-              <FotoPerfil value={form.avatarUrl} nombre={form.name} onChange={(avatarUrl) => editar({ avatarUrl })} />
+              <FotoPerfil value={form.avatarUrl} nombre={form.name} bloqueada={!puede(business, 'fotoPerfil')} onChange={(avatarUrl) => editar({ avatarUrl })} />
               <div className="form-group">
                 <label className="form-label">Nombre Completo <span className="required">*</span></label>
                 <input

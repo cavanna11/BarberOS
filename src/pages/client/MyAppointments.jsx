@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
-import { cancelAppointment } from '../../lib/repository';
+import { cancelAppointment, misResenas } from '../../lib/repository';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
+import ValorarTurno from '../../components/client/ValorarTurno';
 
 const STATUS_LABELS = {
   pendiente: { label: 'Pendiente', className: 'badge-warning' },
@@ -20,6 +21,23 @@ export default function MyAppointments() {
   const { appointments, professionals, services, business, slug, businessId } = useTenant();
   const [tab, setTab] = useState('upcoming');
   const ahora = new Date();
+
+  // Las reseñas que esta persona ya dejó en esta barbería, por turno. Se leen
+  // una vez al entrar y no con una suscripción: son dos o tres documentos y
+  // solo se usan para saber qué botón mostrar.
+  const [resenas, setResenas] = useState({});
+  const [valorando, setValorando] = useState(null);
+
+  useEffect(() => {
+    if (!businessId || !user?.id) return;
+    let vigente = true;
+    misResenas(businessId, user.id)
+      .then((filas) => {
+        if (vigente) setResenas(Object.fromEntries(filas.map((r) => [r.appointmentId || r.id, r])));
+      })
+      .catch((err) => console.error('[MyAppointments] No se pudieron leer tus reseñas:', err));
+    return () => { vigente = false; };
+  }, [businessId, user?.id]);
 
   // Fecha + hora, local. Un turno de hoy a las 11:00 a las 18:00 ya pasó: no
   // es "próximo" ni se puede cancelar.
@@ -105,6 +123,30 @@ export default function MyAppointments() {
               </div>
               <div className="appointment-actions">
                 <span className={`badge ${statusInfo.className}`}>{statusInfo.label}</span>
+
+                {/* Valorar: solo cuando la barbería marcó el turno como
+                    atendido. Antes de eso no hay nada que valorar, y las Rules
+                    lo rechazarían igual. */}
+                {apt.status === 'completada' && (
+                  resenas[apt.id] ? (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setValorando(apt)}
+                      title="Ya valoraste este turno. Podés corregir tu valoración."
+                    >
+                      <span className="estrellas-resumen">
+                        {'★'.repeat(resenas[apt.id].stars)}
+                        <span className="estrella-apagada">{'★'.repeat(5 - resenas[apt.id].stars)}</span>
+                      </span>
+                      <span style={{ marginLeft: 6 }}>Ya valoraste</span>
+                    </button>
+                  ) : (
+                    <button className="btn btn-outline btn-sm" onClick={() => setValorando(apt)}>
+                      ★ Valorar
+                    </button>
+                  )
+                )}
+
                 {activa(apt) && !yaPaso(apt) && (
                   puedeCancelar(apt) ? (
                     <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => handleCancel(apt.id)}>
@@ -120,6 +162,18 @@ export default function MyAppointments() {
             </div>
           );
         })
+      )}
+
+      {valorando && (
+        <ValorarTurno
+          turno={valorando}
+          business={business}
+          servicio={services.find((s) => s.id === valorando.serviceId) || null}
+          profesional={professionals.find((p) => p.id === valorando.professionalId) || null}
+          resenaPrevia={resenas[valorando.id] || null}
+          onGuardada={(r) => setResenas((prev) => ({ ...prev, [valorando.id]: { ...prev[valorando.id], stars: r.stars, comment: r.comment } }))}
+          onClose={() => setValorando(null)}
+        />
       )}
     </div>
   );

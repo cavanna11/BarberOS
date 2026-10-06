@@ -8,9 +8,22 @@ import {
 } from '../../lib/repository';
 import { formatPrice } from '../../utils/dateUtils';
 import { NOMBRES_DIAS_CORTOS, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
+import FiltroSucursal from '../../components/admin/FiltroSucursal';
+import { useDatosDeSucursales } from '../../hooks/useDatosDeSucursales';
+import { useBusiness } from '../../contexts/BusinessContext';
 
 export default function ServicesPage() {
-  const { services, professionals, professionalServices, business, businessId } = useTenant();
+  const { services, professionals, professionalServices, business, businessId, esMultiSucursal } = useTenant();
+  const { dispatch } = useBusiness();
+
+  // Mismo criterio que en Profesionales: con "todas las sucursales" la lista es
+  // de solo lectura. El catálogo de cada local es propio —precios distintos,
+  // promos distintas—, y editarlo desde la vista unificada escribiría en la
+  // sucursal equivocada.
+  const [sucFiltro, setSucFiltro] = useState('');
+  const verTodas = esMultiSucursal && !sucFiltro;
+  const deSucursales = useDatosDeSucursales(['services'], { activo: verTodas });
+  const listaServicios = verTodas ? deSucursales.juntar('services') : services;
   const [guardando, setGuardando] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -113,6 +126,17 @@ export default function ServicesPage() {
         <button className="btn btn-primary" onClick={openAdd}>+ Agregar Servicio</button>
       </div>
 
+      {esMultiSucursal && (
+        <div className="filters-bar">
+          <FiltroSucursal valor={sucFiltro} onChange={setSucFiltro} />
+          {verTodas && (
+            <span className="text-sm text-muted">
+              Catálogo de las {deSucursales.sucursales.length} sucursales. Para editar, entrá a una.
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="data-table">
           <thead>
@@ -126,28 +150,43 @@ export default function ServicesPage() {
             </tr>
           </thead>
           <tbody>
-            {services.map(srv => {
-              const srvProfs = professionalServices
+            {listaServicios.map(srv => {
+              const deOtra = Boolean(srv.__bizId && srv.__bizId !== businessId);
+              const srvProfs = deOtra ? [] : professionalServices
                 .filter(ps => ps.serviceId === srv.id)
                 .map(ps => professionals.find(p => p.id === ps.professionalId)?.name)
                 .filter(Boolean);
               return (
-                <tr key={srv.id}>
+                <tr key={`${srv.__bizId || ''}-${srv.id}`}>
                   <td>
                     <div>
                       <strong>{srv.name}</strong>
+                      {verTodas && srv.__sucursal && (
+                        <span className="badge badge-neutral" style={{ fontSize: 10, marginLeft: 6 }}>{srv.__sucursal}</span>
+                      )}
                       {srv.category && <div className="text-sm text-muted">{srv.category}</div>}
                       {tieneVentana(srv) && <div className="text-sm" style={{ color: 'var(--warning)' }}>🏷️ {describirVentana(srv)}</div>}
                     </div>
                   </td>
                   <td className="oculta-mobile">{srv.durationMinutes} min</td>
                   <td><strong>{formatPrice(srv.price, business?.currency)}</strong></td>
-                  <td className="oculta-mobile"><span className="text-sm text-secondary">{srvProfs.join(', ')}</span></td>
+                  <td className="oculta-mobile"><span className="text-sm text-secondary">{deOtra ? '—' : srvProfs.join(', ')}</span></td>
                   <td><span className={`badge ${srv.isActive ? 'badge-success' : 'badge-neutral'}`}>{srv.isActive ? 'Activo' : 'Inactivo'}</span></td>
                   <td>
                     <div className="table-actions">
-                      <button className="btn btn-ghost btn-sm" onClick={() => openEdit(srv)}>✏️</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(srv.id)}>🗑️</button>
+                      {deOtra ? (
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => { dispatch({ type: 'SET_CURRENT_BUSINESS', payload: srv.__bizId }); setSucFiltro(srv.__bizId); }}
+                        >
+                          Ir a {srv.__sucursal}
+                        </button>
+                      ) : (
+                        <>
+                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(srv)}>✏️</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(srv.id)}>🗑️</button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -156,7 +195,7 @@ export default function ServicesPage() {
           </tbody>
         </table>
 
-        {services.length === 0 && (
+        {listaServicios.length === 0 && (
           <div className="empty-state">
             <div className="empty-state-icon">✂️</div>
             <p style={{ marginBottom: 'var(--space-md)' }}>

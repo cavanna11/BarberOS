@@ -166,6 +166,19 @@ export function crearSucursal({ nombre, slug, telefono = '', direccion = '', ciu
   return llamar('crearSucursal', { nombre, slug, telefono, direccion, ciudad, businessId, copiarServiciosDe });
 }
 
+/**
+ * Crea un barbero respetando el tope del plan.
+ *
+ * Del lado del servidor porque las Rules no pueden CONTAR documentos: el tope
+ * no se puede expresar ahí, y en la interfaz se saltea con la consola abierta.
+ * La cantidad de barberos es justamente lo que separa un plan de otro.
+ *
+ * Devuelve { id } del profesional nuevo.
+ */
+export function crearProfesional({ businessId, datos }) {
+  return llamar('crearProfesional', { businessId, datos });
+}
+
 /** Manda un push de prueba a los teléfonos de esta misma cuenta. */
 export function probarPush() {
   return llamar('probarPush', {});

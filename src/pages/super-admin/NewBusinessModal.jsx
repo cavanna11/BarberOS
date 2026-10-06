@@ -169,6 +169,9 @@ export default function NewBusinessModal({ onClose, onCreated }) {
       // plan nuevo. Solo la plataforma los puede tocar (Rules).
       maxBarbers: plan.maxBarbers ?? null,
       maxSucursales: plan.maxSucursales ?? 1,
+      // Qué funciones habilita el plan (foto del barbero, colores, logo). Las
+      // Rules leen ESTE campo: sin escribirlo, el plan no restringe nada.
+      capacidades: { ...(plan.capacidades || {}) },
       // Sin sucursales todavía. Lo escribe `crearSucursal` cuando se abre la
       // primera, y de ahí salen los permisos del dueño: el dueño NO lo puede
       // tocar.

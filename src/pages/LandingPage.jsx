@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { SeccionSlotly, FlotanteSlotly } from '../components/landing/Slotly';
-import { PLANS, FEATURES_COMUNES, OVERAGE_COST_USD, precioLindo } from '../config/plans';
+import { PLANS, FEATURES_COMUNES, precioLindo } from '../config/plans';
 import HeroMotionMockup from '../components/landing/HeroMotionMockup';
 import FloatingActionWidget from '../components/landing/FloatingActionWidget';
 
@@ -58,10 +58,15 @@ const BENEFICIOS = [
   },
   {
     imagen: '/img/benefit-whatsapp.svg',
-    alt: 'Vista previa del mensaje de recordatorio automático por WhatsApp',
-    titulo: 'Recordatorio por WhatsApp',
-    texto: 'El sistema le avisa al cliente el día antes y unas horas antes. Es la función que más ausencias evita.',
-    proximamente: true,
+    alt: 'Vista previa del mensaje de WhatsApp ya escrito, listo para enviar',
+    titulo: 'WhatsApp en un toque',
+    texto: 'Al lado de cada turno tenés el botón: se abre WhatsApp con el mensaje ya escrito —recordatorio o agradecimiento— y vos decidís si lo mandás. Sale de tu número, con tu nombre. El envío automático llega más adelante.',
+  },
+  {
+    imagen: '/img/benefit-resenas.svg',
+    alt: 'El cliente puntuando con estrellas y el promedio por barbero en el panel',
+    titulo: 'Reseñas de tus clientes',
+    texto: 'Cuando marcás el turno como atendido, el cliente puede puntuarte de 1 a 5 estrellas y dejarte un comentario. Vos ves el promedio de la barbería, de cada barbero y de cada sucursal. Y al que te valora le ofrecemos dejar también su reseña en Google.',
   },
   {
     imagen: '/img/benefit-pago.svg',
@@ -411,7 +416,7 @@ export default function LandingPage() {
                 clase="btn-primary btn-full"
                 mensaje="Hola, necesito algo a medida para mi barbería y quiero consultar por el Plan Personalizado."
               >
-                Contactanos
+                Consultanos
               </CTAWhatsApp>
             </div>
           </div>
@@ -426,9 +431,8 @@ export default function LandingPage() {
         </div>
 
         <p className="landing-fineprint">
-          Precios en pesos argentinos. Los mensajes por encima del plan se cobran
-          USD {OVERAGE_COST_USD.toFixed(2)} cada uno — te avisamos antes de que
-          pase, nunca hay sorpresas en la factura.
+          Precios en pesos argentinos, por mes. Sin permanencia y sin costo de alta:
+          se paga el mes que se usa.
         </p>
       </section>
 

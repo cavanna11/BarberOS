@@ -12,8 +12,20 @@ export default function Header() {
 
   return (
     <header className="header">
+      {/* Adentro del link de una barbería que tiene logo propio, manda el suyo:
+          para el cliente esa página es la agenda de SU barbería, no la de un
+          proveedor. En la portada (sin slug) y en las que no tienen logo, el
+          ícono de BarberOS. */}
       <Link to={home} className="header-logo">
-        <img src="/img/barberos-logo-icon.svg" alt="BarberOS Logo" width="32" height="32" className="header-logo-img" />
+        {slug && business?.logoUrl ? (
+          <img
+            src={business.logoUrl}
+            alt={business.name || 'Logo'}
+            className="header-logo-img header-logo-propio"
+          />
+        ) : (
+          <img src="/img/barberos-logo-icon.svg" alt="BarberOS Logo" width="32" height="32" className="header-logo-img" />
+        )}
         <span>{business?.name || 'BarberOS'}</span>
       </Link>
 

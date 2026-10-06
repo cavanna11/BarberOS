@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTenant } from '../../hooks/useTenantData';
 import {
-  addToSubcollection,
   updateInSubcollection,
   removeFromSubcollection,
   replaceMatching,
@@ -10,18 +9,33 @@ import {
   removeStaffContact,
 } from '../../lib/repository';
 import { getDayName, generateId } from '../../utils/dateUtils';
-import { limitesDelNegocio } from '../../config/plans';
+import { limitesDelNegocio, puede } from '../../config/plans';
 import FotoPerfil from '../../components/admin/FotoPerfil';
 import HorarioSemanal from '../../components/admin/HorarioSemanal';
-import { estadoPushDelEquipo } from '../../lib/functions';
+import { estadoPushDelEquipo, crearProfesional } from '../../lib/functions';
 import { errorDeHorario } from '../../utils/horarios';
+import FiltroSucursal from '../../components/admin/FiltroSucursal';
+import { useDatosDeSucursales } from '../../hooks/useDatosDeSucursales';
+import { useBusiness } from '../../contexts/BusinessContext';
 
 // Mismo número que la landing y el resto del panel.
 const LINK_AMPLIAR = 'https://wa.me/5492257529684?text=' +
   encodeURIComponent('Hola! Necesito sumar más barberos a mi cuenta de BarberOS.');
 
 export default function ProfessionalsPage() {
-  const { professionals, schedules, professionalServices, services, businessId, business } = useTenant();
+  const { professionals, schedules, professionalServices, services, businessId, business, esMultiSucursal } = useTenant();
+  const { dispatch } = useBusiness();
+
+  // Con varias sucursales: mirar las cuatro juntas, o entrar a una.
+  //
+  // En "todas" la lista es de SOLO LECTURA a propósito. Editar a un barbero de
+  // otra sucursal desde acá le ofrecería los servicios y los horarios de ESTA,
+  // que son otros: la forma de no mezclar datos no es tener cuidado, es no
+  // dejar. Cada fila trae el botón para entrar a su sucursal.
+  const [sucFiltro, setSucFiltro] = useState('');
+  const verTodas = esMultiSucursal && !sucFiltro;
+  const deSucursales = useDatosDeSucursales(['professionals'], { activo: verTodas });
+  const listaProfesionales = verTodas ? deSucursales.juntar('professionals') : professionals;
 
   // Límite de barberos del plan contratado. `maxBarbers: null` = sin tope.
   //
@@ -40,6 +54,10 @@ export default function ProfessionalsPage() {
   // a alguien sin cambiarle el plan. En una cuenta con sucursales el tope es
   // POR SUCURSAL: cada una tiene su propio equipo.
   const { maxBarbers: topeBarberos } = limitesDelNegocio(business);
+  // La foto de perfil se habilita desde el Plan Intermedio. No es solo esconder
+  // el campo: las Rules rechazan la escritura de `avatarUrl` si el plan no lo
+  // incluye, así que mostrarlo sería prometer algo que la base va a rechazar.
+  const puedeFoto = puede(business, 'fotoPerfil');
   const activos = professionals.filter((p) => p.isActive !== false).length;
   const llegoAlTope = topeBarberos !== null && activos >= topeBarberos;
 
@@ -142,13 +160,16 @@ export default function ProfessionalsPage() {
       // mail personales van al documento privado del negocio.
       const { phone, email, ...publico } = form;
 
+      // El alta pasa por la Cloud Function: es la que cuenta los barberos
+      // activos y hace cumplir el tope del plan. Las Rules ya no permiten crear
+      // el documento desde el browser, justamente para que el tope no se pueda
+      // saltear con la consola abierta.
       const profId = editing
         ? editing.id
-        : await addToSubcollection(businessId, 'professionals', {
-            ...publico,
-            displayOrder: professionals.length + 1,
-            isActive: true,
-          });
+        : (await crearProfesional({
+            businessId,
+            datos: { ...publico, displayOrder: professionals.length + 1 },
+          })).id;
 
       if (editing) {
         await updateInSubcollection(businessId, 'professionals', profId, { ...publico });
@@ -235,6 +256,18 @@ export default function ProfessionalsPage() {
         </div>
       )}
 
+      {esMultiSucursal && (
+        <div className="filters-bar">
+          <FiltroSucursal valor={sucFiltro} onChange={setSucFiltro} />
+          {verTodas && (
+            <span className="text-sm text-muted">
+              Estás viendo el equipo de las {deSucursales.sucursales.length} sucursales. Para editar,
+              entrá a una.
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="data-table">
           <thead>
@@ -249,33 +282,44 @@ export default function ProfessionalsPage() {
             </tr>
           </thead>
           <tbody>
-            {professionals.map(prof => {
-              const profPS      = professionalServices.filter(ps => ps.professionalId === prof.id);
-              const profSched   = schedules.filter(s => s.professionalId === prof.id && s.isActive);
+            {listaProfesionales.map(prof => {
+              // Los servicios, los horarios y los avisos que tiene cargado el
+              // contexto son los de la sucursal ACTIVA. Para una fila de otra
+              // sucursal no se muestran en cero —diría algo falso—: se muestra
+              // un guion y el botón para entrar a esa sucursal.
+              const deOtra = Boolean(prof.__bizId && prof.__bizId !== businessId);
+              const profPS      = deOtra ? [] : professionalServices.filter(ps => ps.professionalId === prof.id);
+              const profSched   = deOtra ? [] : schedules.filter(s => s.professionalId === prof.id && s.isActive);
               const srvNames    = profPS.map(ps => services.find(s => s.id === ps.serviceId)?.name).filter(Boolean);
               const days        = [...profSched].sort((a, b) => a.dayOfWeek - b.dayOfWeek).map(s => getDayName(s.dayOfWeek).substring(0, 3)).join(', ');
               return (
-                <tr key={prof.id}>
+                <tr key={`${prof.__bizId || ''}-${prof.id}`}>
                   <td>
                     <div className="flex items-center gap-sm">
                       <div className="avatar avatar-sm" style={{ overflow: 'hidden' }}>{prof.avatarUrl ? <img src={prof.avatarUrl} alt={prof.name} /> : prof.name.split(' ').map(n => n[0]).join('')}</div>
-                      <strong>{prof.name}</strong>
+                    <strong>{prof.name}</strong>
+                      {verTodas && prof.__sucursal && (
+                        <span className="badge badge-neutral" style={{ fontSize: 10 }}>{prof.__sucursal}</span>
+                      )}
                     </div>
                   </td>
                   <td className="oculta-mobile">{prof.specialty}</td>
                   <td className="oculta-mobile">
-                    {avisos[prof.id]?.dispositivos
-                      ? <span className="badge badge-success" title="Recibe los avisos en el celular">🔔 Activados</span>
-                      : <span className="badge badge-neutral" title="No va a recibir avisos de turnos nuevos">— Sin activar</span>}
+                    {deOtra ? <span className="text-muted">—</span> : (
+                      avisos[prof.id]?.dispositivos
+                        ? <span className="badge badge-success" title="Recibe los avisos en el celular">🔔 Activados</span>
+                        : <span className="badge badge-neutral" title="No va a recibir avisos de turnos nuevos">— Sin activar</span>
+                    )}
                   </td>
                   <td>
                     <span className="text-sm text-secondary">
-                      {srvNames.length > 0 ? `${srvNames.length} servicio${srvNames.length !== 1 ? 's' : ''}` : (
-                        <span style={{ color: 'var(--danger)', fontWeight: 600 }}>⚠ Sin servicios</span>
-                      )}
+                      {deOtra ? <span className="text-muted">—</span>
+                        : srvNames.length > 0 ? `${srvNames.length} servicio${srvNames.length !== 1 ? 's' : ''}` : (
+                          <span style={{ color: 'var(--danger)', fontWeight: 600 }}>⚠ Sin servicios</span>
+                        )}
                     </span>
                   </td>
-                  <td className="oculta-mobile"><span className="text-sm">{days}</span></td>
+                  <td className="oculta-mobile"><span className="text-sm">{deOtra ? '—' : days}</span></td>
                   <td>
                     <span className={`badge ${prof.isActive ? 'badge-success' : 'badge-neutral'}`}>
                       {prof.isActive ? 'Activo' : 'Inactivo'}
@@ -283,8 +327,20 @@ export default function ProfessionalsPage() {
                   </td>
                   <td>
                     <div className="table-actions">
-                      <button className="btn btn-ghost btn-sm" onClick={() => openEdit(prof)}>✏️</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(prof.id)}>🗑️</button>
+                      {verTodas && prof.__bizId !== businessId ? (
+                        <button
+                          className="btn btn-outline btn-sm"
+                          title={`Pasar a ${prof.__sucursal} para administrarlo`}
+                          onClick={() => { dispatch({ type: 'SET_CURRENT_BUSINESS', payload: prof.__bizId }); setSucFiltro(prof.__bizId); }}
+                        >
+                          Ir a {prof.__sucursal}
+                        </button>
+                      ) : (
+                        <>
+                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(prof)}>✏️</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(prof.id)}>🗑️</button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -320,7 +376,7 @@ export default function ProfessionalsPage() {
               <div className="flex flex-col gap-md">
 
                 {/* ─ Datos básicos ─ */}
-                <FotoPerfil value={form.avatarUrl} nombre={form.name} onChange={(avatarUrl) => setForm({ ...form, avatarUrl })} />
+                <FotoPerfil value={form.avatarUrl} nombre={form.name} bloqueada={!puedeFoto} onChange={(avatarUrl) => setForm({ ...form, avatarUrl })} />
                 <div className="form-group">
                   <label className="form-label">Nombre <span className="required">*</span></label>
                   <input

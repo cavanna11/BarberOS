@@ -33,3 +33,49 @@ export function redimensionarImagen(file, ladoMax = 320) {
     img.src = url;
   });
 }
+
+/**
+ * Igual que la foto de perfil, pero para el logo de la barbería.
+ *
+ * Dos diferencias que importan:
+ *
+ *   - Sale en PNG, no en JPEG: casi todos los logos vienen con fondo
+ *     transparente y en JPEG ese fondo se vuelve un rectángulo negro.
+ *   - Es apaisado: un logo suele ser más ancho que alto, así que se limita el
+ *     lado mayor a 240 px y listo.
+ *
+ * Si el PNG se pasa de tamaño (pasa con los logos que en realidad son una foto)
+ * se reintenta en JPEG sobre fondo blanco, que comprime muchísimo mejor. Es
+ * preferible eso a decirle "no se pudo" a alguien que solo quiere poner su logo.
+ */
+export function redimensionarLogo(file, ladoMax = 240) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type?.startsWith('image/')) return reject(new Error('Elegí una imagen (PNG o JPG).'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const escala = Math.min(1, ladoMax / Math.max(img.width, img.height));
+      const w = Math.round(img.width * escala), h = Math.round(img.height * escala);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+
+      const png = canvas.toDataURL('image/png');
+      if (png.length <= FOTO_MAX_BYTES) return resolve(png);
+
+      // Demasiado grande en PNG: fondo blanco y JPEG.
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      const jpg = canvas.toDataURL('image/jpeg', 0.85);
+      if (jpg.length > FOTO_MAX_BYTES) {
+        return reject(new Error('El logo es muy pesado. Probá con una imagen más simple o más chica.'));
+      }
+      resolve(jpg);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen.')); };
+    img.src = url;
+  });
+}

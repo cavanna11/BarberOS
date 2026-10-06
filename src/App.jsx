@@ -35,6 +35,7 @@ const ServicesPage        = lazy(() => import('./pages/admin/ServicesPage'));
 const AppointmentsPage    = lazy(() => import('./pages/admin/AppointmentsPage'));
 const SettingsPage        = lazy(() => import('./pages/admin/SettingsPage'));
 const SucursalesPage      = lazy(() => import('./pages/admin/SucursalesPage'));
+const ResenasPage         = lazy(() => import('./pages/admin/ResenasPage'));
 const AdminsPage          = lazy(() => import('./pages/admin/AdminsPage'));
 const ProfileSettingsPage = lazy(() => import('./pages/admin/ProfileSettingsPage'));
 const SupportPage         = lazy(() => import('./pages/admin/SupportPage'));
@@ -206,6 +207,7 @@ export default function App() {
           <Route path="citas" element={<AppointmentsPage />} />
           <Route path="admins" element={<AdminsPage />} />
           <Route path="sucursales" element={<SucursalesPage />} />
+          <Route path="resenas" element={<ResenasPage />} />
           <Route path="configuracion" element={<SettingsPage />} />
           <Route path="ajustes" element={<ProfileSettingsPage />} />
           <Route path="soporte" element={<SupportPage />} />

@@ -317,6 +317,10 @@ export default function SuperAdminDashboard({ seccion = null }) {
         // Los topes de capacidad, que es lo que el negocio de verdad compra.
         maxBarbers: plan ? plan.maxBarbers ?? null : null,
         maxSucursales: plan ? plan.maxSucursales ?? 1 : 1,
+        // Y las funciones que habilita. Es lo que miran las Rules para dejar (o
+        // no) subir una foto, poner colores propios o un logo: si no se escribe,
+        // cambiar de plan no cambia nada de lo que la base acepta.
+        capacidades: plan ? { ...(plan.capacidades || {}) } : null,
       });
     } catch (err) {
       console.error('[super-admin] No se pudo cambiar el plan:', err);

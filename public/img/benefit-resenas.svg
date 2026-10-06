@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" width="100%" height="100%">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', sans-serif; }
+      .font-mono { font-family: 'Space Mono', monospace; }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="280" height="120" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+
+  <!-- Lo que ve el cliente: las estrellas -->
+  <g transform="translate(16, 18)">
+    <rect x="0" y="0" width="122" height="84" rx="7" fill="#ffffff" stroke="rgba(0,0,0,0.08)"/>
+    <text x="12" y="19" class="font-sans" font-size="7.5" font-weight="700" fill="#0a0a0a">¿Qué tal estuvo?</text>
+
+    <g transform="translate(11, 30)" font-size="17" fill="#f5a623">
+      <text x="0" y="0">★</text>
+      <text x="20" y="0">★</text>
+      <text x="40" y="0">★</text>
+      <text x="60" y="0">★</text>
+      <text x="80" y="0" fill="#e0e0e0">★</text>
+    </g>
+
+    <rect x="11" y="42" width="100" height="18" rx="4" fill="#fafafa" stroke="rgba(0,0,0,0.08)"/>
+    <text x="17" y="54" class="font-sans" font-size="6.5" fill="#aaaaaa">Un comentario (opcional)</text>
+
+    <rect x="11" y="64" width="100" height="13" rx="4" fill="#e03d00"/>
+    <text x="61" y="73" class="font-sans" font-size="7" font-weight="700" fill="#ffffff" text-anchor="middle">Enviar</text>
+  </g>
+
+  <!-- Lo que ves vos: el promedio por barbero -->
+  <g transform="translate(152, 18)">
+    <rect x="0" y="0" width="112" height="84" rx="7" fill="#0a0a0a"/>
+    <text x="12" y="17" class="font-mono" font-size="6" fill="#888888" letter-spacing="0.8">TU PROMEDIO</text>
+    <text x="12" y="36" class="font-sans" font-size="19" font-weight="700" fill="#ffffff">4,8</text>
+    <text x="44" y="35" font-size="11" fill="#f5a623">★★★★★</text>
+
+    <line x1="12" y1="44" x2="100" y2="44" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>
+
+    <text x="12" y="57" class="font-sans" font-size="7" fill="#dddddd">Martín</text>
+    <text x="100" y="57" class="font-sans" font-size="7" fill="#f5a623" text-anchor="end">4,9</text>
+    <text x="12" y="69" class="font-sans" font-size="7" fill="#dddddd">Lucas</text>
+    <text x="100" y="69" class="font-sans" font-size="7" fill="#f5a623" text-anchor="end">4,7</text>
+    <text x="12" y="79" class="font-sans" font-size="6.5" fill="#888888">por barbero y por sucursal</text>
+  </g>
+</svg>

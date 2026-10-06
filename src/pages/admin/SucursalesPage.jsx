@@ -57,6 +57,12 @@ export default function SucursalesPage() {
   const { dispatch } = useBusiness();
   const { user, refreshClaims } = useAuth();
 
+  // Esta pantalla es del DUEÑO de la cuenta (y de la plataforma, que administra
+  // cuentas ajenas). Un barbero no abre sucursales ni ve los números de las
+  // otras: la function lo rechaza igual, pero mostrarle la pantalla sería
+  // ofrecerle algo que no puede hacer.
+  const puedeGestionar = user?.role === 'owner' || user?.isPlatformTeam === true;
+
   const mes = mesActual();
   const [datos, setDatos] = useState({});
   const [cargando, setCargando] = useState(true);
@@ -66,7 +72,13 @@ export default function SucursalesPage() {
   const [reciente, setReciente] = useState(null);
 
   // Las sucursales del grupo, en el orden en que llegaron (la principal primero).
-  const principalId = user?.grupoId || businessId;
+  //
+  // El dueño lo tiene en su claim. La plataforma no pertenece a ninguna cuenta,
+  // así que sale del negocio que está administrando. Sin esto, "Nueva sucursal"
+  // abierta desde el panel global fallaba con "no sabemos a qué cuenta es" — no
+  // había dónde elegirla porque no hay nada que elegir: es la cuenta de la
+  // barbería que se está administrando.
+  const principalId = user?.grupoId || business?.grupoId || businessId;
   const ordenadas = [...sucursales].sort((a, b) => {
     if (a.id === principalId) return -1;
     if (b.id === principalId) return 1;
@@ -127,6 +139,19 @@ export default function SucursalesPage() {
   const totalEs = (campo) => porSucursal.reduce((suma, f) => suma + f.n[campo], 0);
 
   const entrarA = (id) => dispatch({ type: 'SET_CURRENT_BUSINESS', payload: id });
+
+  if (!puedeGestionar) {
+    return (
+      <div className="card empty-state" style={{ padding: 'var(--space-2xl)' }}>
+        <div className="empty-state-icon">🏠</div>
+        <h3 style={{ marginBottom: 8 }}>Esta sección es del dueño de la cuenta</h3>
+        <p style={{ maxWidth: 420, margin: '0 auto' }}>
+          Las sucursales las administra quien es dueño de la barbería. Vos ves tu agenda,
+          tus turnos y tus reseñas.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -275,10 +300,10 @@ export default function SucursalesPage() {
 
               <div style={{ display: 'flex', gap: 8, marginTop: 'var(--space-md)', flexWrap: 'wrap' }}>
                 {activa ? (
-                  <Link to="/admin" className="btn btn-primary btn-sm">Ir al panel</Link>
+                  <Link to="/admin" className="btn btn-primary btn-sm">Gestionar esta sucursal</Link>
                 ) : (
                   <Link to="/admin" className="btn btn-outline btn-sm" onClick={() => entrarA(sucursal.id)}>
-                    Entrar a esta sucursal
+                    Gestionar
                   </Link>
                 )}
                 <a
@@ -299,6 +324,7 @@ export default function SucursalesPage() {
       {creando && (
         <NuevaSucursalModal
           sucursales={ordenadas}
+          cuentaId={principalId}
           onClose={() => setCreando(false)}
           onCreada={async (id) => {
             setCreando(false);
@@ -314,7 +340,7 @@ export default function SucursalesPage() {
 }
 
 // ─── Alta de una sucursal ───────────────────────────────────────────────────
-function NuevaSucursalModal({ sucursales, onClose, onCreada }) {
+function NuevaSucursalModal({ sucursales, cuentaId, onClose, onCreada }) {
   const [form, setForm] = useState({
     nombre: '', slug: '', telefono: '', direccion: '', ciudad: '', copiarServiciosDe: '',
   });
@@ -348,6 +374,10 @@ function NuevaSucursalModal({ sucursales, onClose, onCreada }) {
       }
       const r = await crearSucursal({
         nombre: form.nombre.trim(),
+        // La cuenta a la que pertenece. Se manda SIEMPRE y no se deduce del
+        // token: el dueño de la plataforma no tiene barbería propia en sus
+        // claims, así que sin esto el servidor no sabe de qué cuenta hablamos.
+        businessId: cuentaId,
         slug: form.slug,
         telefono: form.telefono.trim(),
         direccion: form.direccion.trim(),

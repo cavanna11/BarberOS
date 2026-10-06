@@ -7,6 +7,9 @@ import { formatDate, formatPrice, fechaCorta, toDateString } from '../../utils/d
 import { origenTurno } from '../../utils/origenTurno';
 import { devolverSena } from '../../lib/functions';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
+import WhatsAppTurno from '../../components/admin/WhatsAppTurno';
+import FiltroSucursal from '../../components/admin/FiltroSucursal';
+import { useDatosDeSucursales } from '../../hooks/useDatosDeSucursales';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
@@ -68,9 +71,18 @@ function etiquetaSena(apt, moneda) {
 
 export default function AppointmentsPage() {
   const { user } = useAuth();
-  const { appointments, professionals, services, business, businessId } = useTenant();
+  const {
+    appointments, professionals, services, business, businessId, esMultiSucursal,
+  } = useTenant();
 
   const isOwner = user?.role === 'owner';
+
+  // Sucursal: '' = todas, o el id de una. Elegir una puntual la vuelve la
+  // activa (lo hace FiltroSucursal) y entonces los datos salen del contexto,
+  // en vivo. Con "todas" hay que ir a buscar las otras, de una sola vez.
+  const [sucFiltro, setSucFiltro] = useState('');
+  const verTodas = esMultiSucursal && !sucFiltro;
+  const otrasSucursales = useDatosDeSucursales(['appointments', 'professionals', 'services'], { activo: verTodas });
   const vinculo = useVinculoBarbero();
   const profIdPropio = user?.professionalId ?? null;
 
@@ -84,8 +96,15 @@ export default function AppointmentsPage() {
   const [rango, setRango] = useState('hoy');
   const hoy = toDateString(new Date());
 
+  // De dónde salen las filas. Con una sola sucursal (el caso normal) es el
+  // contexto y está en vivo; con "todas" es la lectura de las cuatro, y cada
+  // fila trae `__bizId` para que las acciones toquen la barbería correcta.
+  const turnos = verTodas ? otrasSucursales.juntar('appointments') : appointments;
+  const profesionalesVisibles = verTodas ? otrasSucursales.juntar('professionals') : professionals;
+  const serviciosVisibles = verTodas ? otrasSucursales.juntar('services') : services;
+
   const filtered = useMemo(() => {
-    let result = [...appointments].sort((a, b) => {
+    let result = [...turnos].sort((a, b) => {
       const da = a.appointmentDate + 'T' + a.startTime;
       const db = b.appointmentDate + 'T' + b.startTime;
       return db.localeCompare(da);
@@ -120,19 +139,25 @@ export default function AppointmentsPage() {
       return cronologico ? ka.localeCompare(kb) : kb.localeCompare(ka);
     });
     return result;
-  }, [appointments, filterProf, filterStatus, filterDate, isOwner, profIdPropio, rango, hoy]);
+  }, [turnos, filterProf, filterStatus, filterDate, isOwner, profIdPropio, rango, hoy]);
 
   const cuantos = useMemo(() => {
-    const mios = isOwner ? appointments : appointments.filter(a => a.professionalId === profIdPropio);
+    const mios = isOwner ? turnos : turnos.filter(a => a.professionalId === profIdPropio);
     const vivos = mios.filter(a => a.status !== 'cancelada');
     return {
       hoy: vivos.filter(a => a.appointmentDate === hoy).length,
       proximos: vivos.filter(a => a.appointmentDate > hoy).length,
     };
-  }, [appointments, isOwner, profIdPropio, hoy]);
+  }, [turnos, isOwner, profIdPropio, hoy]);
 
   // La devolución sale de la cuenta de Mercado Pago del barbero, así que es
   // una decisión suya y no automática: un botón, con confirmación.
+  // La barbería de ESTA fila. Con "todas las sucursales" la tabla junta turnos
+  // de cuatro locales: escribir siempre en el negocio activo le cambiaría el
+  // estado al turno de otra sucursal. Es el error que hace que este filtro sea
+  // peligroso si se hace mal.
+  const negocioDe = (apt) => apt.__bizId || businessId;
+
   const [devolviendo, setDevolviendo] = useState('');
   const devolver = async (apt) => {
     if (!window.confirm(`¿Devolverle la seña de ${formatPrice(apt.sena?.monto, business?.currency)} a ${apt.clientName || 'el cliente'}?
@@ -140,7 +165,7 @@ export default function AppointmentsPage() {
 Sale de tu cuenta de Mercado Pago.`)) return;
     setDevolviendo(apt.id);
     try {
-      await devolverSena(apt.id, businessId);
+      await devolverSena(apt.id, negocioDe(apt));
     } catch (err) {
       console.error('[Citas] No se pudo devolver la seña:', err);
       alert('No se pudo devolver: ' + err.message);
@@ -149,16 +174,16 @@ Sale de tu cuenta de Mercado Pago.`)) return;
     }
   };
 
-  const updateStatus = (id, status) => {
-    updateAppointment(businessId, id, { status }).catch((err) => {
+  const updateStatus = (apt, status) => {
+    updateAppointment(negocioDe(apt), apt.id, { status }).catch((err) => {
       console.error('[AppointmentsPage] No se pudo actualizar el turno:', err);
       alert('No se pudo actualizar el turno: ' + err.message);
     });
   };
 
-  const handleCancel = (id) => {
+  const handleCancel = (apt) => {
     if (window.confirm('¿Cancelar esta cita?')) {
-      cancelAppointment(businessId, id).catch((err) => {
+      cancelAppointment(negocioDe(apt), apt.id).catch((err) => {
         console.error('[AppointmentsPage] No se pudo cancelar:', err);
         alert('No se pudo cancelar el turno: ' + err.message);
       });
@@ -178,22 +203,22 @@ Sale de tu cuenta de Mercado Pago.`)) return;
             <button
               className="btn btn-sm btn-primary"
               title={started ? 'El cliente vino y lo atendiste' : blockedMsg}
-              onClick={() => started && updateStatus(apt.id, 'completada')}
+              onClick={() => started && updateStatus(apt, 'completada')}
               disabled={!started}
               style={!started ? { opacity: 0.35, cursor: 'not-allowed' } : {}}
             >Vino</button>
             <button
               className="btn btn-sm btn-outline"
               title={started ? 'El cliente no se presentó' : blockedMsg}
-              onClick={() => started && updateStatus(apt.id, 'no_asistio')}
+              onClick={() => started && updateStatus(apt, 'no_asistio')}
               disabled={!started}
               style={!started ? { opacity: 0.35, cursor: 'not-allowed' } : {}}
             >No vino</button>
-            <button className="btn btn-ghost btn-sm" title="Cancelar el turno" onClick={() => handleCancel(apt.id)}>✕</button>
+            <button className="btn btn-ghost btn-sm" title="Cancelar el turno" onClick={() => handleCancel(apt)}>✕</button>
           </>
         )}
         {apt.status === 'pendiente' && (
-          <button className="btn btn-sm btn-outline" title="Avisarle al cliente que el turno queda en pie" onClick={() => updateStatus(apt.id, 'confirmada')}>Confirmar</button>
+          <button className="btn btn-sm btn-outline" title="Avisarle al cliente que el turno queda en pie" onClick={() => updateStatus(apt, 'confirmada')}>Confirmar</button>
         )}
         {apt.sena?.estado === 'pagada' && (
           <button className="btn btn-sm btn-ghost" disabled={devolviendo === apt.id}
@@ -241,6 +266,9 @@ Sale de tu cuenta de Mercado Pago.`)) return;
 
       {/* Filtros */}
       <div className="filters-bar">
+        {/* Con varias sucursales, ver las cuatro juntas o entrar a una, sin
+            salir de la pantalla. */}
+        <FiltroSucursal valor={sucFiltro} onChange={setSucFiltro} />
         <input
           type="date"
           className="form-input"
@@ -256,8 +284,10 @@ Sale de tu cuenta de Mercado Pago.`)) return;
             style={{ maxWidth: 200 }}
           >
             <option value="">Todos los profesionales</option>
-            {professionals.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+            {profesionalesVisibles.map(p => (
+              <option key={`${p.__bizId || ''}-${p.id}`} value={p.id}>
+                {p.name}{verTodas && p.__sucursal ? ` · ${p.__sucursal}` : ''}
+              </option>
             ))}
           </select>
         )}
@@ -285,12 +315,12 @@ Sale de tu cuenta de Mercado Pago.`)) return;
           lee y deja las acciones fuera de la pantalla. */}
       <div className="citas-tarjetas solo-mobile">
         {filtered.map(apt => {
-          const prof = professionals.find(p => p.id === apt.professionalId);
-          const srv  = services.find(s => s.id === apt.serviceId);
+          const prof = profesionalesVisibles.find(p => p.id === apt.professionalId);
+          const srv  = serviciosVisibles.find(s => s.id === apt.serviceId);
           const isWalkin = apt.type === 'walkin';
           const origen = origenTurno(apt);
           return (
-            <div key={apt.id} className={`card cita-tarjeta estado-${apt.status}`}>
+            <div key={`${apt.__bizId || ''}-${apt.id}`} className={`card cita-tarjeta estado-${apt.status}`}>
               <div className="cita-tarjeta-fila">
                 <div>
                   <div className="cita-tarjeta-hora">{apt.startTime}<span> — {apt.endTime}</span></div>
@@ -298,7 +328,12 @@ Sale de tu cuenta de Mercado Pago.`)) return;
                 </div>
                 <span className={`badge ${STATUS_BADGES[apt.status]}`}>{STATUS_LABELS[apt.status] || apt.status}</span>
               </div>
-              <div className="cita-tarjeta-cliente">{isWalkin ? '✂️ Servicio sin turno' : (apt.clientName || 'Cliente')}</div>
+              <div className="cita-tarjeta-cliente">
+                {isWalkin ? '✂️ Servicio sin turno' : (apt.clientName || 'Cliente')}
+                {verTodas && apt.__sucursal && (
+                  <span className="badge badge-neutral" style={{ fontSize: 10, marginLeft: 6 }}>{apt.__sucursal}</span>
+                )}
+              </div>
               <div className="text-sm text-muted" title={origen.detalle}>{origen.icono} {origen.etiqueta}</div>
               <div className="text-sm text-secondary">
                 {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'} · ${formatPrice(apt.price, business?.currency)}`}
@@ -307,6 +342,7 @@ Sale de tu cuenta de Mercado Pago.`)) return;
               {apt.clientPhone && !isWalkin && (
                 <a className="text-sm" href={`tel:${apt.clientPhone}`} style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>📞 {apt.clientPhone}</a>
               )}
+              {!isWalkin && <WhatsAppTurno turno={apt} business={business} servicio={srv} />}
               {accionesDe(apt)}
             </div>
           );
@@ -326,11 +362,13 @@ Sale de tu cuenta de Mercado Pago.`)) return;
             <tr>
               <th>Día</th>
               <th>Hora</th>
+              {verTodas && <th>Sucursal</th>}
               {isOwner && <th>Profesional</th>}
               <th>Cliente</th>
               <th>Lo reservó</th>
               <th className="oculta-mobile">Seña</th>
               <th>Teléfono</th>
+              <th>WhatsApp</th>
               <th>Servicio</th>
               <th>Precio</th>
               <th>Estado</th>
@@ -339,17 +377,18 @@ Sale de tu cuenta de Mercado Pago.`)) return;
           </thead>
           <tbody>
             {filtered.map(apt => {
-              const prof    = professionals.find(p => p.id === apt.professionalId);
-              const srv     = services.find(s => s.id === apt.serviceId);
+              const prof    = profesionalesVisibles.find(p => p.id === apt.professionalId);
+              const srv     = serviciosVisibles.find(s => s.id === apt.serviceId);
               const isWalkin = apt.type === 'walkin';
               const origen  = origenTurno(apt);
 
               return (
-                <tr key={apt.id} style={isWalkin ? { background: 'var(--bg-secondary)', fontStyle: 'italic' } : {}}>
+                <tr key={`${apt.__bizId || ''}-${apt.id}`} style={isWalkin ? { background: 'var(--bg-secondary)', fontStyle: 'italic' } : {}}>
                   <td title={formatDate(apt.appointmentDate)}>
                     <strong>{fechaCorta(apt.appointmentDate)}</strong>
                   </td>
                   <td><strong style={{ fontSize: '1.05rem' }}>{apt.startTime}</strong> <span className="text-muted">— {apt.endTime}</span></td>
+                  {verTodas && <td><span className="badge badge-neutral" style={{ fontSize: 11 }}>{apt.__sucursal}</span></td>}
                   {isOwner && <td>{prof?.name}</td>}
                   <td>
                     {isWalkin
@@ -364,6 +403,11 @@ Sale de tu cuenta de Mercado Pago.`)) return;
                   </td>
                   <td className="oculta-mobile">{etiquetaSena(apt, business?.currency)}</td>
                   <td>{apt.clientPhone || '—'}</td>
+                  <td>
+                    {/* Abre WhatsApp con el mensaje escrito; lo manda el
+                        barbero desde su número. No se envía nada solo. */}
+                    {isWalkin ? <span className="text-muted">—</span> : <WhatsAppTurno turno={apt} business={business} servicio={srv} compacto />}
+                  </td>
                   <td>
                     {isWalkin
                       ? <span className="badge badge-neutral" style={{ fontSize: 11 }}>bloqueado</span>

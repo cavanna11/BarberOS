@@ -6,6 +6,12 @@ import { getDayName } from '../../utils/dateUtils';
 import CobroSena from '../../components/admin/CobroSena';
 import { errorDeHorario } from '../../utils/horarios';
 import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import LogoBarberia from '../../components/admin/LogoBarberia';
+import { puede } from '../../config/plans';
+
+// Mismo número que la landing y el resto del panel.
+const LINK_AMPLIAR = 'https://wa.me/5492257529684?text=' +
+  encodeURIComponent('Hola! Quiero poner mis colores y mi logo en mi cuenta de BarberOS.');
 
 const defaultHours = [
   { dayOfWeek: 0, startTime: '09:00', endTime: '20:00', isActive: true },
@@ -33,6 +39,15 @@ export default function SettingsPage() {
   // mandaba el estado viejo y revertía el cambio del otro sin que nadie se
   // entere. Así, los campos que el usuario no tocó se actualizan solos y los
   // que tocó ganan.
+  // Qué funciones habilita el plan. Los campos no se esconden: se muestran
+  // apagados, con el motivo y el link para ampliar. Esconderlos deja al dueño
+  // creyendo que el sistema no los tiene.
+  //
+  // Esto es la interfaz. El permiso real está en las Rules, que rechazan los
+  // colores y el logo si el plan no los incluye.
+  const puedeColores = puede(business, 'colores');
+  const puedeLogo = puede(business, 'logo');
+
   const [cambios, setCambios] = useState({});
   const form = {
     ...business,
@@ -123,22 +138,39 @@ export default function SettingsPage() {
           </div>
 
           <div className="card mt-md">
-            <h3 className="mb-lg">Colores</h3>
-            <div className="flex flex-col gap-md">
+            <h3 className="mb-lg">Tu marca</h3>
+
+            {!puedeColores && (
+              <div className="notice notice-info" style={{ marginBottom: 'var(--space-md)' }}>
+                Los colores y el logo propios se incluyen desde el <strong>Plan Full</strong>.{' '}
+                <a href={LINK_AMPLIAR} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>
+                  Escribinos y los activamos
+                </a>.
+              </div>
+            )}
+
+            <div className="flex flex-col gap-md" style={{ opacity: puedeColores ? 1 : 0.6 }}>
               <div className="form-group">
                 <label className="form-label">Color primario</label>
                 <div className="flex items-center gap-sm">
-                  <input type="color" value={form.primaryColor} onChange={e => editar({ primaryColor: e.target.value })} style={{ width: 48, height: 40, border: 'none', cursor: 'pointer' }} />
-                  <input className="form-input" value={form.primaryColor} onChange={e => editar({ primaryColor: e.target.value })} style={{ maxWidth: 140 }} />
+                  <input type="color" disabled={!puedeColores} value={form.primaryColor} onChange={e => editar({ primaryColor: e.target.value })} style={{ width: 48, height: 40, border: 'none', cursor: puedeColores ? 'pointer' : 'not-allowed' }} />
+                  <input className="form-input" disabled={!puedeColores} value={form.primaryColor} onChange={e => editar({ primaryColor: e.target.value })} style={{ maxWidth: 140 }} />
                 </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Color secundario</label>
                 <div className="flex items-center gap-sm">
-                  <input type="color" value={form.secondaryColor} onChange={e => editar({ secondaryColor: e.target.value })} style={{ width: 48, height: 40, border: 'none', cursor: 'pointer' }} />
-                  <input className="form-input" value={form.secondaryColor} onChange={e => editar({ secondaryColor: e.target.value })} style={{ maxWidth: 140 }} />
+                  <input type="color" disabled={!puedeColores} value={form.secondaryColor} onChange={e => editar({ secondaryColor: e.target.value })} style={{ width: 48, height: 40, border: 'none', cursor: puedeColores ? 'pointer' : 'not-allowed' }} />
+                  <input className="form-input" disabled={!puedeColores} value={form.secondaryColor} onChange={e => editar({ secondaryColor: e.target.value })} style={{ maxWidth: 140 }} />
                 </div>
               </div>
+
+              <LogoBarberia
+                value={form.logoUrl || null}
+                nombre={form.name || ''}
+                bloqueada={!puedeLogo}
+                onChange={(logoUrl) => editar({ logoUrl })}
+              />
             </div>
           </div>
 
@@ -200,6 +232,19 @@ export default function SettingsPage() {
                 <input className="form-input" value={form.mapsUrl || ''} onChange={e => editar({ mapsUrl: e.target.value.trim() })} placeholder="https://maps.app.goo.gl/…" />
                 <p className="text-sm text-muted" style={{ marginTop: 6 }}>
                   En Google Maps: buscá el local → Compartir → Copiar link. Sin esto, "Cómo llegar" busca la dirección de arriba.
+                </p>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Link para dejar reseña en Google (opcional)</label>
+                <input className="form-input" value={form.googleReviewUrl || ''} onChange={e => editar({ googleReviewUrl: e.target.value.trim() })} placeholder="https://g.page/r/…/review" />
+                <p className="text-sm text-muted" style={{ marginTop: 6 }}>
+                  Al cliente que te deja una reseña acá adentro, le ofrecemos dejarla también en
+                  Google. En tu perfil de empresa: <strong>Pedir reseñas</strong> → copiar el link.
+                  Sin esto, no se le ofrece nada.
+                </p>
+                <p className="text-sm text-muted" style={{ marginTop: 4 }}>
+                  Se le ofrece a todos, no solo a los que te puntuaron bien: filtrar por puntaje
+                  está prohibido por Google y puede costarte la ficha del negocio.
                 </p>
               </div>
             </div>

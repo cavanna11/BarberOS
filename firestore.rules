@@ -105,6 +105,29 @@ service cloud.firestore {
       return isBusinessOwner(bizId) || isPlatform();
     }
 
+    // ── Capacidades del plan ───────────────────────────────────────────────
+    // Qué funciones tiene habilitadas una barbería según lo que paga: foto de
+    // perfil del barbero, colores propios, logo propio. Esconder el botón en la
+    // interfaz no alcanza — con la consola abierta se escribe igual —, así que
+    // el permiso vive acá.
+    //
+    // Se lee del campo `capacidades` del documento del negocio, que escribe la
+    // plataforma al dar de alta o al cambiar de plan (y que el dueño no puede
+    // tocar; está en la lista de abajo). No se puede resolver por `planId`
+    // porque las Rules no pueden importar la tabla de planes: tendría que estar
+    // escrita acá también y sería un cuarto lugar donde desincronizarse.
+    //
+    // Por defecto TRUE: una cuenta vieja todavía no tiene el campo escrito, y
+    // sacarle de un día para el otro la foto que ya tenía cargada sería
+    // cambiarle el trato sin avisar. Se migran con scripts/migrar-planes.mjs.
+    function capacidadEn(datos, nombre) {
+      return datos.get('capacidades', {}).get(nombre, true) == true;
+    }
+
+    function capacidadDelNegocio(bizId, nombre) {
+      return capacidadEn(get(/databases/$(database)/documents/businesses/$(bizId)).data, nombre);
+    }
+
     // ── Mapa slug → businessId ─────────────────────────────────────────────
     // Lectura pública: el cliente entra por /barberia-x y hay que resolver el
     // slug SIN estar logueado y sin poder listar todos los negocios.
@@ -143,13 +166,33 @@ service cloud.firestore {
       // pondría el grupoId de OTRA barbería y en el próximo recálculo de
       // permisos se llevaría su negocio adentro de sus claims. Lo escribe solo
       // `crearSucursal` con el Admin SDK.
-      allow update: if isPlatform() || (
+      //
+      // Y los colores y el logo dependen del plan: son las funciones que
+      // separan al Full del Básico. Acá no hace falta un get() extra porque el
+      // documento que se está escribiendo ES el del negocio: `resource.data` ya
+      // trae sus capacidades.
+      // El logo va como data URL adentro de ESTE documento (sin Storage, igual
+      // que la foto del barbero). Sin tope, un logo pesado se lleva puesto el
+      // límite de 1 MB por documento y deja la barbería sin poder guardar nada.
+      function logoRazonable() {
+        return !('logoUrl' in request.resource.data)
+               || request.resource.data.logoUrl == null
+               || (request.resource.data.logoUrl is string
+                   && request.resource.data.logoUrl.size() < 250000);
+      }
+
+      allow update: if logoRazonable() && (isPlatform() || (
         isBusinessOwner(bizId) &&
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
                    'trialEndsAt', 'createdAt', 'maxBarbers', 'maxSucursales', 'origen',
-                   'mpConectado', 'mpUserId', 'grupoId'])
-      );
+                   'mpConectado', 'mpUserId', 'grupoId', 'capacidades']) &&
+        (!request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['primaryColor', 'secondaryColor', 'accentColor'])
+         || capacidadEn(resource.data, 'colores')) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['logoUrl'])
+         || capacidadEn(resource.data, 'logo'))
+      ));
 
       // Facturación: solo la plataforma. Ni el dueño la lee.
       match /private/billing {
@@ -183,11 +226,32 @@ service cloud.firestore {
                || (request.resource.data.avatarUrl is string
                    && request.resource.data.avatarUrl.size() < 250000);
       }
+
+      // La foto de perfil es una función del plan (desde el Intermedio). Si el
+      // plan no la tiene, el campo no se puede escribir — ni el dueño ni el
+      // barbero desde "Mi Configuración". Solo se chequea cuando la escritura
+      // TOCA el campo: si no, cualquier cambio de nombre de un Básico con una
+      // foto vieja cargada quedaría bloqueado para siempre.
+      function fotoPermitida(bizId) {
+        return !('avatarUrl' in request.resource.data)
+               || (resource != null
+                   && resource.data.get('avatarUrl', null) == request.resource.data.avatarUrl)
+               || capacidadDelNegocio(bizId, 'fotoPerfil');
+      }
+
       match /professionals/{profId} {
         allow read: if true;
-        allow create: if canManage(bizId) && fotoRazonable();
+
+        // Crear un barbero pasa por la Cloud Function `crearProfesional`, que
+        // cuenta los activos y hace cumplir el tope del plan. Las Rules no
+        // pueden contar documentos, así que sin la function el tope viviría
+        // solo en la interfaz — y "no me deja agregar otro" se saltea con la
+        // consola abierta. La plataforma sí crea directo: prepara cuentas.
+        allow create: if isPlatform() && fotoRazonable() && fotoPermitida(bizId);
+
         allow delete: if canManage(bizId);
         allow update: if fotoRazonable()
+                         && fotoPermitida(bizId)
                          && (canManage(bizId)
                              || (esBarbero(bizId)
                                  && claims().get('professionalId', '') == profId
@@ -297,6 +361,82 @@ service cloud.firestore {
                             );
 
         // Los turnos no se borran: se cancelan. Así queda historial.
+        allow delete: if false;
+      }
+
+      // ── Reseñas ──────────────────────────────────────────────────────────
+      // Una por turno, y el id del documento ES el id del turno. No es un
+      // detalle de implementación: es lo que hace imposible la segunda reseña
+      // del mismo turno sin contar nada ni confiar en el frontend.
+      //
+      // Lo que se guarda tiene que COINCIDIR con el turno (mismo profesional,
+      // mismo servicio, mismo negocio). Si no, una reseña podría quedar
+      // colgada del barbero equivocado y ensuciar sus estadísticas para
+      // siempre — y eso lo decidiría quien manda el formulario.
+      function datosDeLaResena(d) {
+        return d.stars is int && d.stars >= 1 && d.stars <= 5
+               && (!('comment' in d) || d.comment == null
+                   || (d.comment is string && d.comment.size() <= 600));
+      }
+
+      function coincideConElTurno(bizId, aptId, d) {
+        return esElTurno(get(/databases/$(database)/documents/businesses/$(bizId)/appointments/$(aptId)).data, bizId, aptId, d);
+      }
+
+      // Ojo con los parámetros: `aptId` se pasa, NO se toma del match.
+      // Esta función vive en el match del NEGOCIO, no en el de /reviews, así que
+      // ahí adentro `aptId` no existe — y una variable que no existe en Rules no
+      // da error de compilación: revienta en tiempo de ejecución con "Null value
+      // error" y la regla entera queda en denegado. Resultado: nadie podía dejar
+      // una reseña y el motivo no se veía por ningún lado.
+      function esElTurno(t, bizId, aptId, d) {
+        return t.userId == request.auth.uid
+               // Solo se valora lo que ya pasó Y el barbero marcó como
+               // atendido. Un turno pendiente, cancelado o "no vino" no se
+               // puede calificar.
+               && t.status == 'completada'
+               && d.professionalId == t.professionalId
+               && d.get('serviceId', null) == t.get('serviceId', null)
+               && d.get('businessId', '') == bizId
+               && d.get('appointmentId', '') == aptId;
+      }
+
+      match /reviews/{aptId} {
+        // La barbería ve las suyas; el barbero, las de sus turnos; el cliente,
+        // la propia (para saber que ya valoró y poder corregirla).
+        //
+        // El `resource == null` del final no sobra: antes de guardar, la app
+        // PREGUNTA si ya existe la reseña de ese turno, para saber si crea o
+        // corrige. Leer un documento que no existe hacía reventar la regla
+        // (`resource.data` de null es "Null value error", que cuenta como
+        // denegado), así que nadie podía dejar su primera reseña. Un documento
+        // que no existe no tiene a quién proteger.
+        allow get: if isBusinessOwner(bizId)
+                      || esEquipoPlataforma()
+                      || (signedIn() && resource == null)
+                      || (esBarbero(bizId) && resource.data.professionalId == claims().get('professionalId', ''))
+                      || (signedIn() && resource.data.userId == request.auth.uid);
+
+        allow list: if isBusinessOwner(bizId)
+                       || esEquipoPlataforma()
+                       || (esBarbero(bizId) && resource.data.professionalId == claims().get('professionalId', ''))
+                       || (signedIn() && resource.data.userId == request.auth.uid);
+
+        allow create: if signedIn()
+                         && request.resource.data.userId == request.auth.uid
+                         && datosDeLaResena(request.resource.data)
+                         && coincideConElTurno(bizId, aptId, request.resource.data);
+
+        // Corregirla sí; duplicarla no (el id es el del turno) y cambiar de
+        // quién es, tampoco.
+        allow update: if signedIn()
+                         && resource.data.userId == request.auth.uid
+                         && datosDeLaResena(request.resource.data)
+                         && request.resource.data.diff(resource.data).affectedKeys()
+                              .hasOnly(['stars', 'comment', 'updatedAt']);
+
+        // Una reseña no se borra: el promedio de la barbería no se maquilla
+        // sacando las malas.
         allow delete: if false;
       }
 

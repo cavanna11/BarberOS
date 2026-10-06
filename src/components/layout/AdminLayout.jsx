@@ -19,6 +19,7 @@ const ownerNavItems = [
   { to: '/admin/sucursales',    icon: '🏠', label: 'Mis sucursales', soloSucursales: true },
   { to: '/admin/profesionales', icon: '👥', label: 'Profesionales' },
   { to: '/admin/servicios',     icon: '✂️', label: 'Servicios' },
+  { to: '/admin/resenas',       icon: '⭐', label: 'Reseñas' },
   { to: '/admin/admins',        icon: '🛡️', label: 'Administradores' },
   { to: '/admin/configuracion', icon: '⚙️', label: 'Configuración' },
   { to: '/admin/soporte',       icon: '💬', label: 'Soporte' },
@@ -32,6 +33,9 @@ const adminNavItems = [
   // turno". Es la que más se abre; la agenda como calendario vive abajo del
   // dashboard, que para eso alcanza.
   { to: '/admin/citas',   icon: '📅', label: 'Citas' },
+  // El barbero ve las reseñas de SUS turnos: las Rules le filtran por su
+  // perfil, así que no puede ver las de los demás ni pidiéndolas.
+  { to: '/admin/resenas', icon: '⭐', label: 'Mis reseñas' },
   { to: '/admin/ajustes', icon: '⚙️', label: 'Mi Configuración' },
   { to: '/admin/soporte', icon: '💬', label: 'Soporte' },
   { to: '/admin/instalar', icon: '📲', label: 'Instalar la app' },
@@ -164,7 +168,9 @@ export default function AdminLayout() {
       {/* Sidebar */}
       <aside className={`admin-sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="admin-sidebar-header">
-          <img src="/img/barberos-logo-icon.svg" alt="BarberOS" width="32" height="32" />
+          {business?.logoUrl
+            ? <img src={business.logoUrl} alt={business.name || 'Logo'} className="header-logo-propio" />
+            : <img src="/img/barberos-logo-icon.svg" alt="BarberOS" width="32" height="32" />}
           <span>{business?.name || 'BarberOS'}</span>
         </div>
 

@@ -22,7 +22,7 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 // Mercado Pago vive aparte (OAuth + cobro de la seña); se usa en createAppointment.
 const mp = require('./mercadopago');
-const { limitesDelNegocio } = require('./planes');
+const { limitesDelNegocio, capacidadesDelNegocio, camposDelPlan } = require('./planes');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
@@ -1174,10 +1174,10 @@ exports.crearBarberiaDePrueba = onCall(async (request) => {
   //
   // El abono NO puede ser 0: runBilling suma `monthlyFee` a la deuda y congela
   // cuando la deuda es mayor a cero, así que con 0 la cuenta de prueba quedaría
-  // gratis para siempre y la prueba no cortaría nunca. Los $12.000 son el precio
-  // que tenía el Básico viejo y quedan como provisorios hasta que se defina el
-  // de la escalera nueva (hoy `monthlyFee: null` en src/config/plans.js).
-  const plan = { id: 'basico', monthlyFee: 12000, whatsappQuota: 100, maxBarbers: 1, maxSucursales: 1 };
+  // gratis para siempre y la prueba no cortaría nunca. Sale de la tabla de
+  // planes (hoy, $15.000), así que si cambia el precio del Básico cambia acá
+  // solo.
+  const plan = camposDelPlan('basico');
 
   // El slug se toma en una transacción: dos personas eligiendo el mismo nombre
   // al mismo tiempo no pueden quedarse las dos con el link.
@@ -1208,10 +1208,11 @@ exports.crearBarberiaDePrueba = onCall(async (request) => {
       onlineBookingEnabled: true,
       welcomeMessage: '',
       socialLinks: { instagram: '', whatsapp: telefono },
-      planId: plan.id,
+      planId: plan.planId,
       whatsappQuota: plan.whatsappQuota,
       maxBarbers: plan.maxBarbers,
       maxSucursales: plan.maxSucursales,
+      capacidades: plan.capacidades,
       // Sin grupo: es una barbería sola. El campo existe desde el alta para que
       // una consulta por `grupoId` no dependa de si la clave está o no.
       grupoId: null,
@@ -1229,7 +1230,7 @@ exports.crearBarberiaDePrueba = onCall(async (request) => {
   // runBilling la cobra (y la congela) sola al día siguiente.
   const lote = db.batch();
   lote.set(db.doc(`businesses/${businessId}/private/billing`), {
-    planId: plan.id,
+    planId: plan.planId,
     monthlyFee: plan.monthlyFee,
     debt: 0,
     lastPaymentDate: null,
@@ -1283,6 +1284,85 @@ exports.crearBarberiaDePrueba = onCall(async (request) => {
   }).catch((err) => logger.warn('no se pudo avisar del alta', { error: err.message }));
 
   return { businessId, slug, trialEndsAt: finPrueba, diasDePrueba: DIAS_DE_PRUEBA };
+});
+
+// ============================================================================
+// ALTA DE BARBEROS (tope del plan)
+// ============================================================================
+
+/**
+ * Crea un profesional respetando el tope de barberos del plan.
+ *
+ * Por qué del lado del servidor: las Security Rules no pueden CONTAR documentos,
+ * así que el tope no se puede expresar ahí. Si viviera solo en la interfaz —que
+ * es donde estuvo hasta ahora— cualquiera con la consola abierta se agrega los
+ * barberos que quiera, y la cantidad de barberos es exactamente lo que separa
+ * un plan de otro. Las Rules dejan de permitir el `create` directo al dueño: lo
+ * único que puede crear profesionales es esta función (y la plataforma, que
+ * prepara cuentas).
+ *
+ * Se cuentan solo los ACTIVOS: desactivar a alguien que se fue libera el lugar.
+ */
+exports.crearProfesional = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
+
+  const token = request.auth.token || {};
+  const businessId = String(request.data?.businessId || '').trim();
+  if (!businessId) throw new HttpsError('invalid-argument', 'Falta el id de la barbería.');
+
+  const esPlataforma = token.platform === true;
+  if (!esPlataforma) {
+    const propias = Array.isArray(token.businessIds) ? token.businessIds : [token.businessId];
+    if (token.role !== 'owner' || !propias.includes(businessId)) {
+      throw new HttpsError('permission-denied', 'Solo el dueño de la barbería puede agregar barberos.');
+    }
+  }
+
+  const snap = await db.doc(`businesses/${businessId}`).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Esa barbería no existe.');
+  const biz = snap.data();
+
+  const datos = request.data?.datos || {};
+  const nombre = limpiar(datos.name, 60);
+  if (nombre.length < 2) throw new HttpsError('invalid-argument', 'Poné el nombre del barbero.');
+
+  const { maxBarbers } = limitesDelNegocio(biz);
+  if (maxBarbers !== null) {
+    const activos = (await db.collection(`businesses/${businessId}/professionals`).get())
+      .docs.filter((d) => d.get('isActive') !== false).length;
+    if (activos >= maxBarbers) {
+      throw new HttpsError(
+        'failed-precondition',
+        maxBarbers === 1
+          ? 'Tu plan incluye un solo barbero. Para sumar equipo hay que ampliar el plan.'
+          : `Tu plan incluye hasta ${maxBarbers} barberos y ya los tenés cargados.`
+      );
+    }
+  }
+
+  // La foto es otra función del plan. Las Rules la frenan también, pero acá se
+  // puede decir POR QUÉ en vez de devolver un permission-denied pelado.
+  const capacidades = capacidadesDelNegocio(biz);
+  let avatarUrl = typeof datos.avatarUrl === 'string' ? datos.avatarUrl : null;
+  if (avatarUrl && !capacidades.fotoPerfil) {
+    throw new HttpsError('failed-precondition', 'La foto de perfil está disponible desde el Plan Intermedio.');
+  }
+  if (avatarUrl && avatarUrl.length > 250000) {
+    throw new HttpsError('invalid-argument', 'La foto es demasiado grande.');
+  }
+
+  const ref = db.collection(`businesses/${businessId}/professionals`).doc();
+  await ref.set({
+    id: ref.id,
+    name: nombre,
+    specialty: limpiar(datos.specialty, 60),
+    bio: limpiar(datos.bio, 300),
+    avatarUrl,
+    displayOrder: Number(datos.displayOrder) || 1,
+    isActive: true,
+  });
+
+  return { id: ref.id };
 });
 
 // ============================================================================
@@ -1365,7 +1445,17 @@ exports.crearSucursal = onCall(async (request) => {
     ? (businessIdPedido || token.businessId || '')
     : (token.businessId || '');
 
-  if (!businessId) throw new HttpsError('invalid-argument', 'Falta saber de qué cuenta es la sucursal.');
+  if (!businessId) {
+    // Pasaba de verdad: el dueño de la plataforma no tiene `businessId` en su
+    // token (no pertenece a ninguna barbería), así que si el panel no manda cuál
+    // es la cuenta, acá no hay forma de adivinarlo. El panel ahora lo manda
+    // siempre; el mensaje queda explicando qué falta, no "falta algo".
+    throw new HttpsError(
+      'invalid-argument',
+      'No sabemos a qué cuenta agregarle la sucursal. Entrá al panel de la barbería ' +
+      'principal y creala desde ahí.'
+    );
+  }
   if (!esPlataforma) {
     if (token.role !== 'owner') {
       throw new HttpsError('permission-denied', 'Solo el dueño de la cuenta puede abrir sucursales.');
@@ -1464,6 +1554,10 @@ exports.crearSucursal = onCall(async (request) => {
       planId: principal.planId || null,
       whatsappQuota: 0,
       maxBarbers: limitesDelNegocio(principal).maxBarbers,
+      maxSucursales,
+      // Las funciones habilitadas son de la CUENTA, no de cada local: si el
+      // Empresarial incluye logo y colores, los incluye en las cuatro.
+      capacidades: capacidadesDelNegocio(principal),
       // Si la cuenta está suspendida por deuda, la sucursal nace suspendida:
       // abrir una sucursal nueva no puede ser la forma de destrabar el link.
       isFrozen: principal.isFrozen === true,

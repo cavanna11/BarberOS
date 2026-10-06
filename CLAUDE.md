@@ -181,6 +181,15 @@ Google.
   el grupo.
 - **Ingresos del mes** e historial mes por mes, en el panel de la barbería y
   en el panel global (ahí, lo que BarberOS le cobró a las barberías).
+- **Reseñas**: el cliente puntúa de 1 a 5 con comentario opcional, solo sobre
+  turnos atendidos y una sola vez por turno. El panel muestra promedio,
+  distribución y promedios por barbero y por sucursal, con filtros. Después de
+  valorar se le ofrece dejarla también en Google.
+- **WhatsApp por wa.me**: dos botones en cada turno (recordatorio y gracias)
+  que abren WhatsApp con el mensaje escrito. Lo manda el barbero; no hay API,
+  ni bot, ni envío automático.
+- **Funciones por plan**: foto del barbero desde el Intermedio, colores y logo
+  desde el Full. Se hace cumplir en las Rules, no solo en la interfaz.
 - Sistema de tickets de soporte (chat barbería ↔ plataforma).
 - Landing pública de venta en la raíz.
 - Identidad visual de SACIA aplicada.
@@ -533,6 +542,7 @@ src/
   /staffContacts/{profId}         🔒 teléfono y mail del staff — NO va en
                                      /professionals, que es de lectura pública
   /appointments                   🔒 staff + dueño del turno
+  /reviews/{appointmentId}        🔒 una por turno — el id ES el del turno
   /notifications                  🔒 dueño todas; barbero las suyas. Las
                                      escribe un trigger; el browser solo
                                      marca leídas
@@ -670,18 +680,21 @@ ordenarse por CAPACIDAD, que es lo único que el sistema hace cumplir de verdad:
 
 | | sucursales | barberos | abono |
 |---|---|---|---|
-| Básico | 1 | 1 | a definir |
-| Intermedio | 1 | 3 | a definir |
-| Full | 1 | sin límite | $25.000 |
-| Empresarial | 4 | sin límite | a definir |
+| Básico | 1 | 1 | $15.000 |
+| Intermedio | 1 | 3 | $20.000 |
+| Full | 1 | sin límite | $30.000 |
+| Empresarial | 4 | sin límite | $60.000 |
 | Personalizado | a convenir | a convenir | sin precio de lista (CTA) |
+
+(Los precios quedaron cerrados el 06/10/2026; ver "Funciones por plan" más
+arriba para lo que habilita cada uno.)
 
 Un `monthlyFee` en null significa "precio todavía no definido": la landing
 muestra **Consultanos** en vez de un número inventado y el alta pide tipear el
-abono acordado. **El abono no puede quedar en 0**: `runBilling` suma el abono a
-la deuda y congela cuando la deuda es mayor a cero, así que con 0 la cuenta queda
-gratis para siempre y los días de prueba no cortan nada. Lo valida el alta y el
-cambio de plan.
+abono acordado. Hoy solo el Personalizado está así. **El abono no puede quedar
+en 0**: `runBilling` suma el abono a la deuda y congela cuando la deuda es mayor
+a cero, así que con 0 la cuenta queda gratis para siempre y los días de prueba no
+cortan nada. Lo valida el alta y el cambio de plan.
 
 Los topes se ESCRIBEN en el documento del negocio (`maxBarbers`,
 `maxSucursales`) y no se dejan implícitos en el plan: así una cuenta conserva lo
@@ -714,6 +727,153 @@ decir cuánto se facturó en septiembre. Ahora cada cobro deja un asiento en
 escribe) y el panel global muestra cobrado del mes, cobrado histórico e historial
 por mes. **El historial arranca el día que esto se puso**: los cobros anteriores
 no se pueden reconstruir.
+
+### Funciones por plan, de verdad (06/10/2026)
+
+Hasta acá lo único que un plan cambiaba era un cartel en la interfaz. Ahora la
+escalera define **capacidad** (sucursales y barberos) y **capacidades** (qué
+funciones están habilitadas), y las dos se hacen cumplir del lado del servidor.
+
+| | sucursales | barberos | foto del barbero | colores | logo | abono |
+|---|---|---|---|---|---|---|
+| Básico | 1 | 1 | — | — | — | $15.000 |
+| Intermedio | 1 | 3 | ✓ | — | — | $20.000 |
+| Full | 1 | sin límite | ✓ | ✓ | ✓ | $30.000 |
+| Empresarial | 4 | sin límite | ✓ | ✓ | ✓ | $60.000 |
+| Personalizado | a convenir | a convenir | a convenir | | | Consultanos |
+
+**Dónde vive cada cosa, y por qué en tres lugares:**
+
+1. `src/config/plans.js` — lo que muestra la interfaz.
+2. `firestore.rules` — lo que la base acepta. Lee el campo `capacidades` del
+   documento del negocio, porque las Rules no pueden importar una tabla de
+   planes. Ese campo lo escribe la plataforma al dar de alta y al cambiar de
+   plan, y el dueño **no** lo puede tocar (está en la lista de campos
+   protegidos). Si el campo no existe, la regla asume que SÍ puede: una cuenta
+   vieja no puede perder de un día para el otro la foto que ya tenía cargada.
+   Para completárselo a las que ya estaban: `node scripts/migrar-planes.mjs`
+   (muestra qué haría; con `--aplicar` escribe).
+3. `functions/planes.js` — lo que validan las Cloud Functions.
+
+**El tope de barberos pasó a ser una function.** Las Security Rules no pueden
+CONTAR documentos, así que el tope no se puede expresar ahí: hasta ahora vivía
+solo en la interfaz y se salteaba con la consola abierta. Ahora el alta de un
+barbero es `crearProfesional` (callable), que cuenta los activos y compara. Las
+Rules dejaron de permitir el `create` directo del dueño sobre `professionals`
+—solo la plataforma, que prepara cuentas—, así que no hay camino de atrás. Se
+cuentan solo los ACTIVOS: desactivar a alguien que se fue libera el lugar.
+
+**El logo** va como data URL adentro del documento del negocio, igual que la
+foto del barbero y por la misma razón (sin Storage). `redimensionarLogo` lo
+achica a 240 px y lo deja en PNG para no romper las transparencias; si el PNG se
+pasa de 250 KB, reintenta en JPEG sobre fondo blanco. Se ve arriba del link
+público y en el panel. Las Rules acotan el tamaño: sin eso, un logo pesado se
+lleva puesto el límite de 1 MB por documento y la barbería no puede guardar nada
+más.
+
+Lo bloqueado NO se esconde: se muestra apagado, con desde qué plan está y el
+link para ampliar. Esconderlo deja al dueño creyendo que el sistema no lo tiene.
+
+```bash
+node scripts/test-planes-emulador.mjs   # 30 casos
+```
+
+### WhatsApp por wa.me, sin API ni bot (06/10/2026)
+
+Al lado de cada turno hay dos botones: **Recordatorio** y **Gracias**. Abren
+WhatsApp en el teléfono del barbero con el mensaje ya escrito, apuntando al
+número que el cliente dejó al reservar. **El mensaje no se manda solo**: lo manda
+el barbero, desde su número, cuando quiere.
+
+No tiene nada del lado del servidor: ni API de Meta, ni plantillas aprobadas, ni
+costo por mensaje. Es otra cosa que la integración de WhatsApp Cloud que sigue
+pendiente de Meta —aquella manda sola—, y conviven sin pisarse.
+
+Todo el trabajo está en `utils/whatsapp.js`, y es el formato del número: la
+gente escribe "11 2345-6789", "(0223) 15 456-7890" o "02257 15-529684" y wa.me
+quiere `5492234567890`. Se sacan separadores, el 0 de larga distancia y el 15 de
+los celulares, y se antepone 54 9. Si lo que queda no puede ser un teléfono, NO
+se muestra el botón: abrir WhatsApp en un número inventado es peor que no tener
+botón.
+
+```bash
+node scripts/test-whatsapp.mjs   # 23 casos, sin emulador: es función pura
+```
+
+### Reseñas (06/10/2026)
+
+El cliente puntúa de 1 a 5 estrellas y, si quiere, deja un comentario. Solo
+sobre un turno **propio y marcado como atendido** (`completada`): un turno
+pendiente, cancelado o "no vino" no se puede valorar.
+
+**Una por turno, por construcción.** El id del documento de la reseña ES el id
+del turno (`businesses/{id}/reviews/{appointmentId}`). No hay contador ni chequeo
+que se pueda saltear: Firestore no deja crear dos documentos con el mismo id, y
+la regla de `update` solo deja corregir al que la escribió. Corregirla sí;
+duplicarla no; borrarla, nadie — el promedio no se maquilla sacando las malas.
+
+**La reseña no puede mentir sobre el turno.** Las Rules comparan el profesional,
+el servicio y el negocio contra el documento del turno. Sin eso, quien manda el
+formulario podría colgarle una reseña de una estrella al barbero que no lo
+atendió, y ensuciarle el promedio para siempre.
+
+En el panel, **Reseñas** muestra promedio, total, distribución de 1 a 5,
+promedio por barbero y por sucursal, y el listado con filtros combinables
+(período, barbero, sucursal, estrellas). El barbero ve SOLO las de sus turnos:
+las Rules le filtran por su `professionalId`, así que si pide las de todos la
+consulta se rechaza entera.
+
+**Google es aparte.** Después de valorar, si la barbería cargó su link
+(`googleReviewUrl` en Configuración), se le ofrece dejar también la reseña en
+Google. Se abre la ficha: no se incrusta nada ni se publica nada automáticamente
+—Google no lo permite— y la valoración interna no se "sube" a ningún lado. Se le
+ofrece a TODOS, no solo a los que puntuaron bien: filtrar por puntaje es *review
+gating*, está prohibido por Google y puede costarle la ficha al negocio.
+
+```bash
+node scripts/test-resenas-emulador.mjs   # 36 casos
+```
+
+Trampa que costó un rato, y que ninguna prueba agarró hasta probarlo en el
+browser: antes de guardar, la app PREGUNTA si ya existe la reseña de ese turno
+(para saber si crea o corrige). La regla de `get` miraba `resource.data` sin
+chequear que el documento exista, y `resource.data` de null es **"Null value
+error"**, que cuenta como denegado — así que nadie podía dejar su PRIMERA
+reseña. La misma clase de error apareció en `esElTurno`, que usaba `aptId`
+tomándolo del match equivocado: una variable que no existe en Rules no da error
+de compilación, revienta en runtime y la regla entera queda en denegado.
+
+### Ver varias sucursales sin entrar a cada una (06/10/2026)
+
+En Citas, Profesionales, Servicios y Reseñas hay un selector de **Sucursal** con
+"Todas" y una por una. Elegir una puntual la vuelve la sucursal ACTIVA (es lo
+mismo que "Gestionar sucursal", sin salir de la pantalla); elegir "Todas" junta
+los datos de las cuatro para MIRARLOS.
+
+Dos decisiones que hacen que esto no sea una mezcla de datos:
+
+- Cada fila traída de otra sucursal lleva `__bizId`. En Citas, las acciones
+  (Vino / No vino / Cancelar / Devolver seña) escriben en la barbería de ESA
+  fila, no en la activa. Sin eso, marcar "Vino" en un turno de Centro mientras
+  estás parado en Norte le cambiaría el estado al turno de la otra.
+- En Profesionales y Servicios, "Todas" es de **solo lectura**. Editar a un
+  barbero de otra sucursal desde acá le ofrecería los servicios y horarios de
+  ESTA, que son otros. La forma de no mezclar no es tener cuidado: es no dejar.
+  Cada fila trae el botón para entrar a su sucursal.
+
+Los datos de las otras sucursales se leen de UNA sola vez
+(`useDatosDeSucursales`), no con suscripciones vivas: mantener cuatro agendas
+escuchando en todas las pantallas del panel sería pagar cuatro veces lo mismo
+todo el tiempo, incluso cuando el dueño mira una sola.
+
+**Y el bug que impedía crear sucursales:** el dueño de la plataforma no tiene
+`businessId` en su token (no pertenece a ninguna barbería), así que cuando
+administraba una cuenta y tocaba "Nueva sucursal", la function recibía la cuenta
+vacía y respondía *"Falta saber de qué cuenta es la sucursal"* — sin que hubiera
+en pantalla ningún lugar donde elegirla, porque no hay nada que elegir: es la
+cuenta de la barbería que se está administrando. Ahora el panel la manda
+siempre, y `useResolvedBusiness` arma el grupo desde el negocio activo cuando
+quien mira es la plataforma.
 
 ### El panel global, por secciones (28/09/2026)
 
@@ -947,12 +1107,12 @@ Email/Password habilitado, alcance del barbero cerrado en Rules.
 
 3. **Días de demo.** La landing dice `DIAS_DEMO = 10`; en el alta se tipean cada
    vez. Elegir un número y usar siempre ese.
-4. **Precio de tres planes.** La escalera nueva (Básico / Intermedio / Full /
-   Empresarial / Personalizado) está construida y la landing la muestra, pero
-   solo el Full tiene precio cerrado ($25.000). Los otros tres dicen
-   "Consultanos" hasta que se definan: son tres números en `config/plans.js`.
-   Mientras tanto, el alta sola sigue creando cuentas con $12.000 provisorios
-   (el precio del Básico viejo), que es lo que hace que la prueba corte.
+4. ~~Precio de los planes~~ Definidos el 06/10/2026: 15.000 / 20.000 / 30.000 /
+   60.000 y el Personalizado a convenir. El alta sola crea cuentas en Básico, que
+   es lo que hace que la prueba corte a los 5 días.
+   **Lo que falta a mano:** correr `node scripts/migrar-planes.mjs --aplicar`
+   contra producción para completarles `capacidades` a las cuentas que ya
+   estaban. Hasta entonces esas cuentas conservan todo habilitado.
 5. **Seña por Mercado Pago.** No empezado. El modelo correcto es OAuth de
    Mercado Pago ("Conectar con Mercado Pago" en Configuración): el dueño
    autoriza con su cuenta, MP le da a la plataforma un token de SU cuenta y la
@@ -1007,11 +1167,14 @@ node scripts/test-alta-emulador.mjs        # alta sola con 5 días de prueba
 node scripts/test-mercadopago-emulador.mjs # conexión de la cuenta y sus tokens
 node scripts/test-sena-emulador.mjs        # seña: horario guardado y vencimiento
 node scripts/test-sucursales-emulador.mjs  # cuentas con sucursales: aislamiento y topes
+node scripts/test-planes-emulador.mjs      # topes y funciones de cada plan
+node scripts/test-resenas-emulador.mjs     # reseñas: cuándo, quién y una por turno
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
+node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulador)
 ```
 
 Hoy: claims 77, reservas 46, facturación 12, rules 118, alta 22, mercadopago 16,
-seña 14, sucursales 60. Todo en verde (365).
+seña 14, sucursales 60, planes 30, reseñas 36, whatsapp 23. Todo en verde (454).
 
 ---
 

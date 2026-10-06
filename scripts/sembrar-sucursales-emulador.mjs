@@ -10,6 +10,7 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { camposDelPlan } from '../functions/planes.js';
 
 const PROJECT = 'barberos-1d60e';
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
@@ -70,6 +71,8 @@ for (const s of SUCURSALES) {
     whatsappQuota: s.principal ? 2000 : 0,
     maxBarbers: null,
     maxSucursales: 4,
+    capacidades: camposDelPlan('empresarial').capacidades,
+    googleReviewUrl: 'https://g.page/r/CbarberOSdemo/review',
     grupoId: GRUPO,
     isFrozen: false,
     trialEndsAt: null,
@@ -132,7 +135,7 @@ for (const s of SUCURSALES) {
       businessId: s.id,
       userId: `cliente-${i % 7}`,
       clientName: `Cliente ${i + 1}`,
-      clientPhone: '+54 9 2257 400000',
+      clientPhone: `+54 9 2257 4${String(100000 + i).slice(-5)}`,
       clientEmail: '',
       professionalId: profIds[i % profIds.length],
       serviceId: srv.id,
@@ -143,6 +146,40 @@ for (const s of SUCURSALES) {
       status: i % 9 === 0 ? 'no_asistio' : 'completada',
       type: 'online',
       notes: '',
+      createdAt: new Date(),
+    });
+  }
+}
+
+// Reseñas sobre algunos turnos completados, para que la pantalla tenga qué
+// mostrar: promedio, distribución y comentarios.
+const COMENTARIOS = [
+  'Excelente atención, quedé muy conforme.',
+  'Rápido y prolijo. Vuelvo seguro.',
+  '',
+  'Buen corte pero esperé 15 minutos.',
+  'El mejor de la zona.',
+  '',
+  'Todo bien, aunque el local estaba lleno.',
+];
+
+for (const s of SUCURSALES) {
+  const turnos = (await db.collection(`businesses/${s.id}/appointments`).get())
+    .docs.filter((d) => d.get('status') === 'completada');
+
+  for (const [i, t] of turnos.slice(0, Math.ceil(turnos.length * 0.6)).entries()) {
+    const estrellas = [5, 5, 4, 3, 5, 4, 5, 2, 5, 4][i % 10];
+    await db.doc(`businesses/${s.id}/reviews/${t.id}`).set({
+      id: t.id,
+      businessId: s.id,
+      appointmentId: t.id,
+      userId: t.get('userId'),
+      professionalId: t.get('professionalId'),
+      serviceId: t.get('serviceId'),
+      clientName: t.get('clientName'),
+      appointmentDate: t.get('appointmentDate'),
+      stars: estrellas,
+      comment: COMENTARIOS[i % COMENTARIOS.length],
       createdAt: new Date(),
     });
   }

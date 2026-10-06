@@ -1497,6 +1497,145 @@ select.form-input {
 }
 
 /* Revenue Bars */
+/* El logo propio de la barbería, arriba de su link público y de su panel. Es
+   apaisado y de alto fijo: los logos vienen de cualquier proporción y lo único
+   que no puede pasar es que empujen la barra. */
+.header-logo-propio {
+  height: 32px;
+  width: auto;
+  max-width: 132px;
+  object-fit: contain;
+}
+
+/* ── Reseñas ──────────────────────────────────────────────────────────────── */
+/* Las estrellas son botones de verdad (se tabulan y se leen con lector de
+   pantalla), no imágenes: el cliente las toca desde el celular. */
+.estrellas {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.estrella {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 38px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--border);
+  transition: color 0.12s ease, transform 0.12s ease;
+}
+
+.estrella:hover { transform: scale(1.08); }
+.estrella.marcada { color: #f5a623; }
+
+.estrellas-texto {
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  min-height: 1.3em;
+  margin-top: 4px;
+}
+
+/* Las estrellas de solo lectura, en los listados. */
+.estrellas-resumen {
+  display: inline-flex;
+  gap: 1px;
+  color: #f5a623;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+
+.estrella-apagada { color: var(--border); }
+
+.resena-item {
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.resena-item:last-child { border-bottom: none; }
+
+.resena-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.resena-comentario {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.resena-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* La distribución de 1 a 5 estrellas, como barras. */
+.distribucion-fila {
+  display: grid;
+  grid-template-columns: 54px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.distribucion-barra {
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.distribucion-relleno {
+  height: 100%;
+  background: #f5a623;
+  border-radius: 4px;
+}
+
+/* ── WhatsApp del turno ───────────────────────────────────────────────────── */
+/* Dos links que abren WhatsApp con el mensaje escrito. Compacto a propósito:
+   van adentro de cada fila de la tabla de citas, que ya tiene once columnas. */
+.whatsapp-turno {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.whatsapp-turno-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+/* El verde es el de WhatsApp, no el de la marca: acá el color ES la señal de
+   qué app se va a abrir. */
+.btn-whatsapp {
+  background: #25d366;
+  border-color: #25d366;
+  color: #0a0a0a;
+  font-weight: 600;
+}
+
+.btn-whatsapp:hover {
+  background: #1fb855;
+  border-color: #1fb855;
+  color: #0a0a0a;
+}
+
 /* ── Sucursales (cuenta empresarial) ─────────────────────────────────────── */
 .sucursales-grid {
   display: grid;
