@@ -114,6 +114,10 @@ export default function AdminLayout() {
   };
 
   const isOwner = user?.role === 'owner';
+  // Una sucursal es un negocio del grupo que NO es el principal. El plan, el
+  // abono y la prueba viven en el principal.
+  const esSucursal = Boolean(business?.grupoId) && business.grupoId !== business.id;
+  const principalDelGrupo = esSucursal ? sucursales.find((s) => s.id === business.grupoId) : null;
   // "Mis sucursales" aparece si la cuenta ya tiene más de una, o si el plan las
   // permite (así el del Plan Empresarial encuentra dónde abrir la primera).
   const muestraSucursales = isOwner && (esMultiSucursal || permiteSucursales(business));
@@ -236,6 +240,11 @@ export default function AdminLayout() {
         {(() => {
           // Solo al dueño: el barbero no decide si se paga ni a quién escribir.
           if (!isOwner) return null;
+          // Y solo en la barbería PRINCIPAL de la cuenta: el plan y el abono son
+          // de la cuenta, no de cada local. Una sucursal mostrando "se terminó
+          // tu prueba" por su cuenta hace pensar que cada una se paga aparte —
+          // y encima el dato era el de la principal, copiado al crearla.
+          if (esSucursal) return null;
           const dias = diasDePruebaRestantes(business?.trialEndsAt);
           if (dias === null) return null;
           const vencida = dias < 0;
@@ -283,6 +292,22 @@ export default function AdminLayout() {
             </div>
           );
         })()}
+
+        {/* En qué sucursal estás parado y dónde se maneja el plan. Sin esto, el
+            dueño abre una sucursal, no ve ningún dato de plan ni de abono, y no
+            sabe si es que no tiene o si es que se maneja en otro lado. */}
+        {isOwner && esSucursal && (
+          <div className="notice notice-info aviso-sucursal">
+            <span>
+              Estás en <strong>{business.name}</strong>, una sucursal de{' '}
+              <strong>{principalDelGrupo?.name || 'tu cuenta'}</strong>. El plan y el abono se
+              manejan en la principal.
+            </span>
+            <Link to="/admin/sucursales" style={{ color: 'inherit', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              Ver mis sucursales →
+            </Link>
+          </div>
+        )}
 
         {/* Aviso permanente: si sos dueño de la plataforma, estás editando la
             cuenta de un cliente. Sin esto es fácil tocar el negocio equivocado. */}

@@ -178,6 +178,42 @@ export async function getBusinessIdBySlug(slug) {
   return snap.exists() ? snap.data().businessId : null;
 }
 
+/**
+ * Las sucursales de una cuenta, para la página pública.
+ *
+ * Dos pasos y los dos son lecturas públicas:
+ *   1. /grupos/{grupoId} dice QUÉ barberías componen la cuenta (solo ids).
+ *   2. el documento de cada una da el nombre, la dirección y si está abierta.
+ *
+ * Por qué no una consulta por `grupoId` sobre `businesses`: listar esa colección
+ * solo se le permite al panel global, y con razón — ahí está la cartera entera
+ * de clientes. El mapa del grupo es el mismo truco que /slugs: un documento
+ * chiquito y público que evita abrir la colección.
+ *
+ * Por qué el grupo guarda solo ids: así el nombre y la dirección nunca quedan
+ * viejos. Si estuvieran copiados en el grupo, cambiar la dirección en
+ * Configuración dejaría al selector mostrando la de antes.
+ */
+export async function obtenerSucursalesDelGrupo(grupoId) {
+  if (!grupoId) return [];
+  const grupo = await getDoc(doc(db, 'grupos', grupoId));
+  if (!grupo.exists()) return [];
+
+  const ids = grupo.data().businessIds || [];
+  const docs = await Promise.all(ids.map((id) => getDoc(businessDoc(id))));
+
+  return docs
+    .filter((d) => d.exists())
+    .map((d) => ({ id: d.id, ...d.data() }))
+    // La principal primero, el resto por nombre: el orden no puede depender de
+    // en qué orden volvieron las lecturas.
+    .sort((a, b) => {
+      if (a.id === grupoId) return -1;
+      if (b.id === grupoId) return 1;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+}
+
 /** Escucha un negocio puntual. Devuelve la función para desuscribirse. */
 export function subscribeBusiness(businessId, cb, onError) {
   return escuchar(businessDoc(businessId), unDoc, cb, onError);
@@ -329,7 +365,7 @@ export async function borrarCobro(id) {
   await deleteDoc(doc(db, 'platform', 'cobros', 'items', id));
 }
 
-export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFee, maxBarbers = null, maxSucursales = 1, capacidades = null }) {
+export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFee, maxBarbers = null, maxSucursales = 1, capacidades = null, sucursales = [] }) {
   const batch = writeBatch(db);
   // La cuota y los TOPES viven en el documento público porque el panel del
   // negocio los muestra y los hace cumplir; el abono en el privado porque es
@@ -346,6 +382,19 @@ export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFe
     ...(capacidades ? { capacidades } : {}),
   });
   batch.set(billingDoc(businessId), { monthlyFee, planId }, { merge: true });
+
+  // Las SUCURSALES de la cuenta reciben los mismos topes y capacidades, pero no
+  // el abono: el plan lo paga la principal. Si no se propagara, el dueño que
+  // sube de plan vería la función nueva en la principal y no en las otras tres,
+  // porque lo que miran las Rules es el campo de CADA documento.
+  for (const id of sucursales) {
+    if (!id || id === businessId) continue;
+    batch.update(businessDoc(id), {
+      planId, maxBarbers, maxSucursales,
+      ...(capacidades ? { capacidades } : {}),
+    });
+  }
+
   await batch.commit();
 }
 

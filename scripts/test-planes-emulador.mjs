@@ -231,6 +231,50 @@ await esperar('una cuenta vieja conserva la foto',
 await esperar('y conserva los colores',
   editar(duenoViejo, 'businesses/plan-viejo', { primaryColor: '#222222' }), 'permitido');
 
+
+// -- 6. Plan a medida --------------------------------------------------------
+// El Personalizado se configura uno por uno: tantas sucursales, tantos barberos
+// y estas funciones si y estas no. Lo que vale es lo escrito en el documento,
+// no una tabla de planes.
+console.log('\nPlan a medida (capacidades mezcladas):');
+
+await db.recursiveDelete(db.doc('businesses/plan-medida')).catch(() => {});
+await db.doc('slugs/plan-medida-2').delete().catch(() => {});
+await db.doc('slugs/plan-medida-3').delete().catch(() => {});
+await db.doc('businesses/plan-medida').set({
+  id: 'plan-medida', name: 'A medida', slug: 'plan-medida', isFrozen: false,
+  primaryColor: '#e03d00', logoUrl: null,
+  planId: 'personalizado',
+  maxBarbers: 2,
+  maxSucursales: 2,
+  // Foto si, colores si, logo no: una combinacion que no existe en ningun plan
+  // de la lista y que tiene que respetarse igual.
+  capacidades: { fotoPerfil: true, colores: true, logo: false },
+  grupoId: null,
+});
+await db.doc('businesses/plan-medida/private/billing').set({ planId: 'personalizado', monthlyFee: 45000, debt: 0 });
+const duenoMedida = await usuario('dueno-medida@gmail.com', { businessId: 'plan-medida', role: 'owner', professionalId: null });
+
+r = await llamar('crearProfesional', duenoMedida, { businessId: 'plan-medida', datos: { name: 'Uno' } });
+chequear('a medida: entra el primer barbero', Boolean(r.ok?.id), JSON.stringify(r));
+r = await llamar('crearProfesional', duenoMedida, { businessId: 'plan-medida', datos: { name: 'Dos' } });
+chequear('a medida: entra el segundo', Boolean(r.ok?.id), JSON.stringify(r));
+r = await llamar('crearProfesional', duenoMedida, { businessId: 'plan-medida', datos: { name: 'Tres' } });
+chequear('a medida: el tercero se rechaza (tope 2)', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+
+const profMedida = (await db.collection('businesses/plan-medida/professionals').get()).docs[0];
+await esperar('a medida: la foto esta habilitada',
+  editar(duenoMedida, `businesses/plan-medida/professionals/${profMedida.id}`, { avatarUrl: FOTO }), 'permitido');
+await esperar('a medida: los colores estan habilitados',
+  editar(duenoMedida, 'businesses/plan-medida', { primaryColor: '#101010' }), 'permitido');
+await esperar('a medida: el logo NO',
+  editar(duenoMedida, 'businesses/plan-medida', { logoUrl: FOTO }), 'denegado');
+
+r = await llamar('crearSucursal', duenoMedida, { businessId: 'plan-medida', nombre: 'Segunda', slug: 'plan-medida-2' });
+chequear('a medida: puede abrir la segunda sucursal (tope 2)', Boolean(r.ok?.businessId), JSON.stringify(r));
+r = await llamar('crearSucursal', duenoMedida, { businessId: 'plan-medida', nombre: 'Tercera', slug: 'plan-medida-3' });
+chequear('a medida: la tercera se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron`);
 if (fallas.length) console.log('Fallaron:\n  - ' + fallas.join('\n  - '));
 console.log('');

@@ -22,6 +22,8 @@ import {
 } from '../../lib/repository';
 import { deleteBusiness } from '../../lib/functions';
 import NewBusinessModal from './NewBusinessModal';
+import PlanAMedida from '../../components/super-admin/PlanAMedida';
+import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
 import TicketsPanel from './TicketsPanel';
 
 // --- Professional SVG Icons ---
@@ -93,8 +95,10 @@ export default function SuperAdminDashboard({ seccion = null }) {
 
   // Upgrade Plan fields
   const [selectedPlan, setSelectedPlan] = useState('basico');
-  const [upgradeQuota, setUpgradeQuota] = useState('');
   const [upgradeFee, setUpgradeFee] = useState('');
+  // Lo que se acuerda cuando el plan es a medida: sucursales, barberos y qué
+  // funciones se le habilitan. Antes acá solo había una cuota de WhatsApp.
+  const [medida, setMedida] = useState(() => medidaDesdeNegocio(null));
 
   // WhatsApp Form
   const [waForm, setWaForm] = useState({
@@ -245,8 +249,10 @@ export default function SuperAdminDashboard({ seccion = null }) {
     // cuentas viejas que lo tengan vacío. Antes se adivinaba SOLO por la cuota,
     // y con dos planes compartiendo cuota el modal preseleccionaba el que no era.
     const plan = getPlan(biz.planId) || findPlanByQuota(biz.whatsappQuota);
-    setUpgradeQuota(String(biz.whatsappQuota ?? ''));
     setUpgradeFee(String(biz.monthlyFee ?? ''));
+    // El formulario a medida arranca con lo que la cuenta tiene HOY: si ya era
+    // personalizada, se edita sobre lo acordado y no desde cero.
+    setMedida(medidaDesdeNegocio(biz));
     setSelectedPlan(plan && plan.id !== 'personalizado' ? plan.id : 'personalizado');
     setModalType('upgrade');
   };
@@ -298,8 +304,14 @@ export default function SuperAdminDashboard({ seccion = null }) {
     // El plan manda cuando tiene el dato; si no lo tiene (los planes nuevos
     // todavía no tienen precio de lista, y el Personalizado nunca va a tenerlo),
     // vale lo que se tipeó en el modal.
-    const quota = plan && plan.whatsappQuota != null ? plan.whatsappQuota : Number(upgradeQuota) || 0;
-    const fee = plan && plan.monthlyFee != null ? plan.monthlyFee : Number(upgradeFee) || 0;
+    // A medida: los topes y las funciones salen del formulario, no del plan.
+    const aMedida = !plan || plan.aMedida === true;
+    const campos = aMedida ? camposDeLaMedida(medida) : null;
+
+    const quota = aMedida
+      ? campos.whatsappQuota
+      : (plan.whatsappQuota != null ? plan.whatsappQuota : 0);
+    const fee = (!aMedida && plan.monthlyFee != null) ? plan.monthlyFee : Number(upgradeFee) || 0;
     const planLabel = plan ? plan.label : 'Plan Personalizado';
 
     // Con abono 0 la cuenta no acumula deuda y no se suspende nunca: queda
@@ -315,12 +327,17 @@ export default function SuperAdminDashboard({ seccion = null }) {
         whatsappQuota: quota,
         monthlyFee: fee,
         // Los topes de capacidad, que es lo que el negocio de verdad compra.
-        maxBarbers: plan ? plan.maxBarbers ?? null : null,
-        maxSucursales: plan ? plan.maxSucursales ?? 1 : 1,
+        maxBarbers: aMedida ? campos.maxBarbers : (plan.maxBarbers ?? null),
+        maxSucursales: aMedida ? campos.maxSucursales : (plan.maxSucursales ?? 1),
         // Y las funciones que habilita. Es lo que miran las Rules para dejar (o
         // no) subir una foto, poner colores propios o un logo: si no se escribe,
         // cambiar de plan no cambia nada de lo que la base acepta.
-        capacidades: plan ? { ...(plan.capacidades || {}) } : null,
+        capacidades: aMedida ? campos.capacidades : { ...(plan.capacidades || {}) },
+        // Y a las sucursales de la cuenta, para que no queden con los topes del
+        // plan anterior: lo que miran las Rules es el campo de cada documento.
+        sucursales: (businesses || [])
+          .filter((o) => o.grupoId && o.grupoId === (selectedBusiness.grupoId || selectedBusiness.id))
+          .map((o) => o.id),
       });
     } catch (err) {
       console.error('[super-admin] No se pudo cambiar el plan:', err);
@@ -779,6 +796,11 @@ export default function SuperAdminDashboard({ seccion = null }) {
               const sentCount = getMonthlyMessageCount(b.id);
               const isExceeded = sentCount > (b.whatsappQuota || 0);
               const quotaPercentage = Math.min(100, (sentCount / (b.whatsappQuota || 1)) * 100);
+              // Una sucursal no tiene plan ni abono propios: los paga la
+              // principal de la cuenta. Mostrarle "Abono $0 · Deuda $0 · Cambiar
+              // plan" hace pensar que es una cuenta regalada, y peor: dejaba
+              // cambiarle el plan a una sola sucursal y desincronizar el grupo.
+              const esSucursal = Boolean(b.grupoId) && b.grupoId !== b.id;
 
               return (
                 <div key={b.id} className="card" style={{ 
@@ -829,7 +851,8 @@ export default function SuperAdminDashboard({ seccion = null }) {
                     </span>
                   </div>
 
-                  {/* WhatsApp usage meter */}
+                  {/* WhatsApp usage meter — la cuota es de la cuenta */}
+                  {!esSucursal && (
                   <div style={{ background: 'var(--bg-secondary)', padding: 'var(--space-sm)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Consumo WhatsApp</span>
@@ -868,8 +891,23 @@ export default function SuperAdminDashboard({ seccion = null }) {
                       </div>
                     )}
                   </div>
+                  )}
 
-                  {/* Financial Info Grid */}
+                  {/* Financial Info Grid — solo donde hay plata que mostrar */}
+                  {esSucursal ? (
+                    <div style={{
+                      borderTop: '1px solid var(--border)',
+                      borderBottom: '1px solid var(--border)',
+                      padding: 'var(--space-md) 0',
+                      fontSize: 13,
+                      color: 'var(--text-secondary)',
+                    }}>
+                      El plan, el abono y la deuda se manejan en{' '}
+                      <strong>{nombreDelNegocio(b.grupoId)}</strong>, la barbería principal de
+                      esta cuenta. Si se suspende la principal, esta sucursal se suspende con
+                      ella.
+                    </div>
+                  ) : (
                   <div style={{ 
                     display: 'grid', 
                     gridTemplateColumns: '1fr 1fr', 
@@ -908,6 +946,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
                       </span>
                     </div>
                   </div>
+                  )}
 
                   {/* Action Buttons Grid */}
                   <div style={{
@@ -933,13 +972,16 @@ export default function SuperAdminDashboard({ seccion = null }) {
                       🔗 Ver link público
                     </a>
                     {!soloLectura && (<>
+                    {/* Cobrar y cambiar de plan es de la cuenta, no de cada
+                        local: en una sucursal esos botones no aparecen. */}
                     <button
                       onClick={() => handleToggleFreeze(b.id)}
                       className={`btn ${b.isFrozen ? 'btn-success' : 'btn-danger'}`}
-                      style={{ padding: '8px', fontSize: 12, justifyContent: 'center' }}
+                      style={{ padding: '8px', fontSize: 12, justifyContent: 'center', gridColumn: esSucursal ? '1 / -1' : undefined }}
                     >
                       {b.isFrozen ? '🟢 Habilitar' : '🔴 Suspender'}
                     </button>
+                    {!esSucursal && (<>
                     <button 
                       onClick={() => handleOpenPaymentModal(b)}
                       className="btn btn-outline"
@@ -961,6 +1003,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
                     >
                       ✏️ Editar Saldo
                     </button>
+                    </>)}
                     <button
                       onClick={() => handleOpenDeleteModal(b)}
                       className="btn btn-ghost"
@@ -1445,27 +1488,35 @@ export default function SuperAdminDashboard({ seccion = null }) {
         <div className="modal-overlay" onClick={() => setModalType(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 450 }}>
             <div className="modal-header">
-              <h3>Ofrecer Upgrade de Plan</h3>
+              <h3>Cambiar el plan</h3>
               <button className="modal-close" onClick={() => setModalType(null)}>✕</button>
             </div>
             <div className="modal-body">
               <p className="text-secondary" style={{ marginBottom: 'var(--space-md)', fontSize: 13 }}>
-                Actualiza el límite de mensajes de WhatsApp y la tarifa mensual de abono para <strong>{selectedBusiness.name}</strong>.
+                Qué puede hacer <strong>{selectedBusiness.name}</strong> y cuánto paga por mes.
               </p>
               
               <div className="form-group" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 'var(--space-md)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                  <span className="text-muted">Cuota Actual:</span>
-                  <strong>{selectedBusiness.whatsappQuota} mensajes/mes</strong>
+                  <span className="text-muted">Plan actual:</span>
+                  <strong>{getPlan(selectedBusiness.planId)?.label || 'Sin plan'}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span className="text-muted">Hoy puede:</span>
+                  <strong>
+                    {selectedBusiness.maxSucursales == null ? 'sucursales sin límite' : `${selectedBusiness.maxSucursales} sucursal${selectedBusiness.maxSucursales === 1 ? '' : 'es'}`}
+                    {' · '}
+                    {selectedBusiness.maxBarbers == null ? 'barberos sin límite' : `${selectedBusiness.maxBarbers} barbero${selectedBusiness.maxBarbers === 1 ? '' : 's'}`}
+                  </strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                  <span className="text-muted">Abono Actual:</span>
+                  <span className="text-muted">Abono actual:</span>
                   <strong>{formatPrice(selectedBusiness.monthlyFee)}/mes</strong>
                 </div>
               </div>
 
               <div className="form-group">
-                <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Seleccionar Plan de Upgrade</label>
+                <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>Pasarla a</label>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {/* El Personalizado no sale de la lista: tiene su propia opción
@@ -1512,30 +1563,24 @@ export default function SuperAdminDashboard({ seccion = null }) {
                     />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 'bold', fontSize: 13 }}>Plan Personalizado</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Configurar cuota y abono a medida</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sucursales, barberos y funciones a convenir</div>
                     </div>
                   </label>
                 </div>
               </div>
 
-              {/* El abono se pide siempre que el plan elegido no traiga precio de
-                  lista: los planes nuevos todavía no lo tienen. La cuota de
-                  WhatsApp solo en el Personalizado, porque los demás la traen. */}
+              {/* Lo que hay que acordar cuando el plan es a medida: cuántas
+                  sucursales, cuántos barberos y qué funciones. Antes acá se
+                  preguntaba la cuota de WhatsApp —de una integración que todavía
+                  no existe— y nada de lo que de verdad define el plan. */}
+              {selectedPlan === 'personalizado' && (
+                <PlanAMedida valor={medida} onChange={setMedida} />
+              )}
+
+              {/* El abono se pide siempre que el plan elegido no traiga precio
+                  de lista. */}
               {(selectedPlan === 'personalizado' || getPlan(selectedPlan)?.monthlyFee == null) && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 'var(--space-md)' }}>
-                  {selectedPlan === 'personalizado' && (
-                  <div className="form-group">
-                    <label className="form-label">Límite WhatsApp</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={upgradeQuota}
-                      onChange={e => setUpgradeQuota(e.target.value)}
-                      placeholder="mensajes/mes..."
-                      required
-                    />
-                  </div>
-                  )}
                   <div className="form-group">
                     <label className="form-label">Abono Mensual (ARS)</label>
                     <input

@@ -5,6 +5,8 @@ import { isPlatformOwner } from '../../config/platform';
 import { slugify, isReservedSlug } from '../../utils/slug';
 import { createBusiness, isSlugAvailable } from '../../lib/repository';
 import { setBusinessAdmin, createOwnerWithPassword } from '../../lib/functions';
+import PlanAMedida from '../../components/super-admin/PlanAMedida';
+import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
 
 // Onboarding manual: el cliente se contacta, se cierra la venta, y la cuenta se
 // prepara desde acá. No hay registro self-service a propósito.
@@ -61,6 +63,9 @@ function enDiasISO(dias) {
 export default function NewBusinessModal({ onClose, onCreated }) {
   const { state } = useBusiness();
   const [form, setForm] = useState(EMPTY_FORM);
+  // Lo que se acuerda cuando el plan es a medida. Arranca con todo habilitado y
+  // sin topes: es lo que se espera de un plan que se negocia uno por uno.
+  const [medida, setMedida] = useState(() => medidaDesdeNegocio(null));
   const [errors, setErrors] = useState({});
   const [guardando, setGuardando] = useState(false);
   // Al crear, en vez de cerrar mostramos los datos para entregarle al cliente.
@@ -134,6 +139,9 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     if (!(await validate())) return;
 
     const plan = getPlan(form.planId);
+    // A medida: los topes y las funciones salen del formulario, no del plan.
+    const aMedida = plan?.aMedida === true;
+    const campos = aMedida ? camposDeLaMedida(medida) : null;
     const now = new Date().toISOString();
     const trialDays = Number(form.trialDays) || 0;
 
@@ -162,16 +170,16 @@ export default function NewBusinessModal({ onClose, onCreated }) {
       },
       // Público: la UI del negocio muestra el plan y su cuota de mensajes.
       planId: plan.id,
-      whatsappQuota: plan.whatsappQuota ?? 0,
+      whatsappQuota: (aMedida ? campos.whatsappQuota : plan.whatsappQuota) ?? 0,
       // Los topes quedan ESCRITOS en el documento y no solo implícitos en el
       // plan: así una cuenta conserva lo que compró aunque el plan cambie de
       // topes más adelante, y se le puede hacer una excepción sin inventar un
       // plan nuevo. Solo la plataforma los puede tocar (Rules).
-      maxBarbers: plan.maxBarbers ?? null,
-      maxSucursales: plan.maxSucursales ?? 1,
+      maxBarbers: aMedida ? campos.maxBarbers : (plan.maxBarbers ?? null),
+      maxSucursales: aMedida ? campos.maxSucursales : (plan.maxSucursales ?? 1),
       // Qué funciones habilita el plan (foto del barbero, colores, logo). Las
       // Rules leen ESTE campo: sin escribirlo, el plan no restringe nada.
-      capacidades: { ...(plan.capacidades || {}) },
+      capacidades: aMedida ? campos.capacidades : { ...(plan.capacidades || {}) },
       // Sin sucursales todavía. Lo escribe `crearSucursal` cuando se abre la
       // primera, y de ahí salen los permisos del dueño: el dueño NO lo puede
       // tocar.
@@ -489,6 +497,12 @@ export default function NewBusinessModal({ onClose, onCreated }) {
               </label>
             ))}
           </div>
+
+          {/* El Plan Personalizado se configura: cuántas sucursales, cuántos
+              barberos y qué funciones. Sin esto nacía con los topes del Básico. */}
+          {getPlan(form.planId)?.aMedida === true && (
+            <PlanAMedida valor={medida} onChange={setMedida} />
+          )}
 
           <div className="form-group" style={{ marginTop: 'var(--space-md)' }}>
             <label className="form-label">Abono mensual acordado (ARS)</label>

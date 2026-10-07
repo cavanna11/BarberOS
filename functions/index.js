@@ -1561,7 +1561,11 @@ exports.crearSucursal = onCall(async (request) => {
       // Si la cuenta está suspendida por deuda, la sucursal nace suspendida:
       // abrir una sucursal nueva no puede ser la forma de destrabar el link.
       isFrozen: principal.isFrozen === true,
-      trialEndsAt: principal.trialEndsAt || null,
+      // Sin período de prueba PROPIO: la prueba es de la cuenta y vive en la
+      // principal. Copiárselo hacía que la sucursal mostrara "se terminó tu
+      // prueba" por su cuenta, como si tuviera un plan aparte. runBilling mira
+      // el de la principal para decidir por todo el grupo.
+      trialEndsAt: null,
       origen: 'sucursal',
       grupoId,
       businessHours: (principal.businessHours || HORARIO_POR_DEFECTO).map((h) => ({ ...h })),
@@ -1586,6 +1590,21 @@ exports.crearSucursal = onCall(async (request) => {
     if (!principal.grupoId) {
       tx.update(principalRef, { grupoId });
     }
+
+    // El mapa público del grupo: qué barberías lo componen. Lo usa la página de
+    // reservas para preguntarle al cliente a qué sucursal va. Va en la MISMA
+    // transacción que el alta porque si queda a medias, la sucursal existe y no
+    // aparece en el selector — y nadie se entera hasta que un cliente no la
+    // encuentra.
+    //
+    // Guarda solo ids: el nombre y la dirección se leen del documento de cada
+    // barbería, así no hay dos lugares que se puedan contradecir.
+    const idsDelGrupo = [grupoId, ...hermanas.docs.map((d) => d.id).filter((id) => id !== grupoId), nuevoId];
+    tx.set(db.doc(`grupos/${grupoId}`), {
+      principalId: grupoId,
+      businessIds: [...new Set(idsDelGrupo)],
+      actualizadoEn: FieldValue.serverTimestamp(),
+    });
   });
 
   // Los dueños del principal, en la sucursal nueva.
@@ -2097,6 +2116,22 @@ exports.deleteBusiness = onCall(async (request) => {
 
   // 4. El slug.
   if (negocio.slug) await db.doc(`slugs/${negocio.slug}`).delete().catch(() => {});
+
+  // 4b. El mapa público del grupo, que es lo que lee la página de reservas para
+  //     ofrecer las sucursales. Si no se actualiza, el cliente sigue viendo una
+  //     sucursal que ya no existe y al tocarla cae en "no encontramos este
+  //     negocio".
+  if (negocio.grupoId) {
+    const grupoRef = db.doc(`grupos/${negocio.grupoId}`);
+    const grupo = await grupoRef.get();
+    if (grupo.exists) {
+      const quedan = (grupo.get('businessIds') || []).filter((id) => id !== businessId);
+      // Sin sucursales ya no es un grupo: se borra el mapa para que la página
+      // vuelva a comportarse como una barbería sola.
+      if (quedan.length <= 1) await grupoRef.delete().catch(() => {});
+      else await grupoRef.set({ businessIds: quedan, actualizadoEn: FieldValue.serverTimestamp() }, { merge: true });
+    }
+  }
 
   // 5. El negocio con todas sus subcolecciones.
   await db.recursiveDelete(ref);

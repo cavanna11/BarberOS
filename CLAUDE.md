@@ -188,6 +188,8 @@ Google.
 - **WhatsApp por wa.me**: dos botones en cada turno (recordatorio y gracias)
   que abren WhatsApp con el mensaje escrito. Lo manda el barbero; no hay API,
   ni bot, ni envío automático.
+- **El cliente elige sucursal**: el link de una cuenta con varias barberías
+  arranca preguntando a cuál va, con nombre y dirección de cada una.
 - **Funciones por plan**: foto del barbero desde el Intermedio, colores y logo
   desde el Full. Se hace cumplir en las Rules, no solo en la interfaz.
 - Sistema de tickets de soporte (chat barbería ↔ plataforma).
@@ -534,6 +536,9 @@ src/
 
 ```
 /slugs/{slug}                     → { businessId }        ⚠️ lectura pública
+/grupos/{grupoId}                 → { principalId, businessIds }  ⚠️ lectura
+                                    pública — las sucursales de una cuenta,
+                                    para que el cliente elija a cuál va
 /businesses/{id}                  → marca, horarios, isFrozen,
                                     grupoId (cuenta con sucursales),
                                     maxBarbers / maxSucursales  ⚠️ pública
@@ -875,6 +880,74 @@ cuenta de la barbería que se está administrando. Ahora el panel la manda
 siempre, y `useResolvedBusiness` arma el grupo desde el negocio activo cuando
 quien mira es la plataforma.
 
+### El cliente elige sucursal (07/10/2026)
+
+Cada sucursal tiene su propio link, pero el cliente que recibe UNO por Instagram
+no sabe que hay otros tres locales — y el que recibe el de la sucursal
+equivocada reservaba ahí sin enterarse, con los barberos y los horarios de ese
+local.
+
+Ahora, al abrir el link de una barbería que es parte de una cuenta con varias
+sucursales, lo primero es **"Elegí tu sucursal"**: nombre, dirección y teléfono
+de cada una, con la del link marcada. Al elegir, se navega al slug de esa
+sucursal y sigue el flujo normal (profesional → servicio → fecha → hora). Elegir
+el slug, y no "cambiar el negocio activo", es lo que hace que no haya ningún
+caso especial aguas abajo: el motor de disponibilidad, la agenda y la reserva
+siguen viendo UNA barbería.
+
+Se pregunta una vez por visita (queda en `sessionStorage`), y en el primer paso
+queda **"Cambiar de sucursal"** a la vista.
+
+**`/grupos/{grupoId}`** es el mapa que lo hace posible: `{ principalId,
+businessIds }`, lectura pública, escrito solo por `crearSucursal` con el Admin
+SDK. Mismo truco que `/slugs`: resolverlo de otra forma obligaría a permitir
+listar `businesses`, y ahí cualquiera se baja la cartera entera de clientes.
+
+Guarda SOLO ids. El nombre, la dirección y si está suspendida se leen del
+documento de cada barbería, que ya es público: así el selector nunca muestra una
+dirección vieja. Son 2 a 4 lecturas de un documento cada una, y solo para las
+cuentas que tienen sucursales — una barbería sola no va a la base ni una vez.
+
+Para los grupos creados antes de que el mapa existiera:
+`node scripts/migrar-planes.mjs --aplicar` lo reconstruye desde `grupoId`.
+
+### El plan es de la CUENTA, no de cada sucursal (07/10/2026)
+
+Una sucursal no tiene plan propio y no se le cobra: el abono lo paga la
+principal. Lo que se corrigió:
+
+- **La sucursal ya no hereda `trialEndsAt`.** Lo copiaba al crearse, así que una
+  sucursal de una cuenta con la prueba vencida mostraba *"se terminó tu prueba"*
+  por su cuenta, como si se pagara aparte. El período de prueba vive en la
+  principal y `runBilling` mira el de ahí para decidir por todo el grupo.
+- **En el panel de una sucursal** no hay banner de plan: hay un cartel que dice
+  en qué sucursal está, de qué cuenta es, y que el plan se maneja en la
+  principal, con el link a *Mis sucursales*.
+- **En el panel global**, la tarjeta de una sucursal no muestra abono, deuda,
+  consumo de WhatsApp ni los botones de cobrar y cambiar plan: dice que todo eso
+  está en la principal. Antes dejaba cambiarle el plan a una sola sucursal, que
+  es la forma más fácil de desincronizar un grupo.
+- **Cambiar el plan propaga a las sucursales** los topes y las capacidades. Las
+  Rules leen el campo de CADA documento, así que sin propagar, el dueño que sube
+  de plan veía la función nueva en la principal y no en las otras tres.
+
+### El Plan Personalizado se configura (07/10/2026)
+
+Antes el modal de cambio de plan preguntaba, para el Personalizado, el **límite
+de mensajes de WhatsApp** — de una integración que todavía no existe — y nada de
+lo que de verdad define un plan. La cuenta terminaba creada con los topes del
+Básico.
+
+Ahora pregunta lo que se negocia: cuántas **sucursales**, cuántos **barberos** y
+qué **funciones** (foto, colores, logo), con el abono acordado. La cuota de
+WhatsApp quedó al final, opcional y marcada como "todavía no se usa". Vacío en
+los topes = sin límite, a propósito: escribir 999 sería inventar un número que
+después alguien lee como límite real.
+
+Los mismos campos están en el alta (`NewBusinessModal`) y en el cambio de plan,
+con el mismo componente (`PlanAMedida`), y arrancan con lo que la cuenta tiene
+HOY: si ya era personalizada, se edita sobre lo acordado y no desde cero.
+
 ### El panel global, por secciones (28/09/2026)
 
 Era UNA pantalla con ocho pestañas arriba: en cualquier monitor normal no
@@ -1174,7 +1247,7 @@ node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulado
 ```
 
 Hoy: claims 77, reservas 46, facturación 12, rules 118, alta 22, mercadopago 16,
-seña 14, sucursales 60, planes 30, reseñas 36, whatsapp 23. Todo en verde (454).
+seña 14, sucursales 68, planes 38, reseñas 36, whatsapp 23. Todo en verde (470).
 
 ---
 

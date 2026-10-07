@@ -64,6 +64,40 @@ for (const d of negocios.docs) {
   aEscribir++;
 }
 
+// ── El mapa público de cada grupo de sucursales ─────────────────────────────
+// `/grupos/{id}` lo escribe `crearSucursal`, pero los grupos creados antes de
+// que existiera ese mapa no lo tienen — y sin él, la página de reservas no
+// puede ofrecerle al cliente elegir sucursal. Se reconstruye desde `grupoId`,
+// que es el dato de verdad.
+const grupos = new Map();
+for (const d of negocios.docs) {
+  const grupoId = d.get('grupoId');
+  if (!grupoId) continue;
+  if (!grupos.has(grupoId)) grupos.set(grupoId, []);
+  grupos.get(grupoId).push(d.id);
+}
+
+let gruposEscritos = 0;
+for (const [grupoId, ids] of grupos) {
+  if (ids.length < 2) continue;   // un grupo de uno no es un grupo
+  const ref = db.doc(`grupos/${grupoId}`);
+  const actual = await ref.get();
+  const yaEstaban = (actual.exists ? actual.get('businessIds') : null) || [];
+  const faltan = ids.filter((id) => !yaEstaban.includes(id));
+  if (actual.exists && faltan.length === 0 && yaEstaban.length === ids.length) continue;
+
+  console.log(`  ${APLICAR ? '✓' : '→'} grupo ${grupoId}: ${ids.length} sucursales`);
+  if (APLICAR) {
+    lote.set(ref, {
+      principalId: grupoId,
+      businessIds: ids,
+      actualizadoEn: new Date(),
+    });
+  }
+  gruposEscritos++;
+}
+if (gruposEscritos) aEscribir += gruposEscritos;
+
 if (APLICAR && aEscribir) {
   await lote.commit();
   console.log(`\nListo: ${aEscribir} barberías actualizadas, ${saltadas} ya estaban.\n`);

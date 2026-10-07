@@ -255,6 +255,11 @@ const TERCERA = r.ok?.businessId;
 if (TERCERA) {
   const nueva = (await db.doc(`businesses/${TERCERA}`).get()).data();
   chequear('la sucursal queda atada al grupo', nueva.grupoId === P, JSON.stringify(nueva.grupoId));
+
+  // El plan es de la CUENTA: una sucursal no tiene período de prueba propio.
+  // Copiárselo hacía que mostrara "se terminó tu prueba" por su cuenta.
+  chequear('la sucursal NO hereda el período de prueba',
+    nueva.trialEndsAt === null, JSON.stringify(nueva.trialEndsAt));
   chequear('hereda el plan de la cuenta', nueva.planId === 'empresarial', JSON.stringify(nueva.planId));
   chequear('hereda los colores de la principal', nueva.primaryColor === undefined || typeof nueva.primaryColor === 'string', '');
   chequear('nace sin equipo propio',
@@ -312,6 +317,27 @@ if (TERCERA) {
     !profsP.includes('Lucas'), JSON.stringify(profsP));
 }
 
+// ── 5b. El mapa público del grupo ───────────────────────────────────────────
+// Es lo que lee la página de reservas para preguntarle al cliente a qué
+// sucursal va. Sin esto, el que recibe el link de una sucursal no se entera de
+// que hay otras tres.
+console.log('\nEl mapa de sucursales que ve el cliente:');
+
+const grupo = await db.doc(`grupos/${P}`).get();
+chequear('crearSucursal deja el mapa del grupo', grupo.exists, 'no existe /grupos/' + P);
+chequear('el mapa incluye la principal y las sucursales',
+  (grupo.get('businessIds') || []).includes(P) && (grupo.get('businessIds') || []).length >= 3,
+  JSON.stringify(grupo.get('businessIds')));
+
+await esperar('cualquiera puede leerlo sin estar logueado (es la página pública)',
+  leer(null, `grupos/${P}`), 'permitido');
+await esperar('un cliente NO lo puede escribir',
+  editar(cliente, `grupos/${P}`, { businessIds: ['cualquier-cosa'] }), 'denegado');
+await esperar('el dueño tampoco lo escribe',
+  editar(duenoGrupo, `grupos/${P}`, { businessIds: ['cualquier-cosa'] }), 'denegado');
+await esperar('nadie lista los grupos sin ser de la plataforma',
+  consultar(cliente, null, 'grupos'), 'denegado');
+
 // ── 6. Facturación del grupo ────────────────────────────────────────────────
 // El plan lo paga la principal. Si la principal debe, las sucursales también se
 // cierran: si no, el dueño deja de pagar y sigue trabajando en las otras tres.
@@ -367,6 +393,11 @@ chequear('no se puede borrar la principal con sucursales abiertas',
 
 r = await llamar('deleteBusiness', plataforma, { businessId: S, confirmName: 'Norte' });
 chequear('se puede borrar una sucursal', r.ok?.status === 'deleted', JSON.stringify(r));
+
+const grupoDespues = await db.doc(`grupos/${P}`).get();
+chequear('al borrar una sucursal, sale del mapa público',
+  grupoDespues.exists && !(grupoDespues.get('businessIds') || []).includes(S),
+  JSON.stringify(grupoDespues.exists ? grupoDespues.get('businessIds') : 'borrado'));
 
 const claimsFinal = (await auth.getUser(duenoGrupo.uid)).customClaims || {};
 chequear('al borrar una sucursal el dueño NO pierde la cuenta',

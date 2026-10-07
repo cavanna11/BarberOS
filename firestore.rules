@@ -138,6 +138,27 @@ service cloud.firestore {
       allow write: if isPlatform();
     }
 
+    // ── Grupos de sucursales ───────────────────────────────────────────────
+    // La lista de barberías de una cuenta empresarial, para que el cliente que
+    // entra por el link pueda ELEGIR a qué sucursal va. Es el mismo caso que
+    // /slugs: un mapa chiquito y público, porque resolverlo de otra forma
+    // obligaría a permitir listar la colección `businesses` — y ahí cualquiera
+    // se baja la cartera entera de clientes.
+    //
+    // Solo guarda ids. El nombre, la dirección y si está suspendida se leen del
+    // documento de cada barbería, que ya es público: así la pantalla de
+    // "elegí tu sucursal" nunca muestra un dato viejo.
+    //
+    // `get` y no `list`: se busca por el id del grupo, que sale del documento
+    // del negocio. Nadie recorre los grupos.
+    match /grupos/{grupoId} {
+      allow get: if true;
+      allow list: if esEquipoPlataforma();
+      // Lo escribe `crearSucursal` con el Admin SDK, que es lo único que sabe
+      // cuántas sucursales tiene la cuenta y cuántas permite el plan.
+      allow write: if false;
+    }
+
     // ── Negocios ───────────────────────────────────────────────────────────
     // `get` público porque la página de reservas necesita nombre, colores,
     // horarios y mensaje de bienvenida antes del login.

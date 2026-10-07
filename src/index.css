@@ -1507,6 +1507,74 @@ select.form-input {
   object-fit: contain;
 }
 
+/* ── Elegir sucursal (página pública) ─────────────────────────────────────── */
+.sucursales-publicas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+/* Es un <button> para que se pueda tabular y tocar con el teclado, así que hay
+   que sacarle todo lo que el navegador le pone a un botón. */
+.sucursal-publica {
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sucursal-publica:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.sucursal-publica-nombre {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 1.05rem;
+}
+
+.sucursal-publica-logo {
+  height: 26px;
+  width: auto;
+  max-width: 70px;
+  object-fit: contain;
+}
+
+.sucursal-publica-dato {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.sucursal-publica-cerrada {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--danger);
+  margin-top: 2px;
+}
+
+/* La línea de "estás reservando en …", arriba del primer paso. */
+.sucursal-elegida {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: var(--space-md);
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 /* ── Reseñas ──────────────────────────────────────────────────────────────── */
 /* Las estrellas son botones de verdad (se tabulan y se leen con lector de
    pantalla), no imágenes: el cliente las toca desde el celular. */
@@ -1600,6 +1668,21 @@ select.form-input {
   height: 100%;
   background: #f5a623;
   border-radius: 4px;
+}
+
+/* Cartel de "estás en una sucursal", arriba del panel. Mismo formato que el
+   aviso de vínculo roto y el de instalar: una línea y una acción. */
+.aviso-sucursal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-radius: 0;
+  border-left: none;
+  border-top: none;
+  border-right: none;
+  padding: 8px 16px;
 }
 
 /* ── WhatsApp del turno ───────────────────────────────────────────────────── */

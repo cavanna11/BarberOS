@@ -8,6 +8,8 @@ import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/av
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
 import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
 import FichaBarberia from '../../components/client/FichaBarberia';
+import ElegirSucursal from '../../components/client/ElegirSucursal';
+import { useSucursalesPublicas, recordarSucursal, sucursalRecordada, olvidarSucursal } from '../../hooks/useSucursalesPublicas';
 import { guardarPendiente, leerPendiente, borrarPendiente } from '../../utils/reservaPendiente';
 
 // ---- STEPPER ----
@@ -405,6 +407,13 @@ export default function BookingPage() {
   // Datos ya filtrados por el negocio del slug de la URL.
   const { professionals, services, professionalServices, schedules, appointments, business, slug, businessId } =
     useTenant();
+
+  // ¿Esta barbería es parte de una cuenta con varias sucursales? Si lo es, lo
+  // primero es preguntarle al cliente a cuál va: cada local tiene su equipo, sus
+  // servicios y sus horarios, y el link que le llegó puede ser el de otra.
+  const { sucursales, cargando: cargandoSucursales } = useSucursalesPublicas(business);
+  const grupoId = business?.grupoId || null;
+  const [yaEligio, setYaEligio] = useState(() => Boolean(sucursalRecordada(business?.grupoId)));
   const { step, professionalId, serviceId, date, timeSlot, personalInfo } = booking;
 
   // Seña: solo si el dueño conectó Mercado Pago y la activó con un monto.
@@ -540,6 +549,48 @@ export default function BookingPage() {
     }).filter((s) => servicioAplicaAlHorario(servicio, s.startTime)); // promo por franja
   }, [professionalId, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business]);
 
+  // Paso cero: a qué sucursal va. Antes de elegir barbero, porque el equipo,
+  // los servicios y los horarios son los de ESE local — y el link que le llegó
+  // por Instagram puede ser el de otro.
+  //
+  // (Una sucursal suspendida no llega hasta acá: `TenantRoute` corta antes con
+  // "no está tomando turnos". No es un problema en la práctica porque la
+  // suspensión por deuda es de la cuenta entera: si cae una, caen las cuatro.)
+  // Mientras se averigua si la cuenta tiene sucursales, no se pinta el paso 1:
+  // si no, el cliente ve "elegí tu profesional" y medio segundo después se lo
+  // reemplaza por "elegí tu sucursal". Misma razón por la que el link de una
+  // barbería no muestra "no existe" hasta saberlo.
+  if (grupoId && cargandoSucursales) {
+    return (
+      <div className="booking-container">
+        <div className="empty-state" style={{ padding: 'var(--space-2xl)' }}><p>Cargando…</p></div>
+      </div>
+    );
+  }
+
+  const hayVariasSucursales = sucursales.length > 1;
+  if (hayVariasSucursales && !yaEligio) {
+    return (
+      <div className="booking-container">
+        <ElegirSucursal
+          sucursales={sucursales}
+          actualId={businessId}
+          onElegir={(suc) => {
+            recordarSucursal(grupoId, suc.id);
+            if (suc.id === businessId) {
+              setYaEligio(true);
+            } else {
+              // Cada sucursal tiene su propio link: navegar ahí deja la reserva
+              // entera (equipo, servicios, horarios, agenda) apuntando al local
+              // correcto, sin ningún caso especial en el medio.
+              navigate(`/${suc.slug}`);
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   if (blockedReason) {
     return <BookingUnavailable reason={blockedReason} business={business} />;
   }
@@ -658,6 +709,24 @@ export default function BookingPage() {
     <div className="booking-container">
       {/* La barbería se presenta antes del primer paso: dónde queda, cómo
           llegar, cómo contactarla. */}
+      {/* En qué sucursal está reservando, con la puerta de salida a la vista:
+          el que entró por el link equivocado se da cuenta acá y no cuando ya
+          eligió día y hora. */}
+      {step === 1 && hayVariasSucursales && (
+        <div className="sucursal-elegida">
+          <span>
+            Reservando en <strong>{business.name}</strong>
+            {business.address ? ` · ${business.address}` : ''}
+          </span>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => { olvidarSucursal(grupoId); setYaEligio(false); }}
+          >
+            Cambiar de sucursal
+          </button>
+        </div>
+      )}
+
       {step === 1 && <FichaBarberia business={business} services={services} />}
       {/* "Me faltó confirmar": lo más probable es que se haya ido en el paso
           del login creyendo que el turno ya estaba. */}
