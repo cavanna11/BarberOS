@@ -11,19 +11,54 @@
 //   node scripts/migrar-planes.mjs --aplicar       # escribe
 //   node scripts/migrar-planes.mjs --aplicar --emulador
 //
-// Contra producción necesita credenciales de administrador: la variable
-// GOOGLE_APPLICATION_CREDENTIALS apuntando a la clave de servicio, o
-// `firebase login` con el proyecto activo.
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
+// Contra PRODUCCIÓN necesita la clave de servicio, igual que
+// bootstrap-platform-owner.mjs:
+//
+//   Firebase Console → ⚙️ Configuración del proyecto → Cuentas de servicio
+//   → "Generar nueva clave privada"
+//
+// Guardala como `serviceAccountKey.json` en la raíz del proyecto (ya está en
+// .gitignore) y borrala cuando termines: da acceso total al proyecto.
+//
+// `firebase login` NO alcanza: esa credencial es para la CLI, no para el Admin
+// SDK. Si tenés configurado GOOGLE_APPLICATION_CREDENTIALS, también sirve.
+import { existsSync, readFileSync } from 'node:fs';
+import { initializeApp, applicationDefault, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { camposDelPlan } from '../functions/planes.js';
 
 const APLICAR = process.argv.includes('--aplicar');
 const EMULADOR = process.argv.includes('--emulador');
 const PROJECT = 'barberos-1d60e';
+const CLAVE = 'serviceAccountKey.json';
 
 if (EMULADOR) process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
-initializeApp(EMULADOR ? { projectId: PROJECT } : { projectId: PROJECT, credential: applicationDefault() });
+
+/**
+ * Contra el emulador no hace falta credencial. Contra producción: la clave de
+ * servicio si está en la raíz, y si no, la credencial por defecto del entorno.
+ * Si no hay ninguna, se dice QUÉ falta en vez de reventar con el error críptico
+ * del SDK ("Could not load the default credentials").
+ */
+function credencial() {
+  if (EMULADOR) return { projectId: PROJECT };
+  if (existsSync(CLAVE)) {
+    return { projectId: PROJECT, credential: cert(JSON.parse(readFileSync(CLAVE, 'utf8'))) };
+  }
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    return { projectId: PROJECT, credential: applicationDefault() };
+  }
+  console.error(
+    `\nFalta la credencial de administrador.\n\n` +
+    `  Firebase Console → Configuración del proyecto → Cuentas de servicio\n` +
+    `  → "Generar nueva clave privada", y guardala como ${CLAVE} en la raíz\n` +
+    `  del proyecto (está en .gitignore). Borrala cuando termines.\n\n` +
+    `  Para probar sin tocar producción: agregá --emulador\n`
+  );
+  process.exit(1);
+}
+
+initializeApp(credencial());
 const db = getFirestore();
 
 const negocios = await db.collection('businesses').get();
