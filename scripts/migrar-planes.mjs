@@ -50,6 +50,12 @@ for (const d of negocios.docs) {
   if (biz.maxBarbers === undefined) cambios.maxBarbers = plan.maxBarbers;
   if (biz.grupoId === undefined) cambios.grupoId = null;
 
+  // Una SUCURSAL no tiene período de prueba propio: el plan es de la cuenta y
+  // vive en la principal. Las que se crearon antes de este cambio lo copiaron,
+  // y por eso mostraban "se terminó tu prueba" por su cuenta. Se les saca.
+  const esSucursal = biz.grupoId && biz.grupoId !== d.id;
+  if (esSucursal && biz.trialEndsAt) cambios.trialEndsAt = null;
+
   if (Object.keys(cambios).length === 0) {
     saltadas++;
     continue;
