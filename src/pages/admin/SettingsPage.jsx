@@ -76,9 +76,18 @@ export default function SettingsPage() {
     // Guardado: los cambios ya son parte del negocio, así que el overlay se
     // vacía y el formulario vuelve a seguir el dato vivo.
     setCambios({});
-    // Apply colors
-    document.documentElement.style.setProperty('--primary', form.primaryColor);
-    document.documentElement.style.setProperty('--secondary', form.secondaryColor || form.primaryColor);
+    // Los colores NO se escriben acá en `document.documentElement`.
+    //
+    // Se hacía, y era al revés de lo que hace falta: pintaba el PANEL del que
+    // guardaba —y se lo dejaba pintado al dueño de la plataforma que entró a
+    // administrar esa barbería, hasta que recargara— mientras el cliente que
+    // abría el link de la barbería seguía viendo el naranja de BarberOS, porque
+    // la función que aplicaba el tema de verdad no la llamaba nadie.
+    //
+    // Ahora los colores van donde se venden: en todo lo que el cliente ve bajo
+    // el slug de la barbería. Los aplica `TemaNegocio` desde `TenantRoute`, con
+    // el dato vivo del negocio, así que ya están puestos antes de que nadie
+    // guarde nada. La vista previa de abajo es inline y no depende de esto.
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -140,13 +149,18 @@ export default function SettingsPage() {
           <div className="card mt-md">
             <h3 className="mb-lg">Tu marca</h3>
 
-            {!puedeColores && (
+            {!puedeColores ? (
               <div className="notice notice-info" style={{ marginBottom: 'var(--space-md)' }}>
                 Los colores y el logo propios se incluyen desde el <strong>Plan Full</strong>.{' '}
                 <a href={LINK_AMPLIAR} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>
                   Escribinos y los activamos
                 </a>.
               </div>
+            ) : (
+              <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-md)' }}>
+                Se ven en tu link público: tu página, la reserva y la confirmación del turno.
+                El panel queda con los colores de BarberOS.
+              </p>
             )}
 
             <div className="flex flex-col gap-md" style={{ opacity: puedeColores ? 1 : 0.6 }}>

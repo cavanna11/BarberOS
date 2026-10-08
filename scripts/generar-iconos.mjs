@@ -29,3 +29,24 @@ const badge = await sharp(svg).resize(72, 72, { fit: 'contain', background: { r:
   .png().toBuffer();
 await sharp(badge).greyscale().png().toFile('public/icons/badge-72.png');
 console.log('ok public/icons/badge-72.png');
+
+// ── La imagen de la vista previa del link (Open Graph) ──────────────────────
+// Es la tarjeta que dibuja WhatsApp, Instagram o Facebook cuando alguien comparte
+// el link de una barbería. 1200x630 es la medida que todos esperan.
+//
+// Es la MISMA para todas las barberías, y no la de cada una, por una razón que
+// no se puede esquivar: el logo de la barbería se guarda como data URL adentro
+// de su documento (sin Firebase Storage, ver utils/imagen.js), y una vista
+// previa necesita una URL https que el crawler pueda descargar. Un data URL no
+// sirve. El nombre de la barbería SÍ va en la tarjeta, como título: lo pone
+// api/preview.js en las etiquetas, que es lo que de verdad se lee.
+async function og() {
+  const ANCHO = 1200, ALTO = 630;
+  const logo = await sharp(svg).resize(360, 360, { fit: 'contain', background: FONDO }).png().toBuffer();
+  await sharp({ create: { width: ANCHO, height: ALTO, channels: 4, background: FONDO } })
+    .composite([{ input: logo, gravity: 'center' }])
+    .png()
+    .toFile('public/img/og-barberos.png');
+  console.log('ok public/img/og-barberos.png');
+}
+await og();

@@ -9,6 +9,28 @@
       "destination": "https://southamerica-east1-barberos-1d60e.cloudfunctions.net/webhookMercadoPago"
     },
     {
+      "source": "/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot|WhatsApp|Twitterbot|Slackbot|TelegramBot|Discordbot|LinkedInBot|Googlebot|bingbot|redditbot|Pinterest|SkypeUriPreview|vkShare|Applebot|Embedly|Iframely).*"
+        }
+      ],
+      "destination": "/api/preview?slug=:slug"
+    },
+    {
+      "source": "/:slug/reservar",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot|WhatsApp|Twitterbot|Slackbot|TelegramBot|Discordbot|LinkedInBot|Googlebot|bingbot|redditbot|Pinterest|SkypeUriPreview|vkShare|Applebot|Embedly|Iframely).*"
+        }
+      ],
+      "destination": "/api/preview?slug=:slug"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

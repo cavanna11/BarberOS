@@ -42,7 +42,7 @@ export default function ConfirmationPage() {
         <div className="empty-state">
           <div className="empty-state-icon">🤔</div>
           <p>No se encontró información de la reserva</p>
-          <Link to={home} className="btn btn-primary mt-lg">Reservar una cita</Link>
+          <Link to={`${home}/reservar`} className="btn btn-primary mt-lg">Reservar una cita</Link>
         </div>
       </div>
     );
@@ -91,7 +91,7 @@ export default function ConfirmationPage() {
 
       <div className="confirmation-actions">
         <Link to={`${home}/mis-citas`} className="btn btn-primary">📅 Ver Mis Citas</Link>
-        <Link to={home} className="btn btn-outline">Reservar Otra Cita</Link>
+        <Link to={`${home}/reservar`} className="btn btn-outline">Reservar Otra Cita</Link>
       </div>
 
       <div className="future-feature mt-lg" style={{ justifyContent: 'center' }}>

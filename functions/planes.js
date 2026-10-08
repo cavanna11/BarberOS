@@ -12,12 +12,12 @@
 // alta o al cambiar de plan, porque las Security Rules no pueden importar nada:
 // leen el campo del documento. Esta tabla es lo que decide qué se escribe.
 
-const SIN = { fotoPerfil: false, colores: false, logo: false };
-const TODAS = { fotoPerfil: true, colores: true, logo: true };
+const SIN = { fotoPerfil: false, colores: false, logo: false, pagina: false, paginaFoto: false };
+const TODAS = { fotoPerfil: true, colores: true, logo: true, pagina: true, paginaFoto: true };
 
 const PLANES = {
   basico:        { maxSucursales: 1, maxBarbers: 1,    monthlyFee: 15000, whatsappQuota: 100,  capacidades: { ...SIN } },
-  intermedio:    { maxSucursales: 1, maxBarbers: 3,    monthlyFee: 20000, whatsappQuota: 500,  capacidades: { ...SIN, fotoPerfil: true } },
+  intermedio:    { maxSucursales: 1, maxBarbers: 3,    monthlyFee: 20000, whatsappQuota: 500,  capacidades: { ...SIN, fotoPerfil: true, pagina: true } },
   full:          { maxSucursales: 1, maxBarbers: null, monthlyFee: 30000, whatsappQuota: 2000, capacidades: { ...TODAS } },
   empresarial:   { maxSucursales: 4, maxBarbers: null, monthlyFee: 60000, whatsappQuota: 2000, capacidades: { ...TODAS } },
   // Personalizado: se acuerda uno por uno. Sin topes propios, así que lo que

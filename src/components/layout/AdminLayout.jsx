@@ -21,6 +21,10 @@ const ownerNavItems = [
   { to: '/admin/servicios',     icon: '✂️', label: 'Servicios' },
   { to: '/admin/resenas',       icon: '⭐', label: 'Reseñas' },
   { to: '/admin/admins',        icon: '🛡️', label: 'Administradores' },
+  // La página de presentación de la barbería. No se filtra por plan a
+  // propósito: el que no la tiene entra y ve qué es y desde qué plan está.
+  // Esconderla lo deja creyendo que el sistema no la tiene.
+  { to: '/admin/pagina',        icon: '🔗', label: 'Mi página' },
   { to: '/admin/configuracion', icon: '⚙️', label: 'Configuración' },
   { to: '/admin/soporte',       icon: '💬', label: 'Soporte' },
   { to: '/admin/instalar',      icon: '📲', label: 'Instalar la app' },

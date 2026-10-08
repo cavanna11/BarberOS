@@ -79,3 +79,44 @@ export function redimensionarLogo(file, ladoMax = 240) {
     img.src = url;
   });
 }
+
+/** Lo que una portada puede pesar. Lo repiten las Rules y `config/pagina.js`. */
+export const PORTADA_MAX_BYTES = 400_000;
+
+/**
+ * La foto de portada de la página de presentación.
+ *
+ * Es la única imagen grande del producto, y va a pantalla completa detrás del
+ * texto, así que el criterio es distinto al del logo: 1200 px de ancho alcanza
+ * para cualquier celular y para un monitor normal, y la calidad se BAJA en
+ * pasos hasta que entre en el tope. Rechazarla sería lo peor que podría pasar
+ * acá: el dueño eligió la foto de su local y no tiene de dónde sacar otra más
+ * liviana.
+ *
+ * Sale en JPEG siempre: una foto de fondo no necesita transparencia y en PNG
+ * pesaría cinco veces más.
+ */
+export function redimensionarPortada(file, ladoMax = 1200) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type?.startsWith('image/')) return reject(new Error('Elegí una imagen (JPG o PNG).'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const escala = Math.min(1, ladoMax / Math.max(img.width, img.height));
+      const w = Math.round(img.width * escala), h = Math.round(img.height * escala);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+
+      for (const calidad of [0.82, 0.7, 0.6, 0.5]) {
+        const out = canvas.toDataURL('image/jpeg', calidad);
+        if (out.length <= PORTADA_MAX_BYTES) return resolve(out);
+      }
+      reject(new Error('La foto es muy pesada. Probá con una más chica.'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen.')); };
+    img.src = url;
+  });
+}

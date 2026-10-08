@@ -10,6 +10,7 @@
 //   /slugs/{slug}                        → { businessId }   público
 //   /businesses/{id}                     → marca, horarios, isFrozen  público
 //     /private/billing                   → deuda, abono, vencimientos  solo plataforma
+//     /public/pagina                     → su página de presentación  público
 //     /professionals/{id}
 //     /services/{id}
 //     /schedules/{id}
@@ -44,6 +45,7 @@ import { db } from './firebase';
 const businessesCol = () => collection(db, 'businesses');
 const businessDoc = (id) => doc(db, 'businesses', id);
 const billingDoc = (id) => doc(db, 'businesses', id, 'private', 'billing');
+const paginaDoc = (id) => doc(db, 'businesses', id, 'public', 'pagina');
 const slugDoc = (slug) => doc(db, 'slugs', slug);
 export const subCol = (businessId, name) => collection(db, 'businesses', businessId, name);
 
@@ -288,6 +290,40 @@ export async function setBusinessFrozen(businessId, isFrozen) {
 
 // Borrar un negocio es `deleteBusiness` en lib/functions.js: en cascada, con
 // el Admin SDK. Desde el browser no se puede hacer entero.
+
+// ============================================================================
+// PÁGINA DE PRESENTACIÓN (pública, documento aparte)
+// ============================================================================
+// Lo que ve el cliente al abrir el link, antes de la reserva: plantilla,
+// portada, descripción y botones.
+//
+// Vive en `businesses/{id}/public/pagina` y no adentro del negocio por el peso.
+// El documento del negocio lo lee CADA visitante del link y además está en la
+// suscripción permanente del panel: meterle una imagen de portada sería pagarla
+// en todas las pantallas, todo el tiempo. Acá se baja una sola vez, y solo
+// cuando alguien abre la página.
+//
+// El negocio lleva nada más que el interruptor (`paginaActiva`), que ya viene
+// en la lectura que la app hace igual: así, la barbería que no tiene página no
+// gasta ni una lectura de más.
+//
+// Se lee de UNA sola vez y no por suscripción: es configuración que cambia
+// cuando el dueño la edita, no datos vivos.
+
+export async function getPagina(businessId) {
+  const snap = await getDoc(paginaDoc(businessId));
+  return snap.exists() ? snap.data() : null;
+}
+
+/**
+ * Guarda la configuración de la página.
+ *
+ * `setDoc` con merge y no `updateDoc`: la primera vez el documento no existe
+ * todavía y `updateDoc` falla con not-found.
+ */
+export async function savePagina(businessId, datos) {
+  await setDoc(paginaDoc(businessId), { ...datos, updatedAt: serverTimestamp() }, { merge: true });
+}
 
 // ============================================================================
 // FACTURACIÓN (privada — solo dueño de plataforma)

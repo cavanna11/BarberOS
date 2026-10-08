@@ -27,6 +27,8 @@ export function medidaDesdeNegocio(biz) {
     fotoPerfil: cap.fotoPerfil !== false,
     colores: cap.colores !== false,
     logo: cap.logo !== false,
+    pagina: cap.pagina !== false,
+    paginaFoto: cap.paginaFoto !== false,
     whatsappQuota: biz?.whatsappQuota == null ? '' : String(biz.whatsappQuota),
   };
 }
@@ -41,6 +43,8 @@ export function camposDeLaMedida(medida) {
       fotoPerfil: medida.fotoPerfil === true,
       colores: medida.colores === true,
       logo: medida.logo === true,
+      pagina: medida.pagina === true,
+      paginaFoto: medida.paginaFoto === true,
     },
   };
 }

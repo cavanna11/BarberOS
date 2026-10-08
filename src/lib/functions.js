@@ -211,3 +211,17 @@ export function applyPendingClaims() {
 export function deleteBusiness({ businessId, confirmName }) {
   return llamar('deleteBusiness', { businessId, confirmName });
 }
+
+/**
+ * Completa en cada barbería los topes y las capacidades de su plan, y
+ * reconstruye el mapa público de las cuentas con sucursales.
+ *
+ * Con `aplicar: false` (el default) no escribe nada: devuelve qué haría. Hay
+ * que correrla después de agregar una capacidad nueva, porque en las Rules una
+ * capacidad que no está escrita vale TRUE y queda habilitada para todos.
+ *
+ * Devuelve { aplicado, total, cambios[], grupos[], sinPlan[] }.
+ */
+export function migrarPlanes({ aplicar = false } = {}) {
+  return llamar('migrarPlanes', { aplicar });
+}

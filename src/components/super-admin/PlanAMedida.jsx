@@ -18,8 +18,10 @@ import { camposDeLaMedida } from '../../utils/planMedida';
 
 const CAPACIDADES = [
   { campo: 'fotoPerfil', titulo: 'Foto de perfil de los barberos', detalle: 'Se ve en la página de reservas' },
-  { campo: 'colores', titulo: 'Colores propios', detalle: 'Su paleta en la reserva y en el panel' },
+  { campo: 'colores', titulo: 'Colores propios', detalle: 'Su paleta en todo su link público' },
   { campo: 'logo', titulo: 'Logo propio', detalle: 'Arriba de su link público' },
+  { campo: 'pagina', titulo: 'Página de presentación', detalle: 'Su mini landing antes de la reserva' },
+  { campo: 'paginaFoto', titulo: 'Foto de portada en la página', detalle: 'La plantilla con la foto a pantalla completa' },
 ];
 
 export default function PlanAMedida({ valor, onChange }) {

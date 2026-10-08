@@ -22,9 +22,18 @@ export default defineConfig([
       sourceType: 'module',
     },
   },
+  // `api/` son funciones serverless de Vercel: Node, ESM, y nada del browser.
+  {
+    files: ['api/**/*.js'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      globals: globals.node,
+      sourceType: 'module',
+    },
+  },
   {
     files: ['**/*.{js,jsx}'],
-    ignores: ['functions/**', 'scripts/**'],
+    ignores: ['functions/**', 'scripts/**', 'api/**'],
     extends: [
       js.configs.recommended,
       reactHooks.configs.flat.recommended,

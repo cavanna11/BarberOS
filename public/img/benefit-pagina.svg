@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" width="100%" height="100%">
+  <defs>
+    <style>
+      .font-sans { font-family: 'Space Grotesk', sans-serif; }
+      .font-mono { font-family: 'Space Mono', monospace; }
+    </style>
+  </defs>
+  <!-- Card background -->
+  <rect x="0" y="0" width="280" height="120" rx="8" fill="#fafafa" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+
+  <!-- El celular, con la página de la barbería adentro -->
+  <g transform="translate(16, 11)">
+    <rect x="0" y="0" width="62" height="98" rx="9" fill="#ffffff" stroke="rgba(0,0,0,0.14)" stroke-width="1.5"/>
+    <circle cx="31" cy="18" r="9" fill="#e03d00"/>
+    <text x="31" y="21.5" text-anchor="middle" class="font-sans" font-size="8" font-weight="700" fill="#ffffff">LB</text>
+    <rect x="13" y="33" width="36" height="5" rx="2.5" fill="#0a0a0a"/>
+    <rect x="18" y="42" width="26" height="3" rx="1.5" fill="#aaaaaa"/>
+    <!-- Los botones, en columna -->
+    <rect x="8" y="52" width="46" height="11" rx="4" fill="#e03d00"/>
+    <rect x="8" y="67" width="46" height="11" rx="4" fill="#f2f2f2" stroke="rgba(0,0,0,0.08)"/>
+    <rect x="8" y="82" width="46" height="11" rx="4" fill="#f2f2f2" stroke="rgba(0,0,0,0.08)"/>
+  </g>
+
+  <!-- Lo que cada botón hace -->
+  <g transform="translate(94, 11)">
+    <text x="0" y="9" class="font-mono" font-size="8" font-weight="700" fill="#aaaaaa">TU LINK ABRE ACÁ</text>
+    <text x="0" y="25" class="font-sans" font-size="12" font-weight="700" fill="#0a0a0a">La Barbería Club</text>
+
+    <rect x="0" y="33" width="170" height="19" rx="6" fill="#fdf0eb" stroke="#e03d00" stroke-width="1"/>
+    <text x="10" y="46" class="font-sans" font-size="10" font-weight="700" fill="#e03d00">Reservar un turno</text>
+
+    <rect x="0" y="56" width="170" height="19" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+    <text x="10" y="69" class="font-sans" font-size="10" font-weight="600" fill="#0a0a0a">Servicios y precios</text>
+
+    <rect x="0" y="79" width="170" height="19" rx="6" fill="#ffffff" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+    <text x="10" y="92" class="font-sans" font-size="10" font-weight="600" fill="#0a0a0a">Cómo llegar · WhatsApp</text>
+  </g>
+</svg>

@@ -102,7 +102,7 @@ export default function MyAppointments() {
         <div className="empty-state">
           <div className="empty-state-icon">{tab === 'upcoming' ? '📅' : '📋'}</div>
           <p>{tab === 'upcoming' ? 'No tenés citas próximas' : 'No tenés citas pasadas'}</p>
-          {tab === 'upcoming' && <Link to={`/${slug}`} className="btn btn-primary mt-lg">Reservar una cita</Link>}
+          {tab === 'upcoming' && <Link to={`/${slug}/reservar`} className="btn btn-primary mt-lg">Reservar una cita</Link>}
         </div>
       ) : (
         displayed.map(apt => {

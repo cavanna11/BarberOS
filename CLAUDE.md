@@ -190,8 +190,18 @@ Google.
   ni bot, ni envío automático.
 - **El cliente elige sucursal**: el link de una cuenta con varias barberías
   arranca preguntando a cuál va, con nombre y dirección de cada una.
-- **Funciones por plan**: foto del barbero desde el Intermedio, colores y logo
-  desde el Full. Se hace cumplir en las Rules, no solo en la interfaz.
+- **Funciones por plan**: foto del barbero y página de presentación desde el
+  Intermedio; colores, logo y foto de portada desde el Full. Se hace cumplir en
+  las Rules, no solo en la interfaz.
+- **La página de presentación de la barbería**: el link puede abrir una mini
+  landing (estilo Linktree) con el nombre, la presentación y botones grandes —
+  reservar, cómo llegar, WhatsApp, Instagram— antes de la reserva. Tres
+  plantillas, nace apagada, y la reserva de siempre queda en `/:slug/reservar`.
+- **Los colores de la barbería llegan al cliente.** Hasta el 08/10/2026 se
+  guardaban y no se aplicaban en ningún lado: la función que lo hacía no la
+  llamaba nadie.
+- **La vista previa del link** (WhatsApp, Instagram, Facebook) dice el nombre de
+  la barbería y su presentación, no "BarberOS".
 - Sistema de tickets de soporte (chat barbería ↔ plataforma).
 - Landing pública de venta en la raíz.
 - Identidad visual de SACIA aplicada.
@@ -202,7 +212,8 @@ Google.
 
 Desplegadas en `southamerica-east1`: `setBusinessAdmin`, `revokeBusinessAdmin`,
 `applyPendingClaims`, `createAppointment`, `createOwnerWithPassword`,
-`resetOwnerPassword`, `setPlatformModerator`, `deleteBusiness`, `getBusySlots`, los triggers
+`resetOwnerPassword`, `setPlatformModerator`, `deleteBusiness`, `getBusySlots`,
+`migrarPlanes`, los triggers
 `onNuevoTurno` / `onTurnoCancelado` / `onTicketNuevo` / `onMensajeDeTicket` y `runBilling` (3 AM, hora de Buenos
 Aires). Quedó puesta la política que borra imágenes de contenedor de más de un
 día, para que no se acumule costo de almacenamiento.
@@ -548,8 +559,12 @@ src/
                                     para que el cliente elija a cuál va
 /businesses/{id}                  → marca, horarios, isFrozen,
                                     grupoId (cuenta con sucursales),
-                                    maxBarbers / maxSucursales  ⚠️ pública
+                                    maxBarbers / maxSucursales,
+                                    paginaActiva (interruptor de su página)
+                                                            ⚠️ pública
   /private/billing                → deuda, abono           🔒 solo plataforma
+  /public/pagina                  → su página de presentación: plantilla,
+                                    portada, textos y botones  ⚠️ pública
   /professionals /services /schedules /professionalServices   ⚠️ públicas
   /staffContacts/{profId}         🔒 teléfono y mail del staff — NO va en
                                      /professionals, que es de lectura pública
@@ -746,13 +761,17 @@ Hasta acá lo único que un plan cambiaba era un cartel en la interfaz. Ahora la
 escalera define **capacidad** (sucursales y barberos) y **capacidades** (qué
 funciones están habilitadas), y las dos se hacen cumplir del lado del servidor.
 
-| | sucursales | barberos | foto del barbero | colores | logo | abono |
+| | sucursales | barberos | foto del barbero | página | colores + logo + portada | abono |
 |---|---|---|---|---|---|---|
 | Básico | 1 | 1 | — | — | — | $15.000 |
-| Intermedio | 1 | 3 | ✓ | — | — | $20.000 |
+| Intermedio | 1 | 3 | ✓ | ✓ | — | $20.000 |
 | Full | 1 | sin límite | ✓ | ✓ | ✓ | $30.000 |
-| Empresarial | 4 | sin límite | ✓ | ✓ | ✓ | $60.000 |
+| Empresarial | 4 | sin límite | ✓ | ✓ (una por sucursal) | ✓ | $60.000 |
 | Personalizado | a convenir | a convenir | a convenir | | | Consultanos |
+
+Las capacidades son cinco: `fotoPerfil`, `pagina`, `paginaFoto`, `colores` y
+`logo`. La página y su foto de portada son dos distintas a propósito — ver "La
+página de presentación de la barbería" más abajo.
 
 **Dónde vive cada cosa, y por qué en tres lugares:**
 
@@ -765,6 +784,16 @@ funciones están habilitadas), y las dos se hacen cumplir del lado del servidor.
    vieja no puede perder de un día para el otro la foto que ya tenía cargada.
    Para completárselo a las que ya estaban: `node scripts/migrar-planes.mjs`
    (muestra qué haría; con `--aplicar` escribe).
+
+   **Ojo al agregar una capacidad nueva**: el default `true` no es solo para las
+   cuentas sin el campo, también vale para una CLAVE que falte adentro de un
+   mapa que sí existe. Una cuenta de Básico creada la semana pasada tiene
+   `capacidades` escrito sin la clave nueva, así que en las Rules le queda
+   habilitada mientras la interfaz le dice que no.
+
+   Después de agregar una capacidad: **/super-admin → Barberías → Mantenimiento
+   → "Ver qué falta"**, y aplicar. Completa las claves que faltan adentro del
+   mapa, no solo el campo entero. Es idempotente: correrlo de más no hace nada.
 3. `functions/planes.js` — lo que validan las Cloud Functions.
 
 **El tope de barberos pasó a ser una function.** Las Security Rules no pueden
@@ -787,7 +816,7 @@ Lo bloqueado NO se esconde: se muestra apagado, con desde qué plan está y el
 link para ampliar. Esconderlo deja al dueño creyendo que el sistema no lo tiene.
 
 ```bash
-node scripts/test-planes-emulador.mjs   # 30 casos
+node scripts/test-planes-emulador.mjs   # 66 casos
 ```
 
 ### WhatsApp por wa.me, sin API ni bot (06/10/2026)
@@ -954,6 +983,165 @@ después alguien lee como límite real.
 Los mismos campos están en el alta (`NewBusinessModal`) y en el cambio de plan,
 con el mismo componente (`PlanAMedida`), y arrancan con lo que la cuenta tiene
 HOY: si ya era personalizada, se edita sobre lo acordado y no desde cero.
+
+### La página de presentación de la barbería (08/10/2026)
+
+El link de una barbería abría directo el paso 1 de la reserva. Funciona, pero
+es un formulario: el que llega desde la bio de Instagram y todavía no decidió
+nada se encuentra con "elegí tu profesional" sin saber dónde queda el local, qué
+cobran ni si es la barbería que le recomendaron.
+
+Ahora el link puede abrir primero una **página de presentación**: nombre,
+una línea de presentación y botones grandes —reservar, servicios y precios, cómo
+llegar, WhatsApp, Instagram—. El modelo es un Linktree, no un constructor de
+páginas.
+
+**Nace apagada para todas.** Mientras `paginaActiva` no esté en true, `/:slug`
+es exactamente la reserva de siempre. Esto no puede cambiarle el link a una
+barbería que ya lo repartió sin que ella lo decida.
+
+```
+/:slug            la página si está prendida; si no, la reserva
+/:slug/reservar   la reserva, SIEMPRE, con página o sin ella
+```
+
+`/:slug/reservar` existe desde ahora para todas, y es a donde apuntan el botón
+de la página, el `from` del login y los "Reservar otra cita" de la confirmación
+y de Mis Citas. El flujo de reserva no se tocó.
+
+**Tres plantillas, UNA estructura.** `Simple`, `Tarjeta` y `Foto` (esta última
+del Full) comparten el mismo JSX y se diferencian por una clase. Agregar una
+cuarta es escribir CSS, no una pantalla nueva que después hay que acordarse de
+arreglar cuando se le suma un botón.
+
+**Se elige, no se diseña.** El dueño elige plantilla y escribe dos líneas; todo
+lo demás —nombre, logo, presentación, dirección, Instagram, WhatsApp,
+servicios— sale de lo que ya cargó en Configuración. Un dato, un lugar: si
+hubiera que escribir la dirección otra vez acá, el día que se muda le queda
+vieja en un lado y nueva en el otro. Por eso el editor muestra una lista de
+"esto lo arma sola" con el estado de cada dato y el link a Configuración.
+
+**El orden de los botones: primero las sucursales.** En una cuenta con varios
+locales, a cuál va se decide ANTES de reservar, porque el equipo y los horarios
+son los de ese local. Por eso cuando hay más de uno el botón dice *"Reservar en
+Tijeras — Centro"* y no "Reservar un turno", y el local en el que está se marca
+como "estás acá" en vez de ser un botón más. Entrar a reservar anota la sucursal
+(`recordarSucursal`), así el paso cero de la reserva no la vuelve a preguntar.
+
+**La configuración va en `businesses/{id}/public/pagina`, aparte.** El documento
+del negocio lo lee CADA visitante del link y además vive en la suscripción
+permanente del panel: meterle una foto de portada sería pagarla en todas las
+pantallas, todo el tiempo. Acá se baja una sola vez y solo cuando alguien abre
+la página. El negocio lleva nada más que el interruptor, que ya viene en la
+lectura que la app hace igual — la barbería que no tiene página no gasta una
+lectura de más.
+
+**Dos capacidades, no una**: `pagina` (tenerla, del Intermedio) y `paginaFoto`
+(la plantilla con la foto a pantalla completa, del Full). Un Intermedio tiene su
+página pero sin logo, sin colores propios y sin portada. Donde iría el logo van
+las **iniciales** de la barbería sobre un círculo de color: es lo que hace que
+no se vea como un hueco, y es la diferencia entre una función recortada y una
+función incompleta.
+
+`paginaEfectiva()` resuelve la plantilla contra las capacidades: una cuenta que
+baja de plan con la plantilla de foto guardada se degrada a la Simple en vez de
+quedar con el hueco de una foto que las Rules ya no dejan guardar.
+
+```bash
+node scripts/sembrar-pagina-emulador.mjs   # las tres plantillas, para mirarlas
+```
+
+### Los colores de la barbería no llegaban a ningún lado (08/10/2026)
+
+`applyTheme()` existía desde el principio en `config/theme.js` y **no la llamaba
+nadie**. Una barbería del Plan Full podía elegir sus colores, guardarlos, verlos
+en la vista previa de Configuración… y el cliente que abría su link veía el
+naranja de BarberOS. Lo único que pasaba al guardar era un
+`document.documentElement.style.setProperty` que pintaba el PANEL del que
+guardaba — y se lo dejaba pintado al dueño de la plataforma que entró a
+administrar esa cuenta, hasta que recargara.
+
+Ahora es `variablesDelTema(business, habilitado)`, que devuelve un objeto de
+estilo, y `<TemaNegocio>` lo pone en un contenedor que envuelve todo lo que el
+cliente ve bajo el slug (la página, la reserva, la confirmación, sus turnos) y
+también el header. Nada global, nada que limpiar al salir.
+
+Tres detalles que hacen que funcione de verdad:
+
+- **`display: contents`** en el contenedor: no genera caja, así que no cambia
+  NADA del layout, pero las custom properties siguen heredando por el árbol.
+- **El texto del botón se calcula.** El único color que la barbería elige es el
+  de sus botones, y el texto era blanco fijo en el CSS: una barbería con el
+  dorado de su cartel se quedaba con botones que no se leen. `textoSobre()` usa
+  la luminancia relativa de WCAG con el corte en **0.179**, que sale de igualar
+  los dos contrastes. Ojo con subirlo a 0.5 "porque el blanco queda mejor": 0.5
+  es el medio de la luminosidad percibida, no de la luminancia, y con ese número
+  un dorado se lleva texto blanco con 2.4:1.
+- **`--border-accent` y `--primary-glow`** se derivan del color elegido. En
+  `:root` están escritas como un `rgba()` literal con el naranja adentro, así que
+  sin pisarlas el botón verde quedaba con el aro naranja alrededor.
+
+El panel sigue con los colores de BarberOS a propósito, y Configuración ahora lo
+dice.
+
+### La vista previa del link compartido (08/10/2026)
+
+Mandar `barberos.sacia.tech/volcadoclub` por WhatsApp mostraba una tarjeta que
+decía "BarberOS — Turnos para barberías": el nombre de la barbería no aparecía.
+Es justo donde más duele, porque ese link se reparte por WhatsApp y por la bio
+de Instagram y la tarjeta es lo único que se ve antes de decidir si se toca.
+
+Los crawlers que arman esa tarjeta **no ejecutan JavaScript**: leen el HTML que
+les llega. En una SPA ese HTML es el mismo para todas las rutas, así que ponerle
+las etiquetas desde React no sirve para nada — el crawler ya se fue.
+
+`api/preview.js` (función serverless de Vercel) devuelve un HTML mínimo con las
+etiquetas de ESA barbería. El `vercel.json` manda ahí **solo** a los user agents
+de los crawlers; una persona recibe la app como siempre y nunca pasa por ese
+código. Lee el negocio por la API REST con la clave web, que es pública igual
+que el documento del negocio: no hay credencial de servidor en `api/`.
+
+Dos cosas para no romper:
+
+- **Todo lo que entra al HTML se escapa.** El nombre y la presentación los
+  escribe el dueño y terminan adentro de un atributo: un `">` sin escapar cierra
+  la etiqueta y lo que sigue pasa a ser marcado.
+- **La imagen es la misma para todas.** El logo de la barbería es un data URL
+  adentro de su documento y un crawler necesita una URL https que pueda
+  descargar. Va `public/img/og-barberos.png` (1200x630, la genera
+  `scripts/generar-iconos.mjs`). El nombre sí es de cada una: va en el título,
+  que es lo que de verdad se lee.
+
+```bash
+node scripts/test-preview.mjs   # 24 casos, sin emulador ni red
+```
+
+### Mantenimiento: completar planes sin la clave de servicio (08/10/2026)
+
+`/super-admin` → Barberías → **Mantenimiento** completa en cada barbería los
+topes y las capacidades de su plan, y reconstruye el mapa público de las cuentas
+con sucursales. Siempre muestra primero qué haría; escribe recién al confirmar.
+
+Es lo mismo que `scripts/migrar-planes.mjs`, pero como callable
+(`migrarPlanes`). La razón no es comodidad: el script pide la **clave de
+servicio** del proyecto —acceso total, sin restricciones— bajada a mano al disco
+de quien lo corre, y confía en que se acuerde de borrarla. Para algo que hay que
+repetir cada vez que se agrega una capacidad nueva, eso es una llave maestra
+dando vueltas por una carpeta. Acá el permiso es el claim que el dueño de la
+plataforma ya tiene.
+
+No puede ser una escritura del browser: `capacidades`, `maxBarbers`,
+`maxSucursales` y `grupoId` son justo los campos que las Rules no dejan tocar a
+nadie salvo a la plataforma, y `/grupos` no lo escribe ningún browser. Con el
+Admin SDK pasa por arriba de las Rules — que es exactamente lo que hace falta, y
+exactamente por lo que está cerrado a `platform === true` y a nadie más.
+
+Es **idempotente**: correrlo de más no hace nada, y lo que ya está escrito manda
+(puede ser una excepción hecha a mano para esa cuenta). Una cuenta con un
+`planId` que no está en la lista se informa y no se toca: pasarla de plan es una
+charla con el cliente, no un script.
+
+El script sigue existiendo para el día que el panel no esté disponible.
 
 ### El panel global, por secciones (28/09/2026)
 
@@ -1190,9 +1378,9 @@ Email/Password habilitado, alcance del barbero cerrado en Rules.
 4. ~~Precio de los planes~~ Definidos el 06/10/2026: 15.000 / 20.000 / 30.000 /
    60.000 y el Personalizado a convenir. El alta sola crea cuentas en Básico, que
    es lo que hace que la prueba corte a los 5 días.
-   **Lo que falta a mano:** correr `node scripts/migrar-planes.mjs --aplicar`
-   contra producción para completarles `capacidades` a las cuentas que ya
-   estaban. Hasta entonces esas cuentas conservan todo habilitado.
+   **Lo que falta a mano:** `/super-admin` → Barberías → Mantenimiento, para
+   completarles `capacidades` a las cuentas que ya estaban. Hasta entonces esas
+   cuentas conservan todo habilitado.
 5. **Seña por Mercado Pago.** No empezado. El modelo correcto es OAuth de
    Mercado Pago ("Conectar con Mercado Pago" en Configuración): el dueño
    autoriza con su cuenta, MP le da a la plataforma un token de SU cuenta y la
@@ -1229,8 +1417,8 @@ Email/Password habilitado, alcance del barbero cerrado en Rules.
     slug, tickets, pendientes, y les vacía los claims a todos los usuarios
     del negocio. Botón "Eliminar barbería" en el panel global.
     `deleteBusinessRecord` de repository.js quedó sin uso.
-13. Subir logo por barbería. La foto del barbero ya va como data URL en el
-    doc; el logo puede ir igual (mismo `redimensionarImagen`) sin Storage.
+13. ~~Subir logo por barbería~~ Hecho: data URL en el documento del negocio,
+    con `redimensionarLogo`. Capacidad `logo`, del Plan Full.
 14. ~~PWA~~ Hecha, con push. Falta: TWA para Play Store si algún cliente lo
     pide (misma web envuelta con Bubblewrap).
 
@@ -1251,10 +1439,18 @@ node scripts/test-planes-emulador.mjs      # topes y funciones de cada plan
 node scripts/test-resenas-emulador.mjs     # reseñas: cuándo, quién y una por turno
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulador)
+node scripts/test-preview.mjs              # vista previa del link (tampoco)
 ```
 
-Hoy: claims 77, reservas 46, facturación 12, rules 118, alta 22, mercadopago 16,
-seña 14, sucursales 68, planes 38, reseñas 36, whatsapp 23. Todo en verde (472).
+Hoy: claims 77, reservas 46, facturación 14, rules 118, alta 22, mercadopago 16,
+seña 14, sucursales 68, planes 66, reseñas 36, whatsapp 23, preview 24. Todo en
+verde (524).
+
+Para mirar las páginas de presentación en el browser:
+
+```bash
+node scripts/sembrar-pagina-emulador.mjs
+```
 
 ---
 

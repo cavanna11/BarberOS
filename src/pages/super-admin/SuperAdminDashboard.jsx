@@ -20,7 +20,7 @@ import {
   upgradePlan,
   savePlatformConfig,
 } from '../../lib/repository';
-import { deleteBusiness } from '../../lib/functions';
+import { deleteBusiness, migrarPlanes } from '../../lib/functions';
 import NewBusinessModal from './NewBusinessModal';
 import PlanAMedida from '../../components/super-admin/PlanAMedida';
 import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
@@ -61,6 +61,112 @@ const TITULOS = {
   avisos: { titulo: 'Avisos', bajada: 'Lo que ve todo el staff arriba de su panel.' },
   equipo: { titulo: 'Equipo', bajada: 'Quién entra a este panel y con qué permisos.' },
 };
+
+/**
+ * Completar planes en las cuentas viejas.
+ *
+ * Hay que correrlo cada vez que se agrega una CAPACIDAD nueva, y la razón es
+ * contraintuitiva: en las Rules, una capacidad que no está escrita en el
+ * documento del negocio vale TRUE. Eso está bien para no sacarle de un día para
+ * el otro una función a una cuenta vieja, pero significa que cada capacidad
+ * nueva nace habilitada para TODAS hasta que acá se le escriba el false.
+ *
+ * Siempre muestra primero qué haría. Escribe recién cuando se confirma.
+ */
+function Mantenimiento() {
+  const [informe, setInforme] = useState(null);
+  const [corriendo, setCorriendo] = useState(false);
+  const [error, setError] = useState('');
+
+  const correr = async (aplicar) => {
+    setError('');
+    setCorriendo(true);
+    try {
+      const r = await migrarPlanes({ aplicar });
+      setInforme(r);
+    } catch (err) {
+      console.error('[mantenimiento] migrarPlanes falló:', err);
+      setError(err.message || 'No se pudo completar.');
+    } finally {
+      setCorriendo(false);
+    }
+  };
+
+  const hayQueHacer = informe && (informe.cambios.length > 0 || informe.grupos.length > 0);
+
+  return (
+    <div className="card" style={{ padding: 'var(--space-md)' }}>
+      <h3 style={{ marginBottom: 6 }}>Mantenimiento</h3>
+      <p className="text-sm text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
+        Completa en cada barbería los topes y las funciones que le corresponden a su plan, y
+        reconstruye el mapa de las cuentas con sucursales. <strong>Correlo cada vez que se
+        agrega una función nueva a la escalera de planes</strong>: hasta que lo hagas, esa
+        función queda habilitada para todas las cuentas que ya existían.
+      </p>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn btn-outline btn-sm" onClick={() => correr(false)} disabled={corriendo}>
+          {corriendo ? 'Revisando…' : 'Ver qué falta'}
+        </button>
+        {hayQueHacer && !informe.aplicado && (
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={corriendo}
+            onClick={() => {
+              const n = informe.cambios.length + informe.grupos.length;
+              if (window.confirm(`Se van a actualizar ${n} documento(s) en producción. ¿Confirmás?`)) correr(true);
+            }}
+          >
+            Aplicar los {informe.cambios.length + informe.grupos.length} cambios
+          </button>
+        )}
+      </div>
+
+      {error && <p className="text-sm" style={{ color: 'var(--danger)', marginTop: 10 }}>{error}</p>}
+
+      {informe && (
+        <div style={{ marginTop: 'var(--space-md)' }}>
+          {!hayQueHacer ? (
+            <p className="text-sm" style={{ color: 'var(--success)' }}>
+              ✅ Las {informe.total} barberías están al día. No hay nada que hacer.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm" style={{ marginBottom: 8 }}>
+                {informe.aplicado ? '✅ Aplicado sobre' : 'Habría que tocar'}{' '}
+                <strong>{informe.cambios.length}</strong> barbería(s)
+                {informe.grupos.length > 0 && <> y <strong>{informe.grupos.length}</strong> cuenta(s) con sucursales</>}
+                {' '}de {informe.total}.
+              </p>
+              <ul className="text-sm" style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {informe.cambios.map((c) => (
+                  <li key={c.id}>
+                    <strong>{c.name}</strong> <span className="text-muted">[{c.planId}]</span>{' '}
+                    <code style={{ fontSize: 11 }}>{Object.keys(c.campos).join(' · ')}</code>
+                  </li>
+                ))}
+                {informe.grupos.map((g) => (
+                  <li key={g.grupoId}>
+                    <span className="text-muted">mapa de sucursales</span> <strong>{g.grupoId}</strong>{' '}
+                    <code style={{ fontSize: 11 }}>{g.businessIds.length} locales</code>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {informe.sinPlan.length > 0 && (
+            <p className="text-sm" style={{ color: 'var(--warning)', marginTop: 10 }}>
+              ⚠️ {informe.sinPlan.length} cuenta(s) con un plan que no está en la lista
+              ({informe.sinPlan.map((x) => `${x.name} (${x.planId || 'sin plan'})`).join(', ')}).
+              No se tocan: hay que decidir a mano a qué plan pasan.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SuperAdminDashboard({ seccion = null }) {
   const { state, dispatch } = useBusiness();
@@ -1043,6 +1149,8 @@ export default function SuperAdminDashboard({ seccion = null }) {
               <p>No se encontraron establecimientos con los filtros aplicados.</p>
             </div>
           )}
+
+          {!soloLectura && <Mantenimiento />}
         </div>
       )}
 

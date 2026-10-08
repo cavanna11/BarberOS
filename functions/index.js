@@ -2259,6 +2259,117 @@ exports.webhookMercadoPago = mp.webhookMercadoPago;
 exports.devolverSena = mp.devolverSena;
 
 // ============================================================================
+// COMPLETAR PLANES EN LAS CUENTAS VIEJAS
+// ============================================================================
+// Escribe en cada barbería los topes y las capacidades que le corresponden a su
+// plan, y reconstruye el mapa público de cada cuenta con sucursales.
+//
+// Es lo mismo que hace `scripts/migrar-planes.mjs`, pero como callable. La
+// razón no es comodidad: el script pide la CLAVE DE SERVICIO del proyecto —
+// acceso total, sin restricciones— bajada a mano al disco de quien lo corre, y
+// confía en que se acuerde de borrarla después. Para una tarea que hay que
+// repetir cada vez que se agrega una capacidad nueva, eso es una llave maestra
+// dando vueltas por una carpeta. Acá el permiso es el claim que ya tiene el
+// dueño de la plataforma, y no hay nada que borrar.
+//
+// El script sigue existiendo para el día que el panel no esté disponible.
+//
+// Por qué no puede ser una escritura del browser: `capacidades`, `maxBarbers`,
+// `maxSucursales` y `grupoId` son justo los campos que las Rules no dejan tocar
+// a nadie salvo a la plataforma, y `/grupos` no lo escribe ningún browser. Con
+// el Admin SDK pasa por arriba de las Rules, que es exactamente lo que hace
+// falta y exactamente por lo que está cerrado al dueño de la plataforma y a
+// nadie más.
+
+/** Qué le falta a ESTE negocio para estar al día con su plan. */
+function faltantesDelNegocio(id, biz) {
+  const plan = camposDelPlan(biz.planId);
+  if (!plan) return { plan: null, cambios: {} };
+
+  // Lo que ya está escrito manda: puede ser una excepción hecha a mano para esa
+  // cuenta. Esto solo COMPLETA lo que falta.
+  const cambios = {};
+
+  if (biz.capacidades === undefined) {
+    cambios.capacidades = plan.capacidades;
+  } else {
+    // Ojo acá, que es el caso que no se ve: la cuenta tiene el campo, pero le
+    // puede faltar una capacidad NUEVA, porque el mapa se escribió con las que
+    // existían ese día. En las Rules una clave ausente vale TRUE —así una
+    // cuenta vieja no pierde lo que ya usaba—, así que cada capacidad nueva
+    // nace habilitada para todos hasta que se le escriba el false.
+    const faltan = Object.fromEntries(
+      Object.entries(plan.capacidades).filter(([k]) => biz.capacidades[k] === undefined)
+    );
+    if (Object.keys(faltan).length) cambios.capacidades = { ...biz.capacidades, ...faltan };
+  }
+
+  if (biz.maxSucursales === undefined) cambios.maxSucursales = plan.maxSucursales;
+  if (biz.maxBarbers === undefined) cambios.maxBarbers = plan.maxBarbers;
+  if (biz.grupoId === undefined) cambios.grupoId = null;
+
+  // Una SUCURSAL no tiene período de prueba propio: el plan es de la cuenta y
+  // vive en la principal. Las que se crearon antes de ese cambio lo copiaron, y
+  // por eso mostraban "se terminó tu prueba" por su cuenta.
+  if (biz.grupoId && biz.grupoId !== id && biz.trialEndsAt) cambios.trialEndsAt = null;
+
+  return { plan, cambios };
+}
+
+exports.migrarPlanes = onCall(async (request) => {
+  assertPlatformOwner(request);
+  const aplicar = request.data?.aplicar === true;
+
+  const negocios = await db.collection('businesses').get();
+  const lote = db.batch();
+  const cambios = [];
+  const sinPlan = [];
+
+  for (const d of negocios.docs) {
+    const biz = d.data();
+    const { plan, cambios: patch } = faltantesDelNegocio(d.id, biz);
+
+    if (!plan) {
+      sinPlan.push({ id: d.id, name: biz.name || d.id, planId: biz.planId || null });
+      continue;
+    }
+    if (!Object.keys(patch).length) continue;
+
+    cambios.push({ id: d.id, name: biz.name || d.id, planId: biz.planId, campos: patch });
+    if (aplicar) lote.set(d.ref, patch, { merge: true });
+  }
+
+  // El mapa público de cada cuenta con sucursales. `/grupos/{id}` lo escribe
+  // `crearSucursal`, pero los grupos creados antes de que ese mapa existiera no
+  // lo tienen — y sin él, el cliente que abre el link no puede elegir a qué
+  // local va. Se reconstruye desde `grupoId`, que es el dato de verdad.
+  const porGrupo = new Map();
+  for (const d of negocios.docs) {
+    const grupoId = d.get('grupoId');
+    if (!grupoId) continue;
+    if (!porGrupo.has(grupoId)) porGrupo.set(grupoId, []);
+    porGrupo.get(grupoId).push(d.id);
+  }
+
+  const grupos = [];
+  for (const [grupoId, ids] of porGrupo) {
+    const doc = await db.doc(`grupos/${grupoId}`).get();
+    const actuales = doc.exists ? doc.get('businessIds') || [] : [];
+    const iguales = actuales.length === ids.length && ids.every((i) => actuales.includes(i));
+    if (iguales) continue;
+
+    grupos.push({ grupoId, businessIds: ids });
+    if (aplicar) {
+      lote.set(db.doc(`grupos/${grupoId}`), { principalId: grupoId, businessIds: ids }, { merge: true });
+    }
+  }
+
+  if (aplicar && (cambios.length || grupos.length)) await lote.commit();
+
+  return { aplicado: aplicar, total: negocios.size, cambios, grupos, sinPlan };
+});
+
+// ============================================================================
 // 4. RECORDATORIOS DE WHATSAPP (esqueleto)
 // ============================================================================
 // Se activa cuando Meta aprueba el número y las plantillas. El token va como

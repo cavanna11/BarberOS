@@ -51,6 +51,12 @@ const BENEFICIOS = [
     texto: 'Cada barbería tiene su propia dirección. La ponés en el perfil de Instagram y tus clientes reservan solos, a cualquier hora, sin instalar nada.',
   },
   {
+    imagen: '/img/benefit-pagina.svg',
+    alt: 'La página de presentación de la barbería, con los botones para reservar, llegar y escribir',
+    titulo: 'Tu link abre tu página',
+    texto: 'Antes de la reserva, el que entra ve una página tuya: tu nombre, tu presentación y botones grandes para reservar, ver precios, llegar al local o escribirte. Elegís un diseño y se arma sola con lo que ya cargaste. Desde el Plan Intermedio.',
+  },
+  {
     imagen: '/img/benefit-app.svg',
     alt: 'Un celular con BarberOS instalada y una notificación de turno nuevo',
     titulo: 'Se instala en tu celular',
@@ -102,7 +108,7 @@ const BENEFICIOS = [
     imagen: '/img/benefit-branding.svg',
     alt: 'Vista previa del encabezado personalizado con la marca de la barbería',
     titulo: 'Con tu cara, no la nuestra',
-    texto: 'Tu nombre y tus colores. Para tu cliente es la agenda de tu barbería, no la de un proveedor.',
+    texto: 'Tu logo, tus colores y tu foto de portada, en tu página y en la reserva. Para tu cliente es la agenda de tu barbería, no la de un proveedor. Desde el Plan Full.',
   },
 ];
 
@@ -132,6 +138,10 @@ const FAQ = [
   {
     q: 'Tengo dos locales, ¿puedo manejar los dos?',
     a: 'Sí, con el Plan Empresarial: hasta cuatro sucursales con una sola cuenta. Entrás una vez y cambiás de sucursal desde el panel. Cada una es independiente de verdad — su equipo, sus servicios, sus horarios y su agenda, con su propio link para los clientes. Y tenés una pantalla que te muestra las cuatro juntas, con los ingresos del mes de cada una.',
+  },
+  {
+    q: '¿Puedo usar el link como mi página, en vez de la de Instagram?',
+    a: 'Sí, desde el Plan Intermedio. Tu link abre una página tuya —tu nombre, tu presentación y botones grandes para reservar, ver tus precios, llegar al local o escribirte por WhatsApp— y de ahí el cliente entra a sacar el turno. Elegís uno de los diseños y se arma sola con lo que ya está cargado: no hay que diseñar nada. Y si no la querés, la dejás apagada y tu link sigue abriendo la reserva como siempre.',
   },
   {
     q: '¿Y si ya tengo turnos anotados?',

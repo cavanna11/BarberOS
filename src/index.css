@@ -4346,3 +4346,518 @@ select.form-input {
   background: var(--primary-light, rgba(224, 61, 0, 0.06));
 }
 .pago-opcion input { margin-top: 3px; }
+
+/* ============================================================================
+   LA PÁGINA DE PRESENTACIÓN DE LA BARBERÍA  (/:slug, antes de la reserva)
+   ============================================================================
+   Tres plantillas, UNA estructura. Lo único que cambia entre `pagina-simple`,
+   `pagina-tarjeta` y `pagina-foto` es lo de acá abajo: el JSX es el mismo para
+   las tres (ver pages/client/PaginaBarberia.jsx). Es lo que hace que agregar
+   una cuarta sea escribir CSS y no una pantalla nueva que después hay que
+   acordarse de arreglar cuando se le suma un botón.
+
+   Pensada para el celular primero: es una página que se abre desde el link de
+   la bio de Instagram. Un solo ancho (420px), botones de 56px de alto y nada
+   que dependa de tener el mouse encima.
+   ============================================================================ */
+
+.pagina-cargando {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.pagina-barberia {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl) var(--space-md);
+  position: relative;
+  background: var(--bg);
+  /* El color del texto de los botones se calcula en config/theme.js contra el
+     color que eligió la barbería: su naranja puede necesitar texto negro. */
+  --sobre-primary: #ffffff;
+}
+
+.pagina-contenido {
+  width: 100%;
+  max-width: 420px;
+  position: relative;
+  z-index: 1;
+}
+
+/* -- Cabecera ------------------------------------------------------------- */
+
+.pagina-cabecera {
+  text-align: center;
+  margin-bottom: var(--space-xl);
+}
+
+.pagina-logo,
+.pagina-iniciales {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  margin: 0 auto var(--space-md);
+  display: block;
+  object-fit: cover;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+/* Las iniciales ocupan el lugar del logo cuando la cuenta no tiene logo propio
+   (es del Plan Full). No es un placeholder: un circulo con "VC" se lee como
+   una decision de diseño, y un recuadro vacio se lee como que falta algo. */
+.pagina-iniciales {
+  display: grid;
+  place-items: center;
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+  color: var(--sobre-primary);
+  background: var(--primary);
+}
+
+.pagina-nombre {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin-bottom: var(--space-sm);
+}
+
+.pagina-bajada {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: var(--space-sm);
+}
+
+.pagina-direccion {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* -- Los botones ---------------------------------------------------------- */
+
+.pagina-botones {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.pagina-grupo {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-top: var(--space-sm);
+  padding-left: 2px;
+}
+
+.pagina-boton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: var(--space-sm) var(--space-md);
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.pagina-boton:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.pagina-boton-texto { line-height: 1.2; }
+
+.pagina-boton-nota {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.pagina-boton-principal {
+  /* Un respiro antes del boton de reservar. Cuando arriba esta la lista de
+     locales, sin esto se lee como un tercer local de la lista en vez de como
+     el paso siguiente. */
+  margin-top: var(--space-xs);
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--sobre-primary);
+  font-size: 1.0625rem;
+  box-shadow: var(--shadow-md);
+}
+
+.pagina-boton-principal:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+/* El local en el que ya esta y el que no toma turnos: se ven, no se tocan. */
+.pagina-boton-aqui,
+.pagina-boton-cerrado {
+  cursor: default;
+}
+
+.pagina-boton-aqui {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.pagina-boton-cerrado {
+  opacity: 0.55;
+}
+
+.pagina-boton-aqui:hover,
+.pagina-boton-cerrado:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* -- La lista de servicios, que se despliega ------------------------------ */
+
+.pagina-servicios {
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.pagina-servicios li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 10px 0;
+  font-size: 0.9375rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.pagina-servicios li:last-child { border-bottom: none; }
+
+.pagina-servicio-precio {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* -- Pie ------------------------------------------------------------------ */
+
+.pagina-pie {
+  margin-top: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+}
+
+.pagina-pie a { color: var(--text-secondary); }
+
+.pagina-marca {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+/* -- Plantilla "Tarjeta" -------------------------------------------------- */
+/* Todo adentro de una tarjeta, apoyada en el fondo alternado. Es la que mejor
+   queda cuando la barberia no cargo logo ni foto: el recuadro da el encuadre
+   que la plantilla simple deja en manos del contenido. */
+
+.pagina-tarjeta {
+  background: var(--bg-secondary);
+}
+
+.pagina-tarjeta .pagina-contenido {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl) var(--space-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.pagina-tarjeta .pagina-boton {
+  background: var(--bg-secondary);
+}
+
+/* Y el principal vuelve a su color. La regla de arriba tiene dos clases y la de
+   `.pagina-boton-principal` una sola, asi que sin esto le gana por especificidad
+   y deja el boton de reservar con el fondo gris y el texto blanco: invisible.
+   Pasa en la plantilla Tarjeta y en ningun lado mas, porque es la unica que le
+   cambia el fondo a todos los botones. */
+.pagina-tarjeta .pagina-boton-principal {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--sobre-primary);
+}
+
+.pagina-tarjeta .pagina-boton-principal:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.pagina-tarjeta .pagina-boton-aqui {
+  background: var(--primary-light);
+}
+
+/* -- Plantilla "Con foto de portada" -------------------------------------- */
+/* La foto va a pantalla completa y los botones encima. El velo oscuro no es
+   decoracion: sin el, el nombre de la barberia es ilegible contra una foto
+   clara, y la foto la elige el dueño sin que nadie revise el contraste. */
+
+.pagina-con-foto { background: #0a0a0a; }
+
+.pagina-portada {
+  position: fixed;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  z-index: 0;
+}
+
+.pagina-portada::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.72) 100%);
+}
+
+.pagina-con-foto .pagina-nombre { color: #ffffff; }
+.pagina-con-foto .pagina-bajada { color: rgba(255,255,255,0.88); }
+.pagina-con-foto .pagina-direccion { color: rgba(255,255,255,0.7); }
+.pagina-con-foto .pagina-grupo { color: rgba(255,255,255,0.65); }
+
+/* Vidrio esmerilado para que los botones se separen de la foto sin tapar que
+   hay una foto detras. `backdrop-filter` no esta en todos los navegadores
+   viejos; si no esta, queda el blanco translucido, que ya alcanza. */
+.pagina-con-foto .pagina-boton {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.pagina-con-foto .pagina-boton:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.pagina-con-foto .pagina-boton-nota { color: rgba(255,255,255,0.72); }
+
+.pagina-con-foto .pagina-boton-principal {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--sobre-primary);
+  backdrop-filter: none;
+}
+
+.pagina-con-foto .pagina-boton-aqui {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.pagina-con-foto .pagina-servicios {
+  background: rgba(0, 0, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.pagina-con-foto .pagina-servicios li { border-bottom-color: rgba(255,255,255,0.15); }
+.pagina-con-foto .pagina-servicio-precio { color: rgba(255,255,255,0.8); }
+.pagina-con-foto .pagina-pie a { color: rgba(255,255,255,0.8); }
+.pagina-con-foto .pagina-marca { color: rgba(255,255,255,0.5); }
+
+/* El logo y las iniciales, sobre la foto, necesitan su propio borde. */
+.pagina-con-foto .pagina-logo,
+.pagina-con-foto .pagina-iniciales {
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: var(--shadow-xl);
+}
+
+@media (max-width: 480px) {
+  .pagina-barberia { padding: var(--space-lg) var(--space-md); }
+  .pagina-nombre { font-size: 1.5rem; }
+  .pagina-tarjeta .pagina-contenido { padding: var(--space-lg) var(--space-md); }
+}
+
+/* Para quien pidio menos movimiento: los botones no se levantan. */
+@media (prefers-reduced-motion: reduce) {
+  .pagina-boton,
+  .pagina-boton:hover { transition: none; transform: none; }
+}
+
+/* ============================================================================
+   "MI PÁGINA" — el editor, en el panel
+   ============================================================================ */
+
+.pagina-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.pagina-links {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.pagina-plantillas {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+
+.pagina-plantilla {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  padding: var(--space-md);
+}
+
+.pagina-plantilla:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* La miniatura de cada plantilla: tres barras que imitan los botones. Dibujada
+   con CSS y no con una captura, porque una captura queda vieja apenas se le
+   cambia algo a la página de verdad. */
+.pagina-muestra {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.pagina-muestra span {
+  display: block;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--border-hover);
+}
+
+.pagina-muestra span:first-child { background: var(--primary); }
+
+.pagina-muestra-simple { background: var(--bg); }
+
+/* El marco gris alrededor es lo que distingue a esta miniatura de la Simple.
+   Sin el, las dos se ven como tres barras sobre un fondo claro y el dueño elige
+   a ciegas. Es un borde y no un padding porque el borde SI se ve como el aire
+   que queda alrededor de la tarjeta. */
+.pagina-muestra-tarjeta {
+  background: var(--surface);
+  border: 8px solid var(--bg-secondary);
+  padding: 8px;
+}
+
+.pagina-muestra-tarjeta span { background: var(--bg-secondary); }
+.pagina-muestra-tarjeta span:first-child { background: var(--primary); }
+
+.pagina-muestra-foto {
+  background: linear-gradient(160deg, #4a4a4a 0%, #0a0a0a 100%);
+}
+
+.pagina-muestra-foto span { background: rgba(255, 255, 255, 0.35); }
+.pagina-muestra-foto span:first-child { background: var(--primary); }
+
+/* -- Foto de portada ------------------------------------------------------ */
+
+.pagina-portada-editor {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pagina-portada-muestra {
+  width: 160px;
+  height: 90px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.pagina-portada-muestra img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* -- Botones libres ------------------------------------------------------- */
+
+.pagina-boton-editor {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-bottom: var(--space-sm);
+}
+
+.pagina-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+}
+
+.pagina-automaticos {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pagina-automaticos li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  font-size: 0.9375rem;
+}
+
+@media (max-width: 768px) {
+  .pagina-plantillas { grid-template-columns: 1fr; }
+  .pagina-boton-editor { grid-template-columns: 1fr; }
+  .pagina-switch { flex-direction: column; align-items: stretch; }
+}

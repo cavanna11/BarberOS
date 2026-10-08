@@ -53,10 +53,14 @@ export const CAPACIDADES = {
   colores: 'colores',
   /** Logo propio arriba del link público. */
   logo: 'logo',
+  /** Su propia página de presentación antes de la reserva. */
+  pagina: 'pagina',
+  /** La plantilla con imagen de fondo a pantalla completa. */
+  paginaFoto: 'paginaFoto',
 };
 
-const SIN_CAPACIDADES = { fotoPerfil: false, colores: false, logo: false };
-const TODAS = { fotoPerfil: true, colores: true, logo: true };
+const SIN_CAPACIDADES = { fotoPerfil: false, colores: false, logo: false, pagina: false, paginaFoto: false };
+const TODAS = { fotoPerfil: true, colores: true, logo: true, pagina: true, paginaFoto: true };
 
 export const PLANS = [
   {
@@ -81,9 +85,13 @@ export const PLANS = [
     maxBarbers: 3,
     monthlyFee: 20000,
     whatsappQuota: 500,
-    capacidades: { ...SIN_CAPACIDADES, fotoPerfil: true },
+    // La página SÍ, pero sin logo ni colores propios: esos siguen en el Full.
+    // Donde iría el logo van las iniciales de la barbería, que es lo que hace
+    // que no se vea como un hueco.
+    capacidades: { ...SIN_CAPACIDADES, fotoPerfil: true, pagina: true },
     features: [
       'Foto de perfil de cada barbero',
+      'Tu página de presentación antes de la reserva',
       'Configuración básica de la barbería',
     ],
   },
@@ -99,8 +107,8 @@ export const PLANS = [
     capacidades: { ...TODAS },
     features: [
       'Foto de perfil de cada barbero',
-      'Tus colores en la página de reservas',
-      'Tu logo arriba del link público',
+      'Tu página con tu logo, tus colores y foto de portada',
+      'Tus colores también en la reserva',
       'Soporte prioritario por WhatsApp',
     ],
   },
@@ -117,7 +125,10 @@ export const PLANS = [
     features: [
       'Una sola cuenta para administrarlas todas',
       'Cada sucursal con su equipo, servicios y horarios',
-      'Marca y logo propios de cada sucursal',
+      // Dicho explícitamente: sin esta línea, la tarjeta del Empresarial lista
+      // menos funciones que la del Full y se lee como si perdiera algo.
+      'Todo lo del Plan Full, en cada sucursal',
+      'Una página propia por sucursal, con su marca',
       'Números de cada sucursal y de todas juntas',
       'Soporte prioritario por WhatsApp',
     ],

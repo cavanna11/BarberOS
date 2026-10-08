@@ -212,8 +212,54 @@ service cloud.firestore {
             .hasAny(['primaryColor', 'secondaryColor', 'accentColor'])
          || capacidadEn(resource.data, 'colores')) &&
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['logoUrl'])
-         || capacidadEn(resource.data, 'logo'))
+         || capacidadEn(resource.data, 'logo')) &&
+        // Prender o apagar su página de presentación. El interruptor vive en el
+        // documento del negocio —y no adentro de la configuración de la página—
+        // para que la ruta pública sepa si tiene que ir a buscarla SIN una
+        // lectura de más: el que no la tiene no paga nada.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['paginaActiva'])
+         || capacidadEn(resource.data, 'pagina'))
       ));
+
+      // ── La página de presentación de la barbería ─────────────────────────
+      // Lo que ve el cliente antes de reservar: plantilla, portada y botones.
+      //
+      // Va en un documento APARTE y no en el del negocio por el peso: el
+      // documento del negocio lo lee cada visitante del link Y vive en la
+      // suscripción del panel, así que sumarle una imagen de portada sería
+      // pagarla en cada pantalla. Acá se baja solo cuando alguien abre la
+      // página. Por eso también es `public/` y no `private/`: lo lee cualquiera.
+      match /public/pagina {
+        allow read: if true;
+
+        // La escribe el dueño, si el plan la incluye. La imagen de portada es
+        // otra capacidad (Full): un Intermedio puede tener su página, pero con
+        // las plantillas que no llevan foto.
+        //
+        // `create, update` y no `write`: en un delete `request.resource` es
+        // null y preguntarle por `coverUrl` da "Null value error", que cuenta
+        // como denegado. El borrado va aparte y sin condiciones sobre el
+        // contenido nuevo, porque no hay contenido nuevo.
+        allow create, update: if canManage(bizId)
+                        && capacidadDelNegocio(bizId, 'pagina')
+                        && portadaRazonable()
+                        && (!('coverUrl' in request.resource.data)
+                            || request.resource.data.coverUrl == null
+                            || capacidadDelNegocio(bizId, 'paginaFoto'));
+
+        allow delete: if canManage(bizId);
+      }
+
+      // La portada va como data URL adentro de este documento. Sin tope, una
+      // imagen pesada se lleva puesto el límite de 1 MB por documento y la
+      // página deja de poder guardarse. 400 KB es una foto de 1200 px de ancho
+      // bien comprimida, que es todo lo que hace falta para un fondo.
+      function portadaRazonable() {
+        return !('coverUrl' in request.resource.data)
+               || request.resource.data.coverUrl == null
+               || (request.resource.data.coverUrl is string
+                   && request.resource.data.coverUrl.size() < 400000);
+      }
 
       // Facturación: solo la plataforma. Ni el dueño la lee.
       match /private/billing {

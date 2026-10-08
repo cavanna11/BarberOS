@@ -80,7 +80,21 @@ for (const d of negocios.docs) {
   // Lo que ya está escrito manda: puede ser una excepción que le hicimos a esa
   // cuenta a mano. Esto solo COMPLETA lo que falta.
   const cambios = {};
-  if (biz.capacidades === undefined) cambios.capacidades = plan.capacidades;
+  if (biz.capacidades === undefined) {
+    cambios.capacidades = plan.capacidades;
+  } else {
+    // La cuenta ya tiene el campo, pero puede faltarle una capacidad NUEVA: el
+    // mapa se escribió con las que existían ese día. Y en las Rules una clave
+    // que no está vale TRUE —así una cuenta vieja no pierde lo que ya usaba—,
+    // así que una capacidad nueva nace habilitada para todos hasta que se le
+    // escriba el false. Acá se le completan solo las que faltan, con el valor
+    // de su plan; las que ya tiene no se tocan, porque pueden ser una
+    // excepción que le hicimos a mano.
+    const faltan = Object.fromEntries(
+      Object.entries(plan.capacidades).filter(([k]) => biz.capacidades[k] === undefined)
+    );
+    if (Object.keys(faltan).length) cambios.capacidades = { ...biz.capacidades, ...faltan };
+  }
   if (biz.maxSucursales === undefined) cambios.maxSucursales = plan.maxSucursales;
   if (biz.maxBarbers === undefined) cambios.maxBarbers = plan.maxBarbers;
   if (biz.grupoId === undefined) cambios.grupoId = null;

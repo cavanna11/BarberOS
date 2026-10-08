@@ -583,7 +583,12 @@ export default function BookingPage() {
               // Cada sucursal tiene su propio link: navegar ahí deja la reserva
               // entera (equipo, servicios, horarios, agenda) apuntando al local
               // correcto, sin ningún caso especial en el medio.
-              navigate(`/${suc.slug}`);
+              //
+              // A `/reservar` y no a la raíz del slug: el que está acá ya decidió
+              // que viene a sacar un turno, y la raíz puede ser la página de
+              // presentación de esa sucursal. Volver a empezar sería un paso de
+              // más que él no pidió.
+              navigate(`/${suc.slug}/reservar`);
             }
           }}
         />
@@ -617,7 +622,7 @@ export default function BookingPage() {
     if (step === 4 && !user) {
       setError('');
       try { sessionStorage.setItem(VOLVER_DEL_LOGIN, '1'); } catch { /* sin storage, vuelve al paso 4 */ }
-      navigate('/login', { state: { from: `/${slug}` } });
+      navigate('/login', { state: { from: `/${slug}/reservar` } });
       return;
     }
     setError('');

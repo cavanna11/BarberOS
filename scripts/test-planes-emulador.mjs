@@ -4,7 +4,8 @@
 //   node scripts/test-planes-emulador.mjs
 //
 // Lo que se prueba acá es exactamente lo que NO alcanza con esconder en la
-// interfaz: la cantidad de barberos, la foto de perfil, los colores y el logo.
+// interfaz: la cantidad de barberos, la foto de perfil, los colores, el logo y
+// la página de presentación.
 // Todo se golpea como lo haría alguien con la consola abierta — escribiendo
 // directo a Firestore con su propio token, o llamando a la Cloud Function.
 //
@@ -247,9 +248,10 @@ await db.doc('businesses/plan-medida').set({
   planId: 'personalizado',
   maxBarbers: 2,
   maxSucursales: 2,
-  // Foto si, colores si, logo no: una combinacion que no existe en ningun plan
-  // de la lista y que tiene que respetarse igual.
-  capacidades: { fotoPerfil: true, colores: true, logo: false },
+  // Foto si, colores si, logo no, pagina si pero sin foto de portada: una
+  // combinacion que no existe en ningun plan de la lista y que tiene que
+  // respetarse igual.
+  capacidades: { fotoPerfil: true, colores: true, logo: false, pagina: true, paginaFoto: false },
   grupoId: null,
 });
 await db.doc('businesses/plan-medida/private/billing').set({ planId: 'personalizado', monthlyFee: 45000, debt: 0 });
@@ -274,6 +276,165 @@ r = await llamar('crearSucursal', duenoMedida, { businessId: 'plan-medida', nomb
 chequear('a medida: puede abrir la segunda sucursal (tope 2)', Boolean(r.ok?.businessId), JSON.stringify(r));
 r = await llamar('crearSucursal', duenoMedida, { businessId: 'plan-medida', nombre: 'Tercera', slug: 'plan-medida-3' });
 chequear('a medida: la tercera se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+
+// -- 7. La pagina de presentacion --------------------------------------------
+// Dos capacidades distintas y conviene no confundirlas: `pagina` (tenerla, del
+// Intermedio) y `paginaFoto` (la plantilla con la foto de portada, del Full).
+// Un Intermedio tiene su pagina pero con las plantillas que no llevan foto.
+//
+// La configuracion vive en un documento APARTE, `businesses/{id}/public/pagina`,
+// y no adentro del negocio: la portada es una imagen y el documento del negocio
+// lo lee cada visitante del link.
+console.log('\nLa pagina de presentacion (del Intermedio; la foto, del Full):');
+
+const PORTADA = 'data:image/jpeg;base64,' + 'A'.repeat(300);
+
+// El cliente la lee SIN cuenta: es lo primero que ve al abrir el link.
+await db.doc(`businesses/${CUENTAS.full}/public/pagina`).set({ plantilla: 'simple' });
+const sinCuenta = await fetch(`${DOCS}/businesses/${CUENTAS.full}/public/pagina`);
+chequear('cualquiera lee la pagina sin estar logueado', sinCuenta.status === 200, `HTTP ${sinCuenta.status}`);
+
+// El interruptor vive en el negocio, y tambien esta atado al plan: si no,
+// un Basico se prende la pagina con la consola abierta y la tiene gratis.
+await esperar('Basico: NO puede prender su pagina',
+  editar(duenoBasico, `businesses/${CUENTAS.basico}`, { paginaActiva: true }), 'denegado');
+await esperar('Basico: NO puede escribir la configuracion de la pagina',
+  editar(duenoBasico, `businesses/${CUENTAS.basico}/public/pagina`, { plantilla: 'simple' }), 'denegado');
+
+await esperar('Intermedio: SI puede prender su pagina',
+  editar(duenoInter, `businesses/${CUENTAS.intermedio}`, { paginaActiva: true }), 'permitido');
+await esperar('Intermedio: SI puede elegir plantilla y textos',
+  editar(duenoInter, `businesses/${CUENTAS.intermedio}/public/pagina`,
+    { plantilla: 'tarjeta', titular: 'La barberia del barrio', bajada: 'Cortes clasicos' }), 'permitido');
+
+// Y aca esta la linea entre las dos capacidades.
+await esperar('Intermedio: la foto de portada NO',
+  editar(duenoInter, `businesses/${CUENTAS.intermedio}/public/pagina`, { coverUrl: PORTADA }), 'denegado');
+await esperar('Full: la foto de portada SI',
+  editar(duenoFull, `businesses/${CUENTAS.full}/public/pagina`, { coverUrl: PORTADA }), 'permitido');
+
+// Sin tope, una imagen pesada se lleva puesto el limite de 1 MB por documento y
+// la pagina deja de poder guardarse nunca mas.
+await esperar('Full: una portada gigante se rechaza igual',
+  editar(duenoFull, `businesses/${CUENTAS.full}/public/pagina`,
+    { coverUrl: 'data:image/jpeg;base64,' + 'A'.repeat(500000) }), 'denegado');
+
+// Quitarla siempre se puede: es lo que pasa cuando alguien baja de plan y hay
+// que poder dejar la pagina sin la foto que ya no le corresponde.
+await esperar('Full: sacar la portada se permite',
+  editar(duenoFull, `businesses/${CUENTAS.full}/public/pagina`, { coverUrl: null }), 'permitido');
+
+// Aislamiento: la pagina es de lectura publica, la escritura no.
+await esperar('nadie escribe la pagina de otra barberia',
+  editar(duenoInter, `businesses/${CUENTAS.full}/public/pagina`, { titular: 'Robada' }), 'denegado');
+await esperar('nadie prende la pagina de otra barberia',
+  editar(duenoInter, `businesses/${CUENTAS.full}`, { paginaActiva: false }), 'denegado');
+
+// El barbero no: la pagina es la cara comercial de la barberia y la maneja el
+// dueno. `canManage` es dueno o plataforma, no el staff.
+await esperar('el barbero no edita la pagina de la barberia',
+  editar(barberoBasico, `businesses/${CUENTAS.basico}/public/pagina`, { titular: 'Mia' }), 'denegado');
+
+// El plan a medida, con la combinacion rara: pagina si, portada no.
+await esperar('a medida: la pagina esta habilitada',
+  editar(duenoMedida, 'businesses/plan-medida/public/pagina', { plantilla: 'simple' }), 'permitido');
+await esperar('a medida: la portada NO',
+  editar(duenoMedida, 'businesses/plan-medida/public/pagina', { coverUrl: PORTADA }), 'denegado');
+
+// Y una cuenta vieja, sin el campo escrito: la pagina le queda habilitada, por
+// la misma razon que la foto. Nace apagada igual, asi que no le cambia el link.
+await esperar('una cuenta vieja puede tener pagina',
+  editar(duenoViejo, 'businesses/plan-viejo/public/pagina', { plantilla: 'simple' }), 'permitido');
+
+// -- 8. Completar planes en las cuentas viejas (migrarPlanes) ----------------
+// Va AL FINAL a proposito: escribe sobre las barberias que sembraron las
+// secciones anteriores, asi que correrla antes les cambiaria el escenario.
+//
+// Lo que de verdad se prueba aca es el caso que no se ve a simple vista: una
+// cuenta que YA tiene el campo `capacidades` pero a la que le falta una clave
+// NUEVA. En las Rules una clave ausente vale TRUE, asi que esa cuenta tiene la
+// funcion nueva habilitada aunque la interfaz le diga que no.
+console.log('\nCompletar planes en las cuentas viejas:');
+
+const plataforma = await usuario('plataforma-planes@gmail.com', { platform: true });
+
+// Solo el dueño de la plataforma. Esto escribe con el Admin SDK, por arriba de
+// las Rules, justo sobre los campos que las Rules no le dejan tocar a nadie.
+r = await llamar('migrarPlanes', duenoFull, { aplicar: true });
+chequear('migrar: un dueño de barberia no puede correrla', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+r = await llamar('migrarPlanes', null, { aplicar: true });
+chequear('migrar: sin sesion tampoco', r.error === 'UNAUTHENTICATED', JSON.stringify(r));
+
+// Una cuenta de Basico creada DESPUES de la escalera nueva pero ANTES de que
+// existiera la pagina: tiene el mapa escrito, sin las claves nuevas.
+await db.recursiveDelete(db.doc('businesses/plan-a-medias')).catch(() => {});
+await db.doc('businesses/plan-a-medias').set({
+  id: 'plan-a-medias', name: 'A medias', slug: 'plan-a-medias', isFrozen: false,
+  planId: 'basico', maxBarbers: 1, maxSucursales: 1, grupoId: null,
+  capacidades: { fotoPerfil: false, colores: false, logo: false },
+});
+const duenoAMedias = await usuario('dueno-a-medias@gmail.com', {
+  businessId: 'plan-a-medias', role: 'owner', professionalId: null,
+});
+
+// Antes de migrar, la regla la deja prender la pagina: la clave no esta escrita.
+await esperar('antes de migrar, a la cuenta a medias le queda la pagina habilitada',
+  editar(duenoAMedias, 'businesses/plan-a-medias', { paginaActiva: true }), 'permitido');
+
+// El informe primero. No escribe nada.
+r = await llamar('migrarPlanes', plataforma, { aplicar: false });
+chequear('migrar: el informe dice que esta cuenta necesita cambios',
+  r.ok?.cambios?.some((c) => c.id === 'plan-a-medias'), JSON.stringify(r).slice(0, 300));
+chequear('migrar: el informe NO escribe',
+  (await db.doc('businesses/plan-a-medias').get()).get('capacidades').pagina === undefined,
+  JSON.stringify((await db.doc('businesses/plan-a-medias').get()).get('capacidades')));
+
+// Y ahora sí.
+r = await llamar('migrarPlanes', plataforma, { aplicar: true });
+chequear('migrar: aplicado', r.ok?.aplicado === true, JSON.stringify(r).slice(0, 200));
+
+let caps = (await db.doc('businesses/plan-a-medias').get()).get('capacidades');
+chequear('migrar: le completo la clave que faltaba, con el valor de su plan',
+  caps.pagina === false && caps.paginaFoto === false, JSON.stringify(caps));
+chequear('migrar: no le toco las que ya tenia',
+  caps.fotoPerfil === false && caps.colores === false && caps.logo === false, JSON.stringify(caps));
+
+await esperar('despues de migrar, la cuenta a medias YA NO puede prender la pagina',
+  editar(duenoAMedias, 'businesses/plan-a-medias', { paginaActiva: false }), 'denegado');
+
+// Una cuenta vieja de verdad, sin el campo: se lo escribe entero. `plan-viejo`
+// es del plan `pro`, que es historico y lleva todas las capacidades — asi que
+// conserva lo que ya usaba, que es justamente el punto.
+caps = (await db.doc('businesses/plan-viejo').get()).get('capacidades');
+chequear('migrar: a la cuenta vieja le escribio el campo entero',
+  caps && caps.fotoPerfil === true && caps.colores === true && caps.pagina === true, JSON.stringify(caps));
+
+// Lo que no se decide solo: un plan que no esta en la lista se informa y no se
+// toca. Pasarla de plan es una charla con el cliente, no un script.
+await db.doc('businesses/plan-inventado').set({
+  id: 'plan-inventado', name: 'Inventada', slug: 'plan-inventado', isFrozen: false, planId: 'platino',
+});
+r = await llamar('migrarPlanes', plataforma, { aplicar: true });
+chequear('migrar: una cuenta con un plan desconocido se informa y no se toca',
+  r.ok?.sinPlan?.some((x) => x.id === 'plan-inventado')
+  && (await db.doc('businesses/plan-inventado').get()).get('capacidades') === undefined,
+  JSON.stringify(r.ok?.sinPlan));
+
+// El mapa publico de las cuentas con sucursales. Sin el, el cliente que abre el
+// link de una cuenta con varios locales no puede elegir a cual va.
+await db.doc('grupos/plan-medida').delete().catch(() => {});
+r = await llamar('migrarPlanes', plataforma, { aplicar: true });
+const mapa = await db.doc('grupos/plan-medida').get();
+chequear('migrar: reconstruye el mapa de sucursales que no estaba',
+  mapa.exists && mapa.get('businessIds').length === 2 && mapa.get('principalId') === 'plan-medida',
+  JSON.stringify(mapa.data()));
+
+// Y correrla dos veces seguidas no tiene nada que hacer: es idempotente, que es
+// lo que hace que se pueda apretar el boton sin pensarlo.
+r = await llamar('migrarPlanes', plataforma, { aplicar: false });
+chequear('migrar: correrla de nuevo no encuentra nada que hacer',
+  r.ok?.cambios?.length === 0 && r.ok?.grupos?.length === 0,
+  JSON.stringify({ cambios: r.ok?.cambios?.length, grupos: r.ok?.grupos?.length }));
 
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron`);
 if (fallas.length) console.log('Fallaron:\n  - ' + fallas.join('\n  - '));
