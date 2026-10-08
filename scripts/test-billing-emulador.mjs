@@ -78,6 +78,12 @@ await negocio('prueba-vencida', { trialEndsAt: enDias(-1) }, { monthlyFee: 12000
 // 6. Ya saldó la deuda: se le tiene que descongelar.
 await negocio('saldado', { isFrozen: true }, { monthlyFee: 12000, debt: 0, nextBillingDate: enDias(20) });
 
+// 7. Cuenta de REGALO: abono 0, con la prueba vencida hace un mes. No acumula
+//    deuda y no se suspende nunca — que es exactamente lo que significa
+//    regalarla. Es la otra cara del aviso del panel: el cero se confirma a mano
+//    justamente porque esto es lo que pasa después.
+await negocio('regalada', { trialEndsAt: enDias(-30) }, { monthlyFee: 0, debt: 0, nextBillingDate: enDias(-30) });
+
 console.log('\nCorriendo runBilling...');
 await correrBilling();
 
@@ -111,6 +117,11 @@ const avisos = await db.collection('platform/notifications/items').where('type',
 chequear('prueba vencida: avisa a la plataforma',
   avisos.docs.some((d) => d.data().businessId === 'prueba-vencida'),
   JSON.stringify(avisos.docs.map((d) => d.data().businessId)));
+
+console.log('\nCuenta de regalo:');
+b = await leerBilling('regalada');
+chequear('regalada: no acumula deuda aunque pasen los vencimientos', b.debt === 0, JSON.stringify(b));
+chequear('regalada: NO se suspende', (await leerNegocio('regalada')).isFrozen === false, '');
 
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

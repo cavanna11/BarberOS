@@ -365,7 +365,7 @@ export async function borrarCobro(id) {
   await deleteDoc(doc(db, 'platform', 'cobros', 'items', id));
 }
 
-export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFee, maxBarbers = null, maxSucursales = 1, capacidades = null, sucursales = [] }) {
+export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFee, maxBarbers = null, maxSucursales = 1, capacidades = null, sucursales = [], limpiarPrueba = false }) {
   const batch = writeBatch(db);
   // La cuota y los TOPES viven en el documento público porque el panel del
   // negocio los muestra y los hace cumplir; el abono en el privado porque es
@@ -376,6 +376,11 @@ export async function upgradePlan(businessId, { planId, whatsappQuota, monthlyFe
   // compró, tiene que estar escrito en su documento.
   batch.update(businessDoc(businessId), {
     planId, whatsappQuota, maxBarbers, maxSucursales,
+    // Una cuenta de regalo (abono 0) no tiene prueba que se venza: dejarle el
+    // `trialEndsAt` puesto le muestra al barbero "se terminó tu prueba,
+    // escribinos para activar tu plan" para siempre, sobre una cuenta que
+    // justamente no se le va a cortar nunca.
+    ...(limpiarPrueba ? { trialEndsAt: null } : {}),
     // Las funciones que el plan habilita (foto, colores, logo). Las Rules leen
     // ESTE campo: sin escribirlo, cambiar de plan no cambiaría nada de lo que
     // la base acepta.

@@ -116,12 +116,13 @@ export default function NewBusinessModal({ onClose, onCreated }) {
 
     if (!form.ownerName.trim()) e.ownerName = 'Poné el nombre del dueño.';
 
-    // El abono tiene que ser un número mayor a cero. Con 0, runBilling nunca le
-    // suma deuda, la cuenta no se suspende nunca y los días de prueba no cortan
-    // nada: queda gratis para siempre sin que nadie se entere.
-    const abono = Number(form.monthlyFee);
-    if (!Number.isFinite(abono) || abono <= 0) {
-      e.monthlyFee = 'Poné el abono mensual acordado. Con 0 la cuenta nunca se suspende por falta de pago.';
+    // El abono en cero es válido: una cuenta de regalo. Lo que se rechaza es el
+    // campo VACÍO, que también vale 0 y es la forma de regalar una cuenta sin
+    // querer. El cero tipeado a mano se confirma al guardar (handleSubmit).
+    const escrito = String(form.monthlyFee).trim();
+    const abono = Number(escrito);
+    if (!escrito || !Number.isFinite(abono) || abono < 0) {
+      e.monthlyFee = 'Poné el abono mensual acordado. Si la cuenta es de regalo, escribí 0.';
     }
 
     const pass = form.passwordElegida.trim();
@@ -137,6 +138,16 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     ev.preventDefault();
     if (guardando) return;
     if (!(await validate())) return;
+
+    // Regalar una cuenta es una decisión comercial, pero tiene una consecuencia
+    // que conviene decir en voz alta: sin abono no hay deuda, y sin deuda la
+    // cuenta no se suspende nunca — ni cuando se termine la prueba.
+    if (Number(form.monthlyFee) === 0 && !window.confirm(
+      `Abono $0: esta cuenta no va a acumular deuda y NUNCA se va a suspender por ` +
+      `falta de pago, tenga o no días de prueba.
+
+¿Es una cuenta de regalo?`
+    )) return;
 
     const plan = getPlan(form.planId);
     // A medida: los topes y las funciones salen del formulario, no del plan.

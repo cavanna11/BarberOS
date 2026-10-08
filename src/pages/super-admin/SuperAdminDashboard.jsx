@@ -311,15 +311,24 @@ export default function SuperAdminDashboard({ seccion = null }) {
     const quota = aMedida
       ? campos.whatsappQuota
       : (plan.whatsappQuota != null ? plan.whatsappQuota : 0);
-    const fee = (!aMedida && plan.monthlyFee != null) ? plan.monthlyFee : Number(upgradeFee) || 0;
+    const escrito = String(upgradeFee).trim();
+    const fee = (!aMedida && plan.monthlyFee != null) ? plan.monthlyFee : Number(escrito) || 0;
     const planLabel = plan ? plan.label : 'Plan Personalizado';
 
-    // Con abono 0 la cuenta no acumula deuda y no se suspende nunca: queda
-    // gratis sin que nadie se dé cuenta hasta mirar la facturación.
-    if (!(fee > 0)) {
-      alert('Poné el abono mensual acordado: con 0 la cuenta nunca se suspende por falta de pago.');
+    // El abono en cero es una decisión válida: una cuenta de regalo. Lo que no
+    // puede pasar es que quede en cero SIN QUERER —el campo vacío cuenta como
+    // 0— y que te enteres tres meses después mirando la facturación. Así que el
+    // campo vacío se rechaza, y el cero tipeado a mano se confirma.
+    if (!escrito && !(fee > 0)) {
+      alert('Poné el abono mensual acordado. Si la cuenta es de regalo, escribí 0.');
       return;
     }
+    if (!(fee > 0) && !window.confirm(
+      `Abono $0: ${selectedBusiness.name} no va a acumular deuda y NUNCA se va a suspender ` +
+      `por falta de pago. Es una cuenta de regalo.
+
+¿Confirmás?`
+    )) return;
 
     try {
       await upgradePlan(selectedBusiness.id, {
@@ -338,6 +347,8 @@ export default function SuperAdminDashboard({ seccion = null }) {
         sucursales: (businesses || [])
           .filter((o) => o.grupoId && o.grupoId === (selectedBusiness.grupoId || selectedBusiness.id))
           .map((o) => o.id),
+        // Sin abono no hay prueba que vencer.
+        limpiarPrueba: !(fee > 0),
       });
     } catch (err) {
       console.error('[super-admin] No se pudo cambiar el plan:', err);
@@ -918,7 +929,16 @@ export default function SuperAdminDashboard({ seccion = null }) {
                   }}>
                     <div>
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block' }}>Abono Mensual</span>
-                      <strong style={{ fontSize: 14 }}>{formatPrice(b.monthlyFee)}</strong>
+                      {/* Abono 0 es una cuenta de regalo, y se dice así. Un
+                          "$ 0" suelto entre las demás parece un dato que falta
+                          o un error de carga. */}
+                      {b.monthlyFee ? (
+                        <strong style={{ fontSize: 14 }}>{formatPrice(b.monthlyFee)}</strong>
+                      ) : (
+                        <strong style={{ fontSize: 13, color: 'var(--primary)' }} title="No acumula deuda ni se suspende">
+                          🎁 De regalo
+                        </strong>
+                      )}
                     </div>
                     <div>
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block' }}>Deuda Acumulada</span>

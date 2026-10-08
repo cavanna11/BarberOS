@@ -314,15 +314,22 @@ El panel muestra un banner con los días restantes y, al vencer, uno que invita 
 escribir por WhatsApp.
 
 Con 0 días la cuenta se cobra desde el arranque, con el primer vencimiento a un
-mes. **Nunca des una cuenta de regalo sin días de prueba**: con cualquiera de los
-tres planes acumula deuda al mes y se congela sola.
+mes.
+
+**Para regalar una cuenta, el abono va en 0** (no los días de prueba): sin abono
+no hay deuda, y sin deuda `runBilling` no la congela nunca. El alta y el cambio
+de plan lo piden confirmar a mano, porque el campo vacío también vale 0 y esa es
+la forma de regalar una cuenta sin querer; el panel global la muestra como
+"🎁 De regalo" en vez de "$ 0", y al ponerla en 0 se le borra el `trialEndsAt`
+—si no, el barbero vería "se terminó tu prueba" para siempre en una cuenta que
+no se le va a cortar—. Hay dos casos en la suite de facturación.
 
 ```bash
 node scripts/test-billing-emulador.mjs
 ```
 
-11 casos: cobro, acumulación de varios vencimientos, suspensión, reactivación al
-saldar, prueba vigente y prueba vencida.
+14 casos: cobro, acumulación de varios vencimientos, suspensión, reactivación al
+saldar, prueba vigente, prueba vencida y cuenta de regalo.
 
 ### Quién puede asignar permisos
 
@@ -1235,7 +1242,7 @@ Email/Password habilitado, alcance del barbero cerrado en Rules.
 firebase emulators:start --only auth,firestore,functions
 node scripts/test-claims-emulador.mjs      # permisos y cuentas con contraseña
 node scripts/test-reservas-emulador.mjs    # validación de turnos
-node scripts/test-billing-emulador.mjs     # cobro, suspensión y prueba gratis
+node scripts/test-billing-emulador.mjs     # cobro, suspensión, prueba gratis y regalo
 node scripts/test-alta-emulador.mjs        # alta sola con 5 días de prueba
 node scripts/test-mercadopago-emulador.mjs # conexión de la cuenta y sus tokens
 node scripts/test-sena-emulador.mjs        # seña: horario guardado y vencimiento
@@ -1247,7 +1254,7 @@ node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulado
 ```
 
 Hoy: claims 77, reservas 46, facturación 12, rules 118, alta 22, mercadopago 16,
-seña 14, sucursales 68, planes 38, reseñas 36, whatsapp 23. Todo en verde (470).
+seña 14, sucursales 68, planes 38, reseñas 36, whatsapp 23. Todo en verde (472).
 
 ---
 
