@@ -928,7 +928,12 @@ una tarjeta por local con dirección, teléfono, link y qué le falta configurar
 era fácil cargarle el WhatsApp o el equipo de otro local. La barra naranja de la plataforma
 dice en qué sucursal está y tiene **"Cambiar de sucursal"**. La elección vive en
 sessionStorage (`utils/sucursalEnPanel.js`) y se borra en cada "Administrar esta cuenta".
-Al DUEÑO no le cambia nada: entra directo, con su selector de siempre.
+Corregido el mismo día: **las sucursales son iguales, no hay una central.** El dueño también
+elige al entrar ("¿En qué sucursal vas a trabajar?") y tiene "Cambiar de sucursal" arriba.
+El alta de una cuenta con plan de varias sucursales pide el nombre de la MARCA (`nombreCuenta`,
+en el doc de la primera) y una ficha por sucursal con su link, teléfono, WhatsApp y dirección;
+la primera es el documento que se crea, las demás salen por `crearSucursal`. Y `crearSucursal`
+ya no hereda teléfono ni WhatsApp de la principal (las tres quedaban con el mismo número).
 
 ### El cliente elige sucursal (07/10/2026)
 

@@ -342,7 +342,7 @@ export default function SucursalesPage() {
 // ─── Alta de una sucursal ───────────────────────────────────────────────────
 function NuevaSucursalModal({ sucursales, cuentaId, onClose, onCreada }) {
   const [form, setForm] = useState({
-    nombre: '', slug: '', telefono: '', direccion: '', ciudad: '', copiarServiciosDe: '',
+    nombre: '', slug: '', telefono: '', whatsapp: '', direccion: '', ciudad: '', copiarServiciosDe: '',
   });
   const [slugTocado, setSlugTocado] = useState(false);
   const [error, setError] = useState('');
@@ -380,6 +380,7 @@ function NuevaSucursalModal({ sucursales, cuentaId, onClose, onCreada }) {
         businessId: cuentaId,
         slug: form.slug,
         telefono: form.telefono.trim(),
+        whatsapp: form.whatsapp.trim(),
         direccion: form.direccion.trim(),
         ciudad: form.ciudad.trim(),
         copiarServiciosDe: form.copiarServiciosDe || null,
@@ -442,11 +443,21 @@ function NuevaSucursalModal({ sucursales, cuentaId, onClose, onCreada }) {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
               <div className="form-group">
-                <label className="form-label">Teléfono (opcional)</label>
+                <label className="form-label">Teléfono de este local</label>
                 <input
                   className="form-input"
                   value={form.telefono}
                   onChange={(e) => set({ telefono: e.target.value })}
+                  maxLength={40}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">WhatsApp de este local</label>
+                <input
+                  className="form-input"
+                  value={form.whatsapp}
+                  onChange={(e) => set({ whatsapp: e.target.value })}
+                  placeholder="si es otro que el teléfono"
                   maxLength={40}
                 />
               </div>

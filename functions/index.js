@@ -1885,7 +1885,11 @@ exports.crearSucursal = onCall(async (request) => {
       primaryColor: principal.primaryColor || '#E85D2A',
       secondaryColor: principal.secondaryColor || '#1A1A1A',
       accentColor: principal.accentColor || '#E85D2A',
-      phone: limpiar(request.data?.telefono, 40) || principal.phone || '',
+      // Teléfono, WhatsApp y dirección son de CADA local: no se heredan. Antes
+      // la sucursal sin teléfono se quedaba con el de la principal, y el
+      // WhatsApp se copiaba siempre — los clientes de las tres escribían al
+      // mismo número.
+      phone: limpiar(request.data?.telefono, 40),
       email: principal.email || '',
       address: limpiar(request.data?.direccion, 120),
       city: limpiar(request.data?.ciudad, 60) || principal.city || '',
@@ -1896,7 +1900,11 @@ exports.crearSucursal = onCall(async (request) => {
       minCancelHours: principal.minCancelHours ?? 2,
       onlineBookingEnabled: true,
       welcomeMessage: '',
-      socialLinks: { instagram: '', whatsapp: principal.socialLinks?.whatsapp || '' },
+      socialLinks: {
+        // El Instagram suele ser uno solo para la marca: si no mandan otro, el de la cuenta.
+        instagram: limpiar(request.data?.instagram, 60) || principal.socialLinks?.instagram || '',
+        whatsapp: limpiar(request.data?.whatsapp, 40),
+      },
       // El plan es de la CUENTA: la sucursal lo lleva copiado para que el panel
       // sepa sus topes, pero el abono se cobra una vez, en el principal.
       planId: principal.planId || null,

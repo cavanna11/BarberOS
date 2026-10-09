@@ -131,7 +131,11 @@ export default function AdminLayout() {
   // el WhatsApp o el equipo de otro local.
   const grupoCuenta = business?.grupoId || null;
   const [, setEligio] = useState(0); // solo para repintar al elegir / cambiar
-  const debeElegirSucursal = platformOwner && esMultiSucursal && !sucursalElegidaEnPanel(grupoCuenta);
+  // Vale para la plataforma Y para el dueño: las sucursales son iguales, no hay
+  // una "central" desde la que se manejan las otras. Se entra a una.
+  const debeElegirSucursal = (platformOwner || isOwner) && esMultiSucursal && !sucursalElegidaEnPanel(grupoCuenta);
+  const nombreCuenta = (sucursales.find((s) => s.id === grupoCuenta) || business)?.nombreCuenta
+    || sucursales.find((s) => s.id === grupoCuenta)?.name || business?.name || '';
   const elegirSucursal = (s) => {
     elegirSucursalEnPanel(grupoCuenta, s.id);
     dispatch({ type: 'SET_CURRENT_BUSINESS', payload: s.id });
@@ -146,10 +150,10 @@ export default function AdminLayout() {
   // Una sucursal es un negocio del grupo que NO es el principal. El plan, el
   // abono y la prueba viven en el principal.
   const esSucursal = Boolean(business?.grupoId) && business.grupoId !== business.id;
-  const principalDelGrupo = esSucursal ? sucursales.find((s) => s.id === business.grupoId) : null;
   // "Mis sucursales" aparece si la cuenta ya tiene más de una, o si el plan las
   // permite (así el del Plan Empresarial encuentra dónde abrir la primera).
-  const muestraSucursales = isOwner && (esMultiSucursal || permiteSucursales(business));
+  // La plataforma también: es por donde le agrega locales a una cuenta que ya existe.
+  const muestraSucursales = (isOwner || platformOwner) && (esMultiSucursal || permiteSucursales(business));
   const navItems = (isOwner ? ownerNavItems : adminNavItems)
     .filter((item) => !item.soloSucursales || muestraSucursales)
     .filter((item) => !item.soloMembresias || platformOwner
@@ -230,7 +234,7 @@ export default function AdminLayout() {
               value={businessId || ''}
               onChange={(e) => {
                 dispatch({ type: 'SET_CURRENT_BUSINESS', payload: e.target.value });
-                if (platformOwner) elegirSucursalEnPanel(grupoCuenta, e.target.value);
+                elegirSucursalEnPanel(grupoCuenta, e.target.value);
                 setSidebarOpen(false);
               }}
             >
@@ -330,16 +334,20 @@ export default function AdminLayout() {
             sabe si es que no tiene o si es que se maneja en otro lado. */}
         {/* La plataforma tiene su propia barra (abajo), que ya dice en qué
             sucursal está y deja cambiarla: este aviso es para el dueño. */}
-        {isOwner && esSucursal && !platformOwner && (
+        {/* En qué sucursal está trabajando, y la puerta para ir a otra. Todas
+            iguales: ninguna es "la central". */}
+        {isOwner && esMultiSucursal && !platformOwner && (
           <div className="notice notice-info aviso-sucursal">
             <span>
-              Estás en <strong>{business.name}</strong>, una sucursal de{' '}
-              <strong>{principalDelGrupo?.name || 'tu cuenta'}</strong>. El plan y el abono se
-              manejan en la principal.
+              {debeElegirSucursal
+                ? <>Elegí la sucursal de <strong>{nombreCuenta}</strong> con la que vas a trabajar.</>
+                : <>Estás en la sucursal <strong>{business.name}</strong>.</>}
             </span>
-            <Link to="/admin/sucursales" style={{ color: 'inherit', fontWeight: 700, whiteSpace: 'nowrap' }}>
-              Ver mis sucursales →
-            </Link>
+            {!debeElegirSucursal && (
+              <button type="button" className="btn btn-sm btn-outline" onClick={cambiarDeSucursal}>
+                🏠 Cambiar de sucursal
+              </button>
+            )}
           </div>
         )}
 
@@ -366,10 +374,10 @@ export default function AdminLayout() {
           >
             <span>
               {esMultiSucursal && debeElegirSucursal
-                ? <>Elegí qué sucursal de <strong>{sucursales.find((s) => s.id === grupoCuenta)?.name || business.name}</strong> vas a administrar.</>
+                ? <>Elegí qué sucursal de <strong>{nombreCuenta}</strong> vas a administrar.</>
                 : esMultiSucursal
                   ? <>Estás administrando la sucursal <strong>{business.name}</strong>
-                      {business.id !== grupoCuenta && <> de {sucursales.find((s) => s.id === grupoCuenta)?.name || 'la cuenta'}</>}
+                      {nombreCuenta && nombreCuenta !== business.name && <> de {nombreCuenta}</>}
                       {' '}como dueño de la plataforma.</>
                   : <>Estás administrando <strong>{business.name}</strong> como dueño de la plataforma.</>}
             </span>
@@ -435,7 +443,7 @@ export default function AdminLayout() {
         <div className="admin-content">
           <AvisoPlataforma />
           {business && debeElegirSucursal ? (
-            <ElegirSucursalPanel sucursales={sucursales} grupoId={grupoCuenta} onElegir={elegirSucursal} />
+            <ElegirSucursalPanel sucursales={sucursales} grupoId={grupoCuenta} nombreCuenta={nombreCuenta} esPlataforma={platformOwner} onElegir={elegirSucursal} />
           ) : business ? (
             <Outlet />
           ) : esperandoNegocios ? (

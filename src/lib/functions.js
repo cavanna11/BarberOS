@@ -175,8 +175,8 @@ export function crearBarberiaDePrueba(datos) {
  * Devuelve { businessId, slug, grupoId, serviciosCopiados }. Después hay que
  * llamar a `refreshClaims()` para que el token traiga la sucursal.
  */
-export function crearSucursal({ nombre, slug, telefono = '', direccion = '', ciudad = '', businessId = null, copiarServiciosDe = null }) {
-  return llamar('crearSucursal', { nombre, slug, telefono, direccion, ciudad, businessId, copiarServiciosDe });
+export function crearSucursal({ nombre, slug, telefono = '', whatsapp = '', instagram = '', direccion = '', ciudad = '', businessId = null, copiarServiciosDe = null }) {
+  return llamar('crearSucursal', { nombre, slug, telefono, whatsapp, instagram, direccion, ciudad, businessId, copiarServiciosDe });
 }
 
 /**

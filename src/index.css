@@ -5270,3 +5270,9 @@ select.form-input {
 .elegir-sucursal-ok { font-size: 13px; color: var(--success); margin-top: 4px; }
 .elegir-sucursal-boton { margin-top: auto; padding-top: 8px; align-self: stretch; justify-content: center; }
 .elegir-sucursal-tarjeta:hover .elegir-sucursal-boton { filter: brightness(1.05); }
+
+/* Alta de una cuenta con varias sucursales: una ficha por local. */
+.alta-sucursal { padding: var(--space-md); margin-bottom: var(--space-sm); }
+.alta-sucursal-cabecera { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.alta-sucursal-grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+@media (max-width: 600px) { .alta-sucursal-grilla { grid-template-columns: 1fr; } }

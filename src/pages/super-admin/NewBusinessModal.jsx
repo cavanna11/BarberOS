@@ -4,7 +4,7 @@ import { PLANS, DEFAULT_PLAN_ID, getPlan, DEFAULT_BUSINESS_HOURS, precioLindo } 
 import { isPlatformOwner } from '../../config/platform';
 import { slugify, isReservedSlug } from '../../utils/slug';
 import { createBusiness, isSlugAvailable } from '../../lib/repository';
-import { setBusinessAdmin, createOwnerWithPassword } from '../../lib/functions';
+import { setBusinessAdmin, createOwnerWithPassword, crearSucursal } from '../../lib/functions';
 import PlanAMedida from '../../components/super-admin/PlanAMedida';
 import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
 
@@ -46,6 +46,13 @@ const EMPTY_FORM = {
   passwordElegida: '',
 };
 
+// Una sucursal en el alta de una cuenta con varias. Cada local tiene SU
+// teléfono, SU WhatsApp y SU dirección: no hay datos "de la cuenta" que se
+// repitan en todas (era lo que confundía: el alta pedía un teléfono, y la
+// cuenta tiene tres).
+const SUCURSAL_VACIA = { nombre: '', slug: '', slugEditado: false, telefono: '', whatsapp: '', direccion: '', ciudad: '' };
+const BARRIOS = ['Centro', 'Norte', 'Sur', 'Oeste'];
+
 /** Primer cobro un mes después del alta, para que no arranque con deuda. */
 function nextMonthISO() {
   const d = new Date();
@@ -70,8 +77,20 @@ export default function NewBusinessModal({ onClose, onCreated }) {
   const [guardando, setGuardando] = useState(false);
   // Al crear, en vez de cerrar mostramos los datos para entregarle al cliente.
   const [created, setCreated] = useState(null);
+  // Las sucursales, cuando el plan permite más de una.
+  const [sucs, setSucs] = useState([{ ...SUCURSAL_VACIA }]);
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+
+  // ¿Cuántas sucursales permite el plan elegido? null = sin límite.
+  const planElegido = getPlan(form.planId);
+  const topeSucursales = planElegido?.aMedida === true
+    ? camposDeLaMedida(medida).maxSucursales
+    : (planElegido?.maxSucursales ?? 1);
+  // Con más de una posible, el alta es "una cuenta con N sucursales": los datos
+  // del local se cargan por sucursal, no una vez para todas.
+  const multi = topeSucursales === null || topeSucursales > 1;
+  const setSuc = (i, patch) => setSucs((prev) => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
   // El slug se genera del nombre hasta que el usuario lo edita a mano.
   const handleNameChange = (name) => {
@@ -90,9 +109,21 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     const e = {};
     const email = form.ownerEmail.trim().toLowerCase();
 
-    if (!form.name.trim()) e.name = 'Poné el nombre del negocio.';
+    if (!form.name.trim()) e.name = multi ? 'Poné el nombre de la cuenta (la marca).' : 'Poné el nombre del negocio.';
 
-    if (!form.slug) {
+    if (multi) {
+      // Cada sucursal con su nombre y su link, sin repetir entre ellas.
+      const vistos = new Set();
+      for (const [i, x] of sucs.entries()) {
+        const clave = 'suc' + i;
+        if (x.nombre.trim().length < 2) e[clave] = 'Poné el nombre de esta sucursal.';
+        else if (!x.slug || x.slug.length < 3) e[clave] = 'Falta el link (mínimo 3 letras).';
+        else if (isReservedSlug(x.slug)) e[clave] = 'Ese link es una ruta interna de la app. Elegí otro.';
+        else if (vistos.has(x.slug)) e[clave] = 'Dos sucursales no pueden tener el mismo link.';
+        else if (!(await isSlugAvailable(x.slug))) e[clave] = 'Ya hay una barbería con el link /' + x.slug + '.';
+        vistos.add(x.slug);
+      }
+    } else if (!form.slug) {
       e.slug = 'Hace falta un slug para la URL pública.';
     } else if (isReservedSlug(form.slug)) {
       e.slug = `"${form.slug}" es una ruta interna de la app. Elegí otro.`;
@@ -157,17 +188,23 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     const trialDays = Number(form.trialDays) || 0;
 
     // El id lo asigna Firestore al crear el documento.
+    // En una cuenta con sucursales, el documento que se crea acá ES la primera
+    // sucursal (con sus datos); las demás se abren después con crearSucursal.
+    const primera = multi ? sucs[0] : null;
     const business = {
-      name: form.name.trim(),
-      slug: form.slug,
+      name: multi ? primera.nombre.trim() : form.name.trim(),
+      slug: multi ? primera.slug : form.slug,
+      // El nombre de la MARCA, que agrupa a las sucursales: lo muestran la
+      // pantalla de "elegí sucursal" y el panel global.
+      ...(multi ? { nombreCuenta: form.name.trim() } : {}),
       logoUrl: null,
       primaryColor: form.primaryColor,
       secondaryColor: form.secondaryColor,
       accentColor: form.accentColor,
-      phone: form.phone.trim(),
+      phone: multi ? primera.telefono.trim() : form.phone.trim(),
       email: form.email.trim(),
-      address: form.address.trim(),
-      city: form.city.trim(),
+      address: multi ? primera.direccion.trim() : form.address.trim(),
+      city: multi ? primera.ciudad.trim() : form.city.trim(),
       country: 'Argentina',
       currency: 'ARS',
       timezone: 'America/Argentina/Buenos_Aires',
@@ -177,7 +214,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
       welcomeMessage: form.welcomeMessage.trim(),
       socialLinks: {
         instagram: form.instagram.trim(),
-        whatsapp: form.whatsapp.trim(),
+        whatsapp: multi ? primera.whatsapp.trim() : form.whatsapp.trim(),
       },
       // Público: la UI del negocio muestra el plan y su cuota de mensajes.
       planId: plan.id,
@@ -255,7 +292,30 @@ export default function NewBusinessModal({ onClose, onCreated }) {
         claims = { ok: false, status: null, error: err.message, password: null };
       }
 
-      setCreated({ business: { ...business, id: businessId, ...billing }, ownerAdmin, claims });
+      // Las demás sucursales. Después del dueño a propósito: crearSucursal le
+      // pasa el permiso de cada una a los dueños de la cuenta.
+      const sucursalesCreadas = [{ nombre: business.name, slug: business.slug, ok: true }];
+      if (multi) {
+        for (const x of sucs.slice(1)) {
+          try {
+            await crearSucursal({
+              businessId,
+              nombre: x.nombre.trim(),
+              slug: x.slug,
+              telefono: x.telefono.trim(),
+              whatsapp: x.whatsapp.trim(),
+              direccion: x.direccion.trim(),
+              ciudad: x.ciudad.trim(),
+            });
+            sucursalesCreadas.push({ nombre: x.nombre.trim(), slug: x.slug, ok: true });
+          } catch (err) {
+            console.error('[NewBusinessModal] No se pudo crear una sucursal:', err);
+            sucursalesCreadas.push({ nombre: x.nombre.trim(), slug: x.slug, ok: false, error: err.message });
+          }
+        }
+      }
+
+      setCreated({ business: { ...business, id: businessId, ...billing }, ownerAdmin, claims, sucursalesCreadas });
     } catch (err) {
       console.error('[NewBusinessModal] No se pudo crear el negocio:', err);
       setErrors({
@@ -281,18 +341,29 @@ export default function NewBusinessModal({ onClose, onCreated }) {
           </div>
           <div className="modal-body">
             <p className="text-secondary" style={{ fontSize: 13, marginBottom: 'var(--space-md)' }}>
-              <strong>{created.business.name}</strong> ya está activa. Esto es lo que
+              <strong>{created.business.nombreCuenta || created.business.name}</strong> ya está activa. Esto es lo que
               tenés que pasarle al cliente:
             </p>
 
             <div className="form-group">
-              <label className="form-label">Link público para sus clientes</label>
-              <div
-                className="form-input"
-                style={{ background: 'var(--bg-secondary)', fontFamily: 'monospace', fontSize: 13, wordBreak: 'break-all' }}
-              >
-                {publicUrl}
-              </div>
+              <label className="form-label">
+                {created.sucursalesCreadas?.length > 1 ? 'Link de cada sucursal' : 'Link público para sus clientes'}
+              </label>
+              {created.sucursalesCreadas?.length > 1 ? (
+                created.sucursalesCreadas.map((x) => (
+                  <div key={x.slug} className="form-input" style={{ background: 'var(--bg-secondary)', fontSize: 13, wordBreak: 'break-all', marginBottom: 6 }}>
+                    <strong>{x.nombre}</strong>: <span style={{ fontFamily: 'monospace' }}>{window.location.origin}/{x.slug}</span>
+                    {!x.ok && <div className="form-error">No se pudo crear: {x.error} Creala desde Mis sucursales.</div>}
+                  </div>
+                ))
+              ) : (
+                <div
+                  className="form-input"
+                  style={{ background: 'var(--bg-secondary)', fontFamily: 'monospace', fontSize: 13, wordBreak: 'break-all' }}
+                >
+                  {publicUrl}
+                </div>
+              )}
             </div>
 
             <div className="form-group">
@@ -354,7 +425,8 @@ export default function NewBusinessModal({ onClose, onCreated }) {
 
             <div className="notice notice-info">
               <strong>Falta configurar</strong> antes de entregarla: cargar los
-              profesionales con sus horarios y el catálogo de servicios. Sin eso
+              profesionales con sus horarios y el catálogo de servicios
+              {created.sucursalesCreadas?.length > 1 ? ' de CADA sucursal' : ''}. Sin eso
               el link público no puede tomar turnos.
               <br />
               Abono: {created.business.monthlyFee.toLocaleString('es-AR')} ARS/mes ·
@@ -395,7 +467,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
 
           {/* Identidad */}
           <div className="form-group">
-            <label className="form-label">Nombre del negocio <span className="required">*</span></label>
+            <label className="form-label">{multi ? 'Nombre de la cuenta (la marca)' : 'Nombre del negocio'} <span className="required">*</span></label>
             <input
               className={`form-input ${errors.name ? 'error' : ''}`}
               value={form.name}
@@ -406,6 +478,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
             {errors.name && <div className="form-error">{errors.name}</div>}
           </div>
 
+          {!multi && (
           <div className="form-group">
             <label className="form-label">URL pública <span className="required">*</span></label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -426,6 +499,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                   Este es el link que el negocio le comparte a sus clientes. Se genera del nombre, podés cambiarlo.
                 </div>}
           </div>
+          )}
 
           {/* Dueño */}
           <h4 style={{ marginTop: 'var(--space-lg)', borderBottom: '1px solid var(--border-color)', paddingBottom: 6 }}>
@@ -600,11 +674,81 @@ export default function NewBusinessModal({ onClose, onCreated }) {
             </p>
           </div>
 
+          {/* Cuenta con sucursales: los datos van POR LOCAL. */}
+          {multi && (
+            <>
+              <h4 style={{ marginTop: 'var(--space-lg)', borderBottom: '1px solid var(--border-color)', paddingBottom: 6 }}>
+                Sucursales
+              </h4>
+              <p className="text-secondary" style={{ fontSize: 12, marginBottom: 'var(--space-md)' }}>
+                Cada sucursal es una barbería completa, con su link, su teléfono, su WhatsApp y su
+                dirección. El equipo, los servicios y los horarios se cargan después, adentro de cada una.
+                {topeSucursales !== null && ` El plan permite hasta ${topeSucursales}.`}
+              </p>
+              {sucs.map((x, i) => (
+                <div key={i} className="card alta-sucursal">
+                  <div className="alta-sucursal-cabecera">
+                    <strong>Sucursal {i + 1}</strong>
+                    {sucs.length > 1 && (
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSucs((p) => p.filter((_, j) => j !== i))}>
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                  <div className="alta-sucursal-grilla">
+                    <div className="form-group">
+                      <label className="form-label">Nombre <span className="required">*</span></label>
+                      <input
+                        className="form-input"
+                        value={x.nombre}
+                        placeholder={`${form.name.trim() || 'Barbería'} ${BARRIOS[i] || i + 1}`}
+                        onChange={(e) => setSuc(i, { nombre: e.target.value, ...(x.slugEditado ? {} : { slug: slugify(e.target.value) }) })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Link <span className="required">*</span></label>
+                      <input
+                        className="form-input"
+                        style={{ fontFamily: 'monospace' }}
+                        value={x.slug}
+                        placeholder="barberia-centro"
+                        onChange={(e) => setSuc(i, { slug: slugify(e.target.value), slugEditado: true })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Teléfono</label>
+                      <input className="form-input" value={x.telefono} onChange={(e) => setSuc(i, { telefono: e.target.value })} placeholder="+54 11 1234-5678" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">WhatsApp</label>
+                      <input className="form-input" value={x.whatsapp} onChange={(e) => setSuc(i, { whatsapp: e.target.value })} placeholder="si es otro que el teléfono" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Dirección</label>
+                      <input className="form-input" value={x.direccion} onChange={(e) => setSuc(i, { direccion: e.target.value })} placeholder="Av. Corrientes 1234" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Ciudad</label>
+                      <input className="form-input" value={x.ciudad} onChange={(e) => setSuc(i, { ciudad: e.target.value })} />
+                    </div>
+                  </div>
+                  {errors['suc' + i] && <div className="form-error">{errors['suc' + i]}</div>}
+                </div>
+              ))}
+              {(topeSucursales === null || sucs.length < topeSucursales) && (
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setSucs((p) => [...p, { ...SUCURSAL_VACIA }])}>
+                  + Agregar otra sucursal
+                </button>
+              )}
+            </>
+          )}
+
           {/* Contacto */}
           <h4 style={{ marginTop: 'var(--space-lg)', borderBottom: '1px solid var(--border-color)', paddingBottom: 6 }}>
-            Datos del local
+            {multi ? 'Datos de la cuenta (iguales en todas las sucursales)' : 'Datos del local'}
           </h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 'var(--space-md)' }}>
+            {!multi && (
             <div className="form-group">
               <label className="form-label">Teléfono</label>
               <input
@@ -614,6 +758,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 placeholder="+54 11 1234-5678"
               />
             </div>
+            )}
             <div className="form-group">
               <label className="form-label">Email de contacto</label>
               <input
@@ -623,24 +768,28 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 placeholder="hola@barberia.com"
               />
             </div>
-            <div className="form-group">
-              <label className="form-label">Dirección</label>
-              <input
-                className="form-input"
-                value={form.address}
-                onChange={(e) => set({ address: e.target.value })}
-                placeholder="Av. Corrientes 1234"
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Ciudad</label>
-              <input
-                className="form-input"
-                value={form.city}
-                onChange={(e) => set({ city: e.target.value })}
-                placeholder="Buenos Aires"
-              />
-            </div>
+            {!multi && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Dirección</label>
+                  <input
+                    className="form-input"
+                    value={form.address}
+                    onChange={(e) => set({ address: e.target.value })}
+                    placeholder="Av. Corrientes 1234"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Ciudad</label>
+                  <input
+                    className="form-input"
+                    value={form.city}
+                    onChange={(e) => set({ city: e.target.value })}
+                    placeholder="Buenos Aires"
+                  />
+                </div>
+              </>
+            )}
             <div className="form-group">
               <label className="form-label">Instagram</label>
               <input
@@ -650,15 +799,17 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 placeholder="@barberiadonjose"
               />
             </div>
-            <div className="form-group">
-              <label className="form-label">WhatsApp</label>
-              <input
-                className="form-input"
-                value={form.whatsapp}
-                onChange={(e) => set({ whatsapp: e.target.value })}
-                placeholder="+5411..."
-              />
-            </div>
+            {!multi && (
+              <div className="form-group">
+                <label className="form-label">WhatsApp</label>
+                <input
+                  className="form-input"
+                  value={form.whatsapp}
+                  onChange={(e) => set({ whatsapp: e.target.value })}
+                  placeholder="+5411..."
+                />
+              </div>
+            )}
           </div>
 
           {/* Operación y marca */}
@@ -733,7 +884,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
             Cancelar
           </button>
           <button type="submit" className="btn btn-primary" disabled={guardando}>
-            {guardando ? 'Creando…' : 'Crear cuenta'}
+            {guardando ? 'Creando…' : multi && sucs.length > 1 ? `Crear cuenta con ${sucs.length} sucursales` : 'Crear cuenta'}
           </button>
         </div>
       </form>

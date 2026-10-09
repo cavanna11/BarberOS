@@ -22,17 +22,18 @@ function faltantes(b) {
   return f;
 }
 
-export default function ElegirSucursalPanel({ sucursales, grupoId, onElegir }) {
-  const ordenadas = [...sucursales].sort((a, b) => (a.id === grupoId ? -1 : b.id === grupoId ? 1 : String(a.name).localeCompare(String(b.name))));
-  const principal = sucursales.find((s) => s.id === grupoId);
+export default function ElegirSucursalPanel({ sucursales, grupoId, nombreCuenta = '', esPlataforma = false, onElegir }) {
+  // Todas iguales: por nombre. La que factura la cuenta va primera solo para la
+  // plataforma, que es a quien le importa dónde se cobra.
+  const ordenadas = [...sucursales].sort((a, b) => (esPlataforma && a.id === grupoId ? -1 : esPlataforma && b.id === grupoId ? 1 : String(a.name).localeCompare(String(b.name))));
 
   return (
     <div className="elegir-sucursal-panel">
       <div className="admin-page-header">
         <div>
-          <h1>¿Qué sucursal querés administrar?</h1>
+          <h1>{esPlataforma ? '¿Qué sucursal querés administrar?' : '¿En qué sucursal vas a trabajar?'}</h1>
           <span className="text-secondary text-sm">
-            {principal ? <>La cuenta <strong>{principal.name}</strong> tiene {sucursales.length} sucursales. </> : null}
+            {nombreCuenta ? <><strong>{nombreCuenta}</strong> tiene {sucursales.length} sucursales. </> : null}
             Cada una tiene su propio equipo, servicios, horarios, teléfono y link: elegí una para configurarla.
           </span>
         </div>
@@ -46,27 +47,29 @@ export default function ElegirSucursalPanel({ sucursales, grupoId, onElegir }) {
             <button key={s.id} type="button" className="card card-selectable elegir-sucursal-tarjeta" onClick={() => onElegir(s)}>
               <div className="elegir-sucursal-cabecera">
                 <h3>{s.name}</h3>
-                {s.id === grupoId && <span className="badge badge-primary">Principal</span>}
+                {esPlataforma && s.id === grupoId && <span className="badge badge-neutral">Factura la cuenta</span>}
                 {s.isFrozen && <span className="badge badge-danger">Suspendida</span>}
               </div>
               <div className="text-sm text-secondary">{dir ? `📍 ${dir}` : '📍 sin dirección'}</div>
               <div className="text-sm text-secondary">{s.phone ? `📞 ${s.phone}` : '📞 sin teléfono'}</div>
               <div className="text-xs text-muted">barberos.sacia.tech/{s.slug}</div>
-              {s.id === grupoId && (
-                <div className="text-xs text-muted">Acá se manejan el plan y el abono de toda la cuenta.</div>
+              {esPlataforma && s.id === grupoId && (
+                <div className="text-xs text-muted">El plan y el abono de toda la cuenta se cobran acá.</div>
               )}
               {falta.length > 0
                 ? <div className="elegir-sucursal-falta">⚠️ Falta: {falta.join(', ')}</div>
                 : <div className="elegir-sucursal-ok">✅ Datos básicos cargados</div>}
-              <span className="btn btn-primary btn-sm elegir-sucursal-boton">Administrar esta sucursal →</span>
+              <span className="btn btn-primary btn-sm elegir-sucursal-boton">{esPlataforma ? 'Administrar esta sucursal →' : 'Entrar →'}</span>
             </button>
           );
         })}
       </div>
 
-      <p className="text-sm text-muted" style={{ marginTop: 'var(--space-lg)' }}>
-        <Link to="/super-admin">← Volver al panel global</Link>
-      </p>
+      {esPlataforma && (
+        <p className="text-sm text-muted" style={{ marginTop: 'var(--space-lg)' }}>
+          <Link to="/super-admin">← Volver al panel global</Link>
+        </p>
+      )}
     </div>
   );
 }
