@@ -25,6 +25,7 @@ import NewBusinessModal from './NewBusinessModal';
 import PlanAMedida from '../../components/super-admin/PlanAMedida';
 import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
 import TicketsPanel from './TicketsPanel';
+import { olvidarSucursalEnPanel } from '../../utils/sucursalEnPanel';
 
 // --- Professional SVG Icons ---
 const BusinessIcon = () => (
@@ -308,6 +309,9 @@ export default function SuperAdminDashboard({ seccion = null }) {
    * configurada (profesionales, servicios, horarios) antes de entregarla.
    */
   const handleManageBusiness = (businessId) => {
+    // En una cuenta con sucursales, entrar SIEMPRE pregunta cuál administrar
+    // (ver ElegirSucursalPanel): se olvida la que se eligió la vez anterior.
+    olvidarSucursalEnPanel(state.businesses?.find((b) => b.id === businessId)?.grupoId);
     dispatch({ type: 'SET_CURRENT_BUSINESS', payload: businessId });
     navigate('/admin');
   };

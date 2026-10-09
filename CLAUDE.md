@@ -919,6 +919,17 @@ cuenta de la barbería que se está administrando. Ahora el panel la manda
 siempre, y `useResolvedBusiness` arma el grupo desde el negocio activo cuando
 quien mira es la plataforma.
 
+### La plataforma elige qué sucursal administrar (09/10/2026)
+
+Al entrar desde el panel global ("Administrar esta cuenta") a una cuenta con varias
+sucursales, lo primero es **"¿Qué sucursal querés administrar?"** (`ElegirSucursalPanel`):
+una tarjeta por local con dirección, teléfono, link y qué le falta configurar. Hasta elegir,
+`AdminLayout` no muestra el menú ni ninguna pantalla. Antes caía directo en la principal y
+era fácil cargarle el WhatsApp o el equipo de otro local. La barra naranja de la plataforma
+dice en qué sucursal está y tiene **"Cambiar de sucursal"**. La elección vive en
+sessionStorage (`utils/sucursalEnPanel.js`) y se borra en cada "Administrar esta cuenta".
+Al DUEÑO no le cambia nada: entra directo, con su selector de siempre.
+
 ### El cliente elige sucursal (07/10/2026)
 
 Cada sucursal tiene su propio link, pero el cliente que recibe UNO por Instagram

@@ -5246,3 +5246,27 @@ select.form-input {
   .membresia-auditoria-fila { flex-direction: column; }
   .membresia-auditoria-acciones { flex-direction: row; align-items: center; }
 }
+
+/* ── Elegir sucursal (plataforma entrando a una cuenta con varias) ────────── */
+.elegir-sucursal-grilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-md);
+}
+.elegir-sucursal-tarjeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  padding: var(--space-lg);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.elegir-sucursal-cabecera { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.elegir-sucursal-cabecera h3 { margin: 0; }
+.elegir-sucursal-falta { font-size: 13px; color: var(--warning); margin-top: 4px; }
+.elegir-sucursal-ok { font-size: 13px; color: var(--success); margin-top: 4px; }
+.elegir-sucursal-boton { margin-top: auto; padding-top: 8px; align-self: stretch; justify-content: center; }
+.elegir-sucursal-tarjeta:hover .elegir-sucursal-boton { filter: brightness(1.05); }
