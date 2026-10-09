@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { getPagina, savePagina, updateBusiness } from '../../lib/repository';
-import { puede, CAPACIDADES } from '../../config/plans';
+import { puede, CAPACIDADES, capacidadesDelNegocio } from '../../config/plans';
 import {
-  PLANTILLAS, PAGINA_VACIA, MAX_BOTONES, linkValido, getPlantilla,
+  PLANTILLAS, PAGINA_VACIA, MAX_BOTONES, linkValido, getPlantilla, paginaEfectiva,
 } from '../../config/pagina';
+import { useTenant } from '../../hooks/useTenantData';
+import { useSucursalesPublicas } from '../../hooks/useSucursalesPublicas';
+import CelularPagina from '../../components/admin/CelularPagina';
 import { redimensionarPortada } from '../../utils/imagen';
 import { direccionDe, instagramDe, linkWhatsApp } from '../../utils/contactoBarberia';
 
@@ -25,12 +28,25 @@ import { direccionDe, instagramDe, linkWhatsApp } from '../../utils/contactoBarb
 // Por eso también abajo hay una lista de "esto sale de Configuración" con el
 // link: lo que falta no se arregla acá, se arregla allá.
 
+// Para la miniatura de la plantilla con foto cuando todavía no subió ninguna:
+// un degradé oscuro que se lee como "acá va una foto", en vez de una miniatura
+// idéntica a la Simple (que es justo lo que confundía).
+const PORTADA_DE_MUESTRA = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="800"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+  + '<stop offset="0" stop-color="#7a5236"/><stop offset="0.5" stop-color="#3b2a20"/><stop offset="1" stop-color="#14100d"/>'
+  + '</linearGradient></defs><rect width="400" height="800" fill="url(#g)"/></svg>'
+);
+
 const LINK_AMPLIAR = (que) => 'https://wa.me/5492257529684?text=' +
   encodeURIComponent(`Hola! Quiero ${que} en mi cuenta de BarberOS.`);
 
 export default function PaginaPage() {
   const { business, businessId } = useCurrentBusiness();
+  const { services, slug } = useTenant();
+  const { sucursales } = useSucursalesPublicas(business);
   const inputFoto = useRef(null);
+  // En el celular la vista previa no entra al costado: se abre con un botón.
+  const [verVistaPrevia, setVerVistaPrevia] = useState(false);
 
   const puedePagina = puede(business, CAPACIDADES.pagina);
   const puedeFoto = puede(business, CAPACIDADES.paginaFoto);
@@ -168,6 +184,23 @@ export default function PaginaPage() {
   // Lo que la página arma sola. Se lista con el estado real para que se vea de
   // una qué le falta: un botón que no aparece porque el dato no está cargado es
   // la pregunta de soporte más fácil de evitar.
+  // Lo que se muestra en la vista previa: lo que hay en el formulario AHORA,
+  // sin guardar, resuelto igual que en la página real (plan, plantilla
+  // permitida). Los botones libres se muestran apenas tienen texto, aunque el
+  // link todavía esté a medio escribir: si no, el dueño agrega uno y no lo ve.
+  const cfgVista = {
+    ...paginaEfectiva(cfg, capacidadesDelNegocio(business)),
+    botones: botones.filter((b) => String(b.texto || '').trim()).map((b) => ({ texto: b.texto, url: '#' })),
+  };
+  const vista = {
+    business,
+    servicios: services,
+    locales: sucursales.length > 1 ? sucursales : [],
+    businessId,
+    slug: slug || business.slug,
+  };
+  const celular = (escala) => <CelularPagina {...vista} cfg={cfgVista} escala={escala} />;
+
   const automaticos = [
     { que: 'Tu nombre y tu logo', ok: Boolean(business.name), falta: 'Cargalo en Configuración' },
     { que: 'Tu presentación', ok: Boolean(business.welcomeMessage), falta: 'Escribila en Configuración, o poné una bajada acá' },
@@ -217,6 +250,8 @@ export default function PaginaPage() {
         </div>
       </div>
 
+      <div className="pagina-editor">
+      <div className="pagina-editor-form">
       {/* ── Plantilla ────────────────────────────────────────────────────── */}
       <div className="card mt-md">
         <h3 className="mb-md">Elegí tu diseño</h3>
@@ -231,9 +266,20 @@ export default function PaginaPage() {
                 onClick={() => !bloqueada && editar({ plantilla: p.id })}
                 disabled={bloqueada}
               >
-                <div className={`pagina-muestra pagina-muestra-${p.id}`} aria-hidden="true">
-                  <span /><span /><span />
-                </div>
+                {/* La plantilla de verdad, en chiquito, con TUS datos: antes eran
+                    tres barras abstractas casi iguales entre sí y no se
+                    entendía qué cambiaba. */}
+                <CelularPagina
+                  {...vista}
+                  miniatura
+                  escala={0.3}
+                  alto={700}
+                  cfg={{
+                    ...cfgVista,
+                    plantilla: p.id,
+                    coverUrl: p.id === 'foto' ? (cfg.coverUrl || PORTADA_DE_MUESTRA) : null,
+                  }}
+                />
                 <strong>{p.label}</strong>
                 <span className="text-sm text-muted">{p.descripcion}</span>
                 {bloqueada && <span className="badge badge-neutral" style={{ fontSize: 10 }}>Plan Full</span>}
@@ -398,6 +444,36 @@ export default function PaginaPage() {
         </button>
         {guardado && <span className="text-sm text-muted">Listo. Mirá tu página para verlo.</span>}
       </div>
+      </div>
+
+      {/* ── La vista previa, en vivo ─────────────────────────────────────────
+          Lo que hay en el formulario ahora, antes de guardar. Al costado en la
+          compu; en el celular, con el botón flotante. */}
+      <aside className="pagina-editor-vista">
+        <div className="pagina-editor-vista-titulo">
+          <strong>Así se ve</strong>
+          <span className="text-xs text-muted">{guardado ? 'guardado' : 'con lo que editaste, sin guardar todavía'}</span>
+        </div>
+        {celular(0.8)}
+      </aside>
+      </div>
+
+      {!verVistaPrevia && (
+        <button type="button" className="btn btn-primary pagina-vista-flotante" onClick={() => setVerVistaPrevia(true)}>
+          👁 Ver cómo queda
+        </button>
+      )}
+      {verVistaPrevia && (
+        <div className="modal-overlay pagina-vista-modal" onClick={() => setVerVistaPrevia(false)}>
+          <div onClick={(e) => e.stopPropagation()}>
+            {/* Que entre entero, a lo ancho y a lo alto (con el botón de abajo). */}
+            {celular(Math.min(0.85, (window.innerWidth - 48) / 390, (window.innerHeight - 110) / 760))}
+            <button type="button" className="btn btn-outline" style={{ width: '100%', marginTop: 12, background: '#fff' }} onClick={() => setVerVistaPrevia(false)}>
+              Volver a editar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1054,6 +1054,14 @@ quedar con el hueco de una foto que las Rules ya no dejan guardar.
 node scripts/sembrar-pagina-emulador.mjs   # las tres plantillas, para mirarlas
 ```
 
+**Vista previa en vivo (09/10/2026).** El editor ("Mi página") muestra la página dentro de un
+celular al costado, con lo que se está editando y SIN guardar; en pantallas angostas se abre
+con "Ver cómo queda". Las opciones de diseño son miniaturas de la plantilla real con los
+datos de la barbería (antes eran tres barras abstractas casi iguales y no se entendía qué
+cambiaba). Todo usa `VistaPagina`, el MISMO componente que ve el cliente: la vista previa no
+puede separarse de la página real. `CelularPagina` la dibuja a 390 px y la achica con
+`transform`, que además hace que la portada (`position: fixed`) quede fija al celular.
+
 ### Los colores de la barbería no llegaban a ningún lado (08/10/2026)
 
 `applyTheme()` existía desde el principio en `config/theme.js` y **no la llamaba

@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTenant } from '../../hooks/useTenantData';
 import { getPagina } from '../../lib/repository';
 import { capacidadesDelNegocio } from '../../config/plans';
-import { paginaEfectiva, getPlantilla } from '../../config/pagina';
-import { formatPrice } from '../../utils/dateUtils';
-import {
-  direccionDe, instagramDe, linkInstagram, linkMaps, linkWhatsApp, inicialesDe,
-} from '../../utils/contactoBarberia';
+import { paginaEfectiva } from '../../config/pagina';
 import { useSucursalesPublicas, recordarSucursal } from '../../hooks/useSucursalesPublicas';
-import TemaNegocio from '../../components/client/TemaNegocio';
+import VistaPagina from '../../components/client/VistaPagina';
 import { recordarCupon, cuponRecordado } from '../../utils/cupon';
 
 // ============================================================================
@@ -40,7 +36,6 @@ export default function PaginaBarberia({ business }) {
   const { services, slug, businessId } = useTenant();
   const { sucursales } = useSucursalesPublicas(business);
   const [pagina, setPagina] = useState(null);
-  const [verServicios, setVerServicios] = useState(false);
 
   // La configuración vive en un documento aparte (businesses/{id}/public/pagina)
   // porque lleva la foto de portada: sumársela al documento del negocio sería
@@ -75,11 +70,6 @@ export default function PaginaBarberia({ business }) {
 
   const grupoId = business?.grupoId || null;
   const locales = sucursales.length > 1 ? sucursales : [];
-  const direccion = direccionDe(business);
-  const maps = linkMaps(business);
-  const wa = linkWhatsApp(business);
-  const ig = linkInstagram(business);
-  const activos = services.filter((s) => s.isActive !== false);
 
   // El link de una promo entra por acá: `/:slug?cupon=CORTE20`. Se anota apenas
   // se ve, porque de acá hasta que el cliente confirme hay un login y
@@ -108,141 +98,16 @@ export default function PaginaBarberia({ business }) {
     return <div className="pagina-cargando"><p>Cargando…</p></div>;
   }
 
-  const plantilla = getPlantilla(cfg.plantilla);
-  const conFoto = plantilla.id === 'foto' && Boolean(cfg.coverUrl);
-
   return (
-    <TemaNegocio business={business}>
-      <div className={`pagina-barberia pagina-${plantilla.id} ${conFoto ? 'pagina-con-foto' : ''}`}>
-        {conFoto && (
-          <div className="pagina-portada" aria-hidden="true" style={{ backgroundImage: `url(${cfg.coverUrl})` }} />
-        )}
-
-        <main className="pagina-contenido">
-          <header className="pagina-cabecera">
-            {business.logoUrl
-              ? <img src={business.logoUrl} alt={business.name} className="pagina-logo" />
-              : <div className="pagina-iniciales" aria-hidden="true">{inicialesDe(business.name)}</div>}
-
-            <h1 className="pagina-nombre">{cfg.titular?.trim() || business.name}</h1>
-
-            {(cfg.bajada?.trim() || business.welcomeMessage) && (
-              <p className="pagina-bajada">{cfg.bajada?.trim() || business.welcomeMessage}</p>
-            )}
-
-            {direccion && <p className="pagina-direccion">📍 {direccion}</p>}
-
-            {/* Vino por un link de promoción: es lo que lo hizo tocar, así que
-                va arriba y no escondido entre los botones. El porcentaje no se
-                muestra acá porque el cupón todavía no se validó —eso pasa en la
-                reserva, con el servicio elegido— y prometer un número que
-                después no entra es peor que no prometerlo. */}
-            {codigoPromo && (
-              <p className="pagina-promo">🎉 Tenés un descuento con el código <strong>{codigoPromo}</strong></p>
-            )}
-          </header>
-
-          <nav className="pagina-botones">
-            {/* Primero los locales: a cuál va se decide antes de reservar. */}
-            {locales.length > 0 && (
-              <>
-                <p className="pagina-grupo">Nuestros locales</p>
-                {locales.map((s) => {
-                  const dir = direccionDe(s);
-                  if (s.id === businessId) {
-                    return (
-                      <div key={s.id} className="pagina-boton pagina-boton-aqui">
-                        <span className="pagina-boton-texto">{s.name}</span>
-                        <span className="pagina-boton-nota">estás acá</span>
-                      </div>
-                    );
-                  }
-                  // Una sucursal suspendida se muestra igual —existe, y el
-                  // cliente puede estar buscándola— pero sin poder entrar.
-                  if (s.isFrozen || s.onlineBookingEnabled === false) {
-                    return (
-                      <div key={s.id} className="pagina-boton pagina-boton-cerrado">
-                        <span className="pagina-boton-texto">{s.name}</span>
-                        <span className="pagina-boton-nota">no toma turnos</span>
-                      </div>
-                    );
-                  }
-                  return (
-                    <Link key={s.id} to={`/${s.slug}`} className="pagina-boton">
-                      <span className="pagina-boton-texto">{s.name}</span>
-                      {dir && <span className="pagina-boton-nota">{dir}</span>}
-                    </Link>
-                  );
-                })}
-              </>
-            )}
-
-            <button type="button" className="pagina-boton pagina-boton-principal" onClick={irAReservar}>
-              <span className="pagina-boton-texto">
-                {locales.length > 0 ? `Reservar en ${business.name}` : 'Reservar un turno'}
-              </span>
-            </button>
-
-            {cfg.mostrarServicios !== false && activos.length > 0 && (
-              <>
-                <button
-                  type="button"
-                  className="pagina-boton"
-                  aria-expanded={verServicios}
-                  onClick={() => setVerServicios((v) => !v)}
-                >
-                  <span className="pagina-boton-texto">Servicios y precios</span>
-                  <span className="pagina-boton-nota">
-                    {verServicios ? 'ocultar' : `${activos.length} ${activos.length === 1 ? 'servicio' : 'servicios'}`}
-                  </span>
-                </button>
-                {verServicios && (
-                  <ul className="pagina-servicios">
-                    {activos.map((s) => (
-                      <li key={s.id}>
-                        <span>{s.name}</span>
-                        <span className="pagina-servicio-precio">{formatPrice(s.price)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-
-            {maps && (
-              <a className="pagina-boton" href={maps} target="_blank" rel="noreferrer">
-                <span className="pagina-boton-texto">Cómo llegar</span>
-              </a>
-            )}
-            {wa && (
-              <a className="pagina-boton" href={wa} target="_blank" rel="noreferrer">
-                <span className="pagina-boton-texto">WhatsApp</span>
-              </a>
-            )}
-            {ig && (
-              <a className="pagina-boton" href={ig} target="_blank" rel="noreferrer">
-                <span className="pagina-boton-texto">Instagram</span>
-                <span className="pagina-boton-nota">@{instagramDe(business)}</span>
-              </a>
-            )}
-
-            {/* Los botones libres: lo que no entra en ninguna categoría de
-                arriba (la carta, un sorteo, el formulario para trabajar ahí).
-                Van al final porque lo que el cliente viene a hacer es reservar.
-                `nofollow` porque son links que escribe el dueño. */}
-            {cfg.botones.map((b, i) => (
-              <a key={i} className="pagina-boton" href={b.url} target="_blank" rel="noreferrer nofollow">
-                <span className="pagina-boton-texto">{b.texto}</span>
-              </a>
-            ))}
-          </nav>
-
-          <footer className="pagina-pie">
-            <Link to={`/${slug}/mis-citas`}>Mis turnos</Link>
-            <span className="pagina-marca">Hecho con BarberOS</span>
-          </footer>
-        </main>
-      </div>
-    </TemaNegocio>
+    <VistaPagina
+      business={business}
+      cfg={cfg}
+      servicios={services}
+      locales={locales}
+      businessId={businessId}
+      slug={slug}
+      codigoPromo={codigoPromo}
+      onReservar={irAReservar}
+    />
   );
 }
