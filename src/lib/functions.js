@@ -38,7 +38,12 @@ async function llamar(nombre, datos) {
   } catch (err) {
     // Se conserva el código original: quien llama a veces necesita distinguir
     // (por ejemplo, tratar un not-found como "todavía no hay Blaze" y seguir).
-    const traducido = new Error(MENSAJES[err.code] || err.message);
+    // Los rechazos de permiso que escribe una function ("Ese turno lo reservó
+    // otra persona…") dicen el motivo de verdad: se muestran tal cual. El texto
+    // fijo queda para cuando no viene nada útil (las Rules, o un código pelado).
+    const fraseDelServidor = ['functions/permission-denied', 'functions/unauthenticated'].includes(err.code)
+      && /\s/.test(String(err.message || '').trim()) && String(err.message).length > 20;
+    const traducido = new Error(fraseDelServidor ? err.message : (MENSAJES[err.code] || err.message));
     traducido.code = err.code;
     traducido.original = err;
     throw traducido;
@@ -78,12 +83,20 @@ export function revokeBusinessAdmin({ email, businessId }) {
  * servidor: negocio suspendido, fecha pasada, profesional que no hace ese
  * servicio, horario fuera de agenda y solapamiento con otro turno.
  *
- * Devuelve { status: 'created', id, price, endTime }.
+ * Del cupón se manda SOLO el código. El descuento lo recalcula el servidor
+ * sobre el precio del documento del servicio: lo que el browser mostró en el
+ * desglose es una vista previa, y si el cupón dejó de servir en el medio, la
+ * reserva sigue sin él en vez de romperse.
+ *
+ * Devuelve { status: 'created', id, price, precioLista, descuento, cuponCodigo, endTime }.
  */
-export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '' }) {
+export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false }) {
   return llamar('createAppointment', {
     businessId, professionalId, serviceId, appointmentDate, startTime,
-    clientName, clientPhone, clientEmail, notes,
+    clientName, clientPhone, clientEmail, notes, cuponCodigo,
+    // "Usar mi membresía": lo marca el cliente. El servidor revalida todo
+    // (activa, mes pago, servicio incluido, usos) y descuenta el uso.
+    usarMembresia: usarMembresia === true,
   });
 }
 
@@ -213,6 +226,21 @@ export function deleteBusiness({ businessId, confirmName }) {
 }
 
 /**
+ * "¿Sirve este código?" — antes de confirmar la reserva.
+ *
+ * Devuelve `{ valido: true, codigo, descuento, precioLista, precioFinal }`, o
+ * `{ valido: false, mensaje }` con un texto genérico. El motivo exacto no viaja
+ * a propósito: decirle "ese cupón venció" le confirma que el código existe, y
+ * con eso se arma la lista de los que andan probando diccionarios.
+ *
+ * Es una VISTA PREVIA. El descuento que se cobra lo recalcula
+ * `createAppointment` sobre el precio del documento del servicio.
+ */
+export function validarCupon({ businessId, codigo, serviceId, professionalId }) {
+  return llamar('validarCupon', { businessId, codigo, serviceId, professionalId });
+}
+
+/**
  * Completa en cada barbería los topes y las capacidades de su plan, y
  * reconstruye el mapa público de las cuentas con sucursales.
  *
@@ -224,4 +252,55 @@ export function deleteBusiness({ businessId, confirmName }) {
  */
 export function migrarPlanes({ aplicar = false } = {}) {
   return llamar('migrarPlanes', { aplicar });
+}
+
+// ============================================================================
+// Membresías (functions/membresias.js)
+// ============================================================================
+// Todo lo que cambia una membresía pasa por acá: las Rules no dejan escribir
+// nada de eso desde el browser, ni al dueño. Los mensajes de error ya vienen
+// escritos para mostrarse.
+
+/** Crea o edita un plan. `beneficios`: [{ id?, nombre, usos|null, servicios: [{ businessId, serviceId }] }]. */
+export function guardarPlanMembresia(datos) {
+  return llamar('guardarPlanMembresia', datos);
+}
+
+/** Suscripciones de la cuenta de Mercado Pago de la barbería, para vincular. */
+export function buscarSuscripcionesMP({ businessId, payerEmail = '' }) {
+  return llamar('buscarSuscripcionesMP', { businessId, payerEmail });
+}
+
+/**
+ * Carga la membresía de un cliente (la que ya existe, anotada a mano).
+ * `preapprovalId` opcional: si viene, el estado lo manda Mercado Pago.
+ * `reemplazaA`: cambio de plan.
+ */
+export function cargarMembresia(datos) {
+  return llamar('cargarMembresia', datos);
+}
+
+/** Abre el mes siguiente de una membresía SIN Mercado Pago y registra el cobro. */
+export function renovarMembresia({ businessId, membresiaId, monto = null }) {
+  return llamar('renovarMembresia', { businessId, membresiaId, monto });
+}
+
+/** Baja: respeta el mes pago; si es de MP, la cancela también allá. */
+export function cancelarMembresia({ businessId, membresiaId, motivo = '' }) {
+  return llamar('cancelarMembresia', { businessId, membresiaId, motivo });
+}
+
+/** El dueño aplica la membresía a un turno que ya existe (con motivo). */
+export function aplicarMembresia({ businessId, appointmentId, membresiaId, motivo }) {
+  return llamar('aplicarMembresia', { businessId, appointmentId, membresiaId, motivo });
+}
+
+/** El dueño revierte un uso: el turno vuelve a cobrarse. */
+export function revertirUsoMembresia({ businessId, appointmentId, motivo }) {
+  return llamar('revertirUsoMembresia', { businessId, appointmentId, motivo });
+}
+
+/** La membresía del cliente que mira, en esta cuenta, o `{ membresia: null }`. */
+export function miMembresia(businessId) {
+  return llamar('miMembresia', { businessId });
 }

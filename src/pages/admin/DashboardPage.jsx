@@ -9,6 +9,7 @@ import { formatPrice, formatDate, toDateString } from '../../utils/dateUtils';
 import NuevoTurnoModal from '../../components/admin/NuevoTurnoModal';
 import AgendaDelDia from '../../components/admin/AgendaDelDia';
 import HistorialIngresos from '../../components/admin/HistorialIngresos';
+import { cubiertoPorMembresiasEnTurnos } from '../../utils/membresias';
 
 const STATUS_BADGES = {
   pendiente:  'badge-warning',
@@ -224,6 +225,9 @@ export default function DashboardPage() {
   const delMes = ingresosDelMes(visibleAppointments, mes);
   const historial = historialPorMes(visibleAppointments);
   const variacion = variacionMensual(historial);
+  // Atendido con membresía este mes: no entra en la caja (price 0), pero el
+  // dueño tiene que ver cuánto servicio regaló el plan contra lo que cobró.
+  const conMembresia = cubiertoPorMembresiasEnTurnos(visibleAppointments, mes);
 
   const maxRevProf = Math.max(...stats.ingresosPorProfesional.map(p => p.total), 1);
   const maxRevSrv  = Math.max(...stats.ingresosPorServicio.map(s => s.total), 1);
@@ -369,6 +373,16 @@ export default function DashboardPage() {
           <div className="stat-card-label">Ingresos Totales</div>
           <div className="stat-card-change positive">Desde que abriste la cuenta</div>
         </div>
+        {conMembresia.count > 0 && (
+          <Link to="/admin/membresias" className="stat-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div className="stat-card-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary)' }}>🪪</div>
+            <div className="stat-card-value">{formatPrice(conMembresia.total, business.currency)}</div>
+            <div className="stat-card-label">Cubierto por membresías</div>
+            <div className="stat-card-change positive">
+              {conMembresia.count} {conMembresia.count === 1 ? 'turno' : 'turnos'} en {nombreDeMes(mes)} · no suma a la caja
+            </div>
+          </Link>
+        )}
         <div className="stat-card">
           <div className="stat-card-icon" style={{ background: 'var(--danger-light)', color: 'var(--danger)' }}>❌</div>
           <div className="stat-card-value">{stats.noAsistio}</div>

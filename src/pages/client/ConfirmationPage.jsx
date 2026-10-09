@@ -79,7 +79,9 @@ export default function ConfirmationPage() {
           </div>
           <div className="summary-row">
             <span className="summary-label">💰 Precio</span>
-            <span className="summary-value">{formatPrice(appointment.price, business?.currency)}</span>
+            <span className="summary-value">
+              {appointment.membresia ? 'Incluido en tu membresía' : formatPrice(appointment.price, business?.currency)}
+            </span>
           </div>
         </div>
       </div>

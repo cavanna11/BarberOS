@@ -11,6 +11,8 @@
 //   /businesses/{id}                     → marca, horarios, isFrozen  público
 //     /private/billing                   → deuda, abono, vencimientos  solo plataforma
 //     /public/pagina                     → su página de presentación  público
+//     /cupones/{CODIGO}                  → descuentos  solo el dueño
+//       /usos/{appointmentId}            → un uso por turno  solo el dueño
 //     /professionals/{id}
 //     /services/{id}
 //     /schedules/{id}
@@ -46,6 +48,8 @@ const businessesCol = () => collection(db, 'businesses');
 const businessDoc = (id) => doc(db, 'businesses', id);
 const billingDoc = (id) => doc(db, 'businesses', id, 'private', 'billing');
 const paginaDoc = (id) => doc(db, 'businesses', id, 'public', 'pagina');
+const cuponesCol = (id) => collection(db, 'businesses', id, 'cupones');
+const cuponDoc = (id, codigo) => doc(db, 'businesses', id, 'cupones', codigo);
 const slugDoc = (slug) => doc(db, 'slugs', slug);
 export const subCol = (businessId, name) => collection(db, 'businesses', businessId, name);
 
@@ -273,6 +277,8 @@ const CAMPOS_SOLO_PLATAFORMA = [
   // `grupoId` ata la barbería a una cuenta con sucursales y de ahí salen los
   // claims del dueño. Lo escribe solo la function `crearSucursal`.
   'grupoId',
+  // Membresías de clientes: se habilitan cuenta por cuenta desde la plataforma.
+  'membresiasHabilitadas',
 ];
 
 export async function updateBusiness(businessId, cambios, { esPlataforma = false } = {}) {
@@ -516,6 +522,39 @@ export async function obtenerResenas(businessId) {
 export async function obtenerSubcoleccion(businessId, name) {
   const snap = await getDocs(subCol(businessId, name));
   return rows(snap);
+}
+
+// ============================================================================
+// MEMBRESÍAS — solo lectura
+// ============================================================================
+// Se escriben únicamente por las Functions (las Rules dicen false para todos).
+// Viven en la barbería PRINCIPAL de la cuenta. Se leen de una vez al entrar a
+// la pantalla, como las reseñas: no son datos que cambien mientras se miran.
+
+export async function obtenerPlanesMembresia(cuentaId) {
+  return rows(await getDocs(subCol(cuentaId, 'membresiaPlanes')))
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+/** Las membresías de una cuenta (para elegir una al aplicarla a un turno). */
+export async function obtenerMembresias(cuentaId) {
+  return rows(await getDocs(subCol(cuentaId, 'membresias')));
+}
+
+/** Todo lo de membresías de una cuenta: membresías, usos y cobros. Solo el dueño. */
+export async function obtenerDatosDeMembresias(cuentaId) {
+  const [membresias, usos, pagos] = await Promise.all([
+    getDocs(subCol(cuentaId, 'membresias')),
+    getDocs(subCol(cuentaId, 'membresiaUsos')),
+    getDocs(subCol(cuentaId, 'membresiaPagos')),
+  ]);
+  return { membresias: rows(membresias), usos: rows(usos), pagos: rows(pagos) };
+}
+
+/** Los meses de una membresía, del más nuevo al más viejo. */
+export async function obtenerPeriodosDeMembresia(cuentaId, membresiaId) {
+  const snap = await getDocs(collection(db, 'businesses', cuentaId, 'membresias', membresiaId, 'periodos'));
+  return rows(snap).sort((a, b) => String(b.desde).localeCompare(String(a.desde)));
 }
 
 /** Escucha una subcolección del negocio (professionals, services, etc.). */
@@ -889,4 +928,64 @@ export function subscribePlatformConfig(name, cb, onError) {
 
 export async function savePlatformConfig(name, data) {
   await setDoc(platformDoc(name), data, { merge: true });
+}
+
+// ============================================================================
+// CUPONES DE DESCUENTO (solo el dueño)
+// ============================================================================
+// El cliente NO los lee: las Rules se los niegan enteros, hasta el documento
+// suelto. Validar un código es la function `validarCupon` (lib/functions.js),
+// que contesta "sirve / no sirve" sin decir por qué. Si un cliente pudiera leer
+// `cupones/CORTE20`, probando códigos encontraría los que andan.
+//
+// El id del documento ES el código normalizado. Que coincidan es lo que hace
+// imposible tener dos cupones con el mismo código: lo impide Firestore, sin
+// ningún chequeo de unicidad que se pueda saltear.
+//
+// Los contadores (usos, ingresos, clientes nuevos) los escribe el servidor; las
+// Rules rechazan la escritura si vienen en el payload, así que se filtran antes
+// de mandar — igual que los campos de plataforma del negocio.
+
+const CAMPOS_DEL_SERVIDOR = ['usos', 'usosConfirmados', 'ingresos', 'clientesNuevos'];
+
+export function subscribeCupones(businessId, cb, onError) {
+  return escuchar(cuponesCol(businessId), rows, cb, onError);
+}
+
+export async function obtenerCupones(businessId) {
+  return rows(await getDocs(cuponesCol(businessId)));
+}
+
+/** Los usos de un cupón, uno por turno. Para el detalle en el panel. */
+export async function obtenerUsosDelCupon(businessId, codigo) {
+  return rows(await getDocs(collection(db, 'businesses', businessId, 'cupones', codigo, 'usos')));
+}
+
+/**
+ * Crea o corrige un cupón. `codigo` ya tiene que venir normalizado.
+ *
+ * `setDoc` con merge: el documento se identifica por el código, así que crear y
+ * editar son la misma operación. Los contadores no se tocan nunca.
+ */
+export async function guardarCupon(businessId, codigo, datos) {
+  const payload = { ...datos, codigo };
+  for (const campo of CAMPOS_DEL_SERVIDOR) delete payload[campo];
+  await setDoc(cuponDoc(businessId, codigo), payload, { merge: true });
+}
+
+/** Prender o apagar, sin tocar nada más. Es la acción más común de la lista. */
+export async function activarCupon(businessId, codigo, activo) {
+  await updateDoc(cuponDoc(businessId, codigo), { activo });
+}
+
+/**
+ * Borra un cupón.
+ *
+ * Firestore no borra en cascada: los `usos` quedan colgando. No se limpian a
+ * propósito — son el rastro de turnos que de verdad ocurrieron, y el turno
+ * guarda su propio snapshot del descuento, así que no se pierde nada. Borrar un
+ * cupón libera el código para volver a usarlo, que es para lo que sirve.
+ */
+export async function borrarCupon(businessId, codigo) {
+  await deleteDoc(cuponDoc(businessId, codigo));
 }

@@ -5,6 +5,9 @@ import { useTenant } from '../../hooks/useTenantData';
 import { cancelAppointment, misResenas } from '../../lib/repository';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
 import ValorarTurno from '../../components/client/ValorarTurno';
+import MiMembresia from '../../components/client/MiMembresia';
+import { miMembresia } from '../../lib/functions';
+import { turnoConMembresia } from '../../utils/membresias';
 
 const STATUS_LABELS = {
   pendiente: { label: 'Pendiente', className: 'badge-warning' },
@@ -36,6 +39,17 @@ export default function MyAppointments() {
         if (vigente) setResenas(Object.fromEntries(filas.map((r) => [r.appointmentId || r.id, r])));
       })
       .catch((err) => console.error('[MyAppointments] No se pudieron leer tus reseñas:', err));
+    return () => { vigente = false; };
+  }, [businessId, user?.id]);
+
+  // Su membresía en esta cuenta, si tiene. Una lectura al entrar.
+  const [membresia, setMembresia] = useState({ membresia: null, usos: [] });
+  useEffect(() => {
+    if (!businessId || !user?.id) return;
+    let vigente = true;
+    miMembresia(businessId)
+      .then((r) => { if (vigente) setMembresia({ membresia: r.membresia || null, usos: r.usos || [] }); })
+      .catch((err) => console.warn('[MyAppointments] No se pudo leer tu membresía:', err.message));
     return () => { vigente = false; };
   }, [businessId, user?.id]);
 
@@ -89,6 +103,7 @@ export default function MyAppointments() {
   return (
     <div className="my-appointments">
       <h1>Mis Citas</h1>
+      <MiMembresia membresia={membresia.membresia} usos={membresia.usos} />
       <div className="tabs mt-md">
         <button className={`tab ${tab === 'upcoming' ? 'active' : ''}`} onClick={() => setTab('upcoming')}>
           Próximas ({upcoming.length})
@@ -118,7 +133,9 @@ export default function MyAppointments() {
                   <span>🕐 {apt.startTime}</span>
                 </div>
                 <div className="details mt-sm">
-                  <span>{formatPrice(apt.price, business?.currency)}</span>
+                  {turnoConMembresia(apt)
+                    ? <span className="badge badge-success">🪪 Con tu membresía</span>
+                    : <span>{formatPrice(apt.price, business?.currency)}</span>}
                 </div>
               </div>
               <div className="appointment-actions">

@@ -4861,3 +4861,367 @@ select.form-input {
   .pagina-boton-editor { grid-template-columns: 1fr; }
   .pagina-switch { flex-direction: column; align-items: stretch; }
 }
+
+/* ============================================================================
+   CUPONES DE DESCUENTO
+   ============================================================================ */
+
+/* -- En la reserva (lo que ve el cliente) -------------------------------- */
+
+/* El aviso de arriba, cuando el cliente entro por un link de promocion.
+   Discreto a proposito: es un recordatorio de por que toco el link, no una
+   publicidad arriba del formulario que esta por completar. */
+.cupon-aviso {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  padding: 10px var(--space-md);
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  background: var(--primary-light);
+  font-size: 0.9375rem;
+}
+
+.cupon-aviso-nota {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+/* El campo, cerrado por defecto: un campo de cupon abierto le dice a todo el
+   mundo que hay descuentos que no tiene. */
+.cupon-caja {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px dashed var(--border-hover);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.cupon-abrir {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--primary);
+  font-family: var(--font);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cupon-form {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.cupon-form .form-input {
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
+
+.cupon-error {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  color: var(--danger);
+}
+
+/* El desglose. Las tres lineas son el requisito: precio, descuento y total,
+   con el codigo a la vista para que el cliente reconozca el suyo. */
+.cupon-aplicado {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--success);
+  border-radius: var(--radius-md);
+  background: var(--success-light);
+}
+
+.cupon-aplicado-fila {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 3px 0;
+  font-size: 0.9375rem;
+}
+
+.cupon-aplicado-descuento {
+  color: var(--success);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.cupon-aplicado-total {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  font-weight: 700;
+  font-size: 1.0625rem;
+}
+
+.cupon-tachado {
+  text-decoration: line-through;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.cupon-quitar {
+  margin-top: 6px;
+  padding-left: 0;
+}
+
+/* En la pagina de presentacion. */
+.pagina-promo {
+  margin-top: var(--space-sm);
+  font-size: 0.9375rem;
+}
+
+/* -- En el panel (lo que ve el dueño) ------------------------------------ */
+
+.cupones-lista {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-md);
+}
+
+.cupon-tarjeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.cupon-tarjeta-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.cupon-codigo {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.cupon-condiciones-resumen {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.cupon-numeros {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+
+.cupon-numeros div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cupon-numeros strong {
+  font-size: 1.0625rem;
+  line-height: 1.2;
+}
+
+.cupon-numeros span {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.cupon-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* -- El formulario ------------------------------------------------------- */
+
+.cupon-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-md);
+}
+
+/* La vista previa del descuento. Existe porque "20" en un cupon fijo y "20" en
+   uno porcentual se escriben igual y se cobran distinto, y el dueño se entera
+   con el primer turno. */
+.cupon-muestra {
+  padding: 10px var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  font-size: 0.9375rem;
+}
+
+.cupon-condiciones {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
+}
+
+.cupon-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cupon-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.cupon-chip:hover { border-color: var(--border-hover); }
+
+.cupon-chip.activo {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* -- El QR --------------------------------------------------------------- */
+
+.cupon-qr {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.cupon-qr img {
+  width: 140px;
+  height: 140px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cupon-qr-acciones {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+@media (max-width: 480px) {
+  .cupones-lista { grid-template-columns: 1fr; }
+  .cupon-form { flex-direction: column; }
+  .cupon-aviso-nota { margin-left: 0; }
+}
+
+/* ── Membresías ───────────────────────────────────────────────────────────
+   Panel del dueño (pestañas, cartera, planes, auditoría), el cliente en la
+   reserva y en Mis Citas, y el cartel en la agenda del staff. */
+.membresias-tabs { overflow-x: auto; scrollbar-width: none; }
+.membresias-tabs .tab { white-space: nowrap; }
+.membresia-dos { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
+
+.membresia-fila {
+  display: grid;
+  grid-template-columns: 1.4fr 1.2fr auto;
+  gap: var(--space-md);
+  align-items: center;
+  width: 100%;
+  padding: 12px 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.membresia-fila:last-child { border-bottom: none; }
+.membresia-fila:hover { background: var(--bg-secondary); }
+.membresia-fila-quien, .membresia-fila-plan { display: flex; flex-direction: column; min-width: 0; }
+.membresia-fila-quien span, .membresia-fila-plan span { overflow-wrap: anywhere; }
+.membresia-fila-estado { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+.membresia-detalle-cabecera { display: flex; justify-content: space-between; gap: var(--space-md); align-items: flex-start; }
+.membresia-subtitulo { font-size: 14px; margin: var(--space-lg) 0 var(--space-sm); }
+.membresia-periodo, .membresia-uso, .membresia-historial {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.membresia-periodo .text-sm, .membresia-uso .text-sm { overflow-wrap: anywhere; }
+
+.membresia-planes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-md); }
+.membresia-plan h3 { margin: 0; }
+.membresia-plan-precio { font-size: 1.6rem; font-weight: 700; margin: 6px 0; }
+.membresia-plan-precio span { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+.membresia-plan-beneficios { margin: 8px 0 12px; padding-left: 18px; font-size: 14px; }
+.membresia-beneficio { padding: var(--space-md); margin: var(--space-sm) 0; }
+.membresia-servicios { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; }
+.membresia-servicios label { display: flex; align-items: center; gap: 6px; }
+
+.membresia-auditoria-fila {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.membresia-auditoria-acciones { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.aplicar-membresia-lista { max-height: 280px; overflow-y: auto; }
+
+/* La agenda: el turno que no se cobra tiene que saltar a la vista. */
+.agenda-turno-membresia {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--success-light);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* El cliente: en la reserva y en Mis Citas. */
+.membresia-reserva { margin-bottom: var(--space-md); text-align: left; }
+.membresia-reserva-opcion { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; border: 2px solid var(--border); }
+.membresia-reserva-opcion.activa { border-color: var(--success); background: var(--success-light); }
+.membresia-reserva-opcion input { margin-top: 4px; width: 18px; height: 18px; flex-shrink: 0; }
+.mi-membresia { margin: var(--space-md) 0; text-align: left; }
+.mi-membresia-cabecera { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.mi-membresia-cabecera h3 { margin: 2px 0 6px; }
+.mi-membresia-beneficios { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.mi-membresia-beneficio { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--bg-secondary); border-radius: var(--radius-md); }
+.mi-membresia-usos summary { cursor: pointer; margin-top: 6px; }
+
+@media (max-width: 600px) {
+  .membresia-dos { grid-template-columns: 1fr; gap: 0; }
+  .membresia-fila { grid-template-columns: 1fr auto; }
+  .membresia-fila-plan { grid-column: 1 / -1; grid-row: 2; }
+  .membresia-periodo, .membresia-uso, .membresia-historial { grid-template-columns: 1fr auto; }
+  .membresia-periodo > :nth-child(2), .membresia-uso > :nth-child(2), .membresia-historial > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }
+  .membresia-auditoria-fila { flex-direction: column; }
+  .membresia-auditoria-acciones { flex-direction: row; align-items: center; }
+}

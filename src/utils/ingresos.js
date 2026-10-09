@@ -6,7 +6,10 @@
 // arrays por argumento y no sabe de dónde salieron.
 //
 // Qué cuenta como ingreso: SOLO los turnos `completada`, igual que el total
-// histórico que el panel ya mostraba. Un turno confirmado todavía no es plata
+// histórico que el panel ya mostraba. Un turno cubierto por una membresía se
+// guarda con `price: 0` (no se cobró nada en el local): la plata del plan es
+// otra caja, `membresiaPagos` (ver utils/membresias.js), y no se cuenta dos
+// veces. Un turno confirmado todavía no es plata
 // cobrada, y uno con seña pagada tampoco: la seña es una parte, y el turno puede
 // terminar en "no vino". Si algún día se quiere ver "lo que entró por señas",
 // es otra métrica, no esta.

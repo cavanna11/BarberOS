@@ -38,10 +38,13 @@ const HORARIO = [0, 1, 2, 3, 4, 5].map((d) => ({
   id: `h${d}`, dayOfWeek: d, startTime: '09:00', endTime: '20:00', isActive: true,
 }));
 
+// `durationMinutes`, no `duration`: es el nombre que leen el motor de
+// disponibilidad y `createAppointment`. Con el otro, la grilla arma turnos sin
+// hora de fin ("10:00 — NaN:NaN") y todo dura los 30 minutos del respaldo.
 const SERVICIOS = [
-  { id: 's1', name: 'Corte', price: 9000, duration: 45, isActive: true },
-  { id: 's2', name: 'Corte y barba', price: 13000, duration: 60, isActive: true },
-  { id: 's3', name: 'Barba', price: 6000, duration: 30, isActive: true },
+  { id: 's1', name: 'Corte', price: 9000, durationMinutes: 45, isActive: true },
+  { id: 's2', name: 'Corte y barba', price: 13000, durationMinutes: 60, isActive: true },
+  { id: 's3', name: 'Barba', price: 6000, durationMinutes: 30, isActive: true },
 ];
 
 const PROFESIONALES = [
@@ -84,7 +87,21 @@ async function barberia(id, { nombre, plan, pagina, grupoId = null, extra = {}, 
   for (const s of SERVICIOS) await db.doc(`businesses/${id}/services/${s.id}`).set(s);
   for (const pr of PROFESIONALES) await db.doc(`businesses/${id}/professionals/${pr.id}`).set(pr);
   for (const pr of PROFESIONALES) {
-    await db.doc(`businesses/${id}/schedules/${pr.id}`).set({ id: pr.id, professionalId: pr.id, weeklySchedule: HORARIO });
+    // Un documento por barbero y por día, que es la forma que leen el motor de
+    // disponibilidad (`s.professionalId === x && s.dayOfWeek === n`) y
+    // `createAppointment`. Un solo documento con un `weeklySchedule` adentro
+    // NO sirve: el calendario sale con todos los días apagados y parece que la
+    // barbería no atiende nunca.
+    for (const h of HORARIO) {
+      await db.doc(`businesses/${id}/schedules/${pr.id}-${h.dayOfWeek}`).set({
+        id: `${pr.id}-${h.dayOfWeek}`,
+        professionalId: pr.id,
+        dayOfWeek: h.dayOfWeek,
+        startTime: h.startTime,
+        endTime: h.endTime,
+        isActive: true,
+      });
+    }
     for (const s of SERVICIOS) {
       await db.doc(`businesses/${id}/professionalServices/${pr.id}-${s.id}`)
         .set({ professionalId: pr.id, serviceId: s.id });

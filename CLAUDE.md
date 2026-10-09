@@ -570,6 +570,9 @@ src/
                                      /professionals, que es de lectura pública
   /appointments                   🔒 staff + dueño del turno
   /reviews/{appointmentId}        🔒 una por turno — el id ES el del turno
+  /membresiaPlanes /membresias /membresiaUsos /membresiaPagos
+                                  🔒 membresías de clientes (en la principal);
+                                     solo las escriben Functions
   /notifications                  🔒 dueño todas; barbero las suyas. Las
                                      escribe un trigger; el browser solo
                                      marca leídas
@@ -1184,6 +1187,127 @@ funciones se despliegan en `us-central1` salvo que lleven `region` explícita �
 y el rewrite de `vercel.json` (`/api/mp/callback` y `/api/mp/webhook`) apunta a
 `southamerica-east1`. Sin eso, Mercado Pago vuelve a un 404.
 
+### Membresías: planes mensuales de la barbería a sus clientes (09/10/2026)
+
+Un cliente paga un plan por mes (p. ej. "Corte Mensual, $25.000, 4 cortes") y
+reserva sin pagar el turno. **El problema que resuelve no es anotar socios: es
+que un barbero no pueda declarar que un cliente usó su plan** cuando en
+realidad le cobró en mano, o cuando el plan ni está pago.
+
+**Cómo está cerrado:**
+
+- **El uso lo elige el CLIENTE al reservar**, desde su cuenta ("Usar mi
+  membresía" en el paso 6). `createAppointment` lo valida y descuenta DENTRO de
+  la transacción del turno: dos reservas por el último uso pasan de a una.
+- **El barbero no tiene ningún botón.** Ve en la agenda "🪪 Membresía — no se
+  cobra" y nada más. Desde Citas, **solo el dueño** aplica (`aplicarMembresia`,
+  motivo obligatorio, `origen: 'dueno'`) o quita (`revertirUsoMembresia`).
+  Aplicarla a un turno que reservó un cliente con SU cuenta exige que la
+  membresía sea de ese cliente; a uno cargado a mano por el staff, el dueño
+  elige de quién es (por eso el motivo).
+- **Nada de membresías se escribe desde el browser, ni el dueño** (Rules en
+  `false`): planes, membresías, meses, usos y cobros van por Functions. En el
+  turno, el snapshot `membresia` lo escribe solo el servidor, y a un turno con
+  membresía el staff no le puede tocar `serviceId`, `price`, `precioLista` ni
+  `userId` (`noTocaLaMembresia()` en las Rules). Fecha, hora y estado sí.
+- **Un uso por turno, por construcción**: `membresiaUsos/{appointmentId}`, mismo
+  truco que las reseñas.
+
+**Modelo** (vive en la barbería PRINCIPAL: la membresía es de la cuenta y se usa
+en cualquier sucursal, como el abono):
+
+```
+businesses/{cuenta}/membresiaPlanes/{id}  lectura pública; beneficios = grupos de
+                                          servicios {businessId, serviceId} que
+                                          comparten cupo (`usos` null = ilimitado)
+                                          + `usosTotales` opcional
+businesses/{cuenta}/membresias/{id}       cliente (uid + mail), plan congelado,
+                                          estado, mp{preapprovalId…}, inicio,
+                                          periodoActual, historial
+  /periodos/{id}                          un mes pago: desde/hasta ('YYYY-MM-DD'),
+                                          términos congelados y contadores
+businesses/{cuenta}/membresiaUsos/{aptId} auditoría: quién, cuándo, barbero,
+                                          sucursal, valor, origen, eventos
+businesses/{cuenta}/membresiaPagos/{id}   plata que entró por membresías
+mpSuscripciones/{preapprovalId}           índice para el webhook (Rules false)
+mpPagos/{paymentId}                       índice para reintegros (Rules false)
+```
+
+Estados: `pendiente`, `activa`, `pausada`, `pago_rechazado`, `cancelada`,
+`vencida`, `reemplazada`. **Lo que decide si hay beneficio es el MES PAGO, no la
+etiqueta**: una cancelada, pausada o con la cuota siguiente rechazada se usa
+hasta el último día del mes que sí pagó. El turno tiene que caer dentro de un
+mes pago; si no, "Tu membresía cubre turnos hasta el …".
+
+**El ciclo del uso** (trigger `onTurnoMembresia`, porque los estados los escribe
+el staff directo): reservar → `reservado` (ya ocupa cupo, así nadie reserva 8
+turnos con un plan de 4); cancelar un turno vivo → `liberado` (vuelve el cupo);
+atendido o no-show → `consumido`. Un turno atendido que después "se cancela"
+**no devuelve el uso** (sería la forma de lavarlo): queda `requiereRevision` y
+el dueño lo ve. Reprogramar = mover fecha del MISMO turno: el uso lo sigue; si
+cae fuera del mes pago, se marca para revisar.
+
+**Ingresos.** El turno con membresía se guarda con `price: 0` y el valor en
+`membresia.valorServicio`: la caja (`ingresos.js`, `statsCalculator.js`) queda
+bien sin tocarlos y la plata del plan va aparte, en `membresiaPagos`. El
+dashboard muestra "Cubierto por membresías" y la pantalla Membresías el
+cobrado contra lo consumido.
+
+**Mercado Pago.** No había nada de suscripciones; las que tienen las barberías
+se crearon a mano en SU cuenta de MP y no apuntan a ningún cliente nuestro. Por
+eso **se cargan a mano** (Membresías → Clientes → "Cargar membresía"): nombre,
+**el mail con el que el cliente entra a BarberOS**, plan, mes pago y,
+opcionalmente, la suscripción de MP (buscador por mail del pagador, o el id).
+Si el cliente todavía no entró nunca, la membresía queda esperando y se ata a
+su cuenta la primera vez que reserva con ese mail **verificado**. Sin MP
+(efectivo, transferencia), el dueño la renueva con "Registrar pago del mes".
+
+Con MP vinculada, el estado lo manda MP:
+
+- Webhook (`webhookMercadoPago`, mismo endpoint): `subscription_preapproval`
+  → estado; `subscription_authorized_payment` → cobro aprobado abre el mes
+  (id del mes = id del cobro, con `create`: el mismo aviso diez veces abre UN
+  mes), rechazado → `pago_rechazado`; `payment` devuelto → el mes queda
+  `revertido`.
+- **Se procesa ESTADO, no eventos**: ante cualquier aviso se le pregunta a MP y
+  se aplica; `last_modified` frena el aviso viejo que llega tarde. Un cobro
+  anterior a `inicio` (de cuando BarberOS todavía no la seguía) no abre nada:
+  si no, la reconciliación importaría todo el historial como meses encimados.
+- `reconciliarMembresiasDiario` (3:30 AM): vuelve a leer cada suscripción y sus
+  cobros (lo que el webhook perdió) y vence las que pasaron 3 días sin pagar.
+- Baja desde el panel cancela también en MP (`PUT /preapproval`).
+- Cambio de plan = membresía nueva con `reemplazaA`; la vieja queda
+  `reemplazada` y su mes se cierra el día anterior. Sin prorrateo.
+
+**Lo que hay que hacer a mano en el panel de la app de Mercado Pago:**
+prender los tópicos **Planes y suscripciones** (`subscription_preapproval` y
+`subscription_authorized_payment`) en Webhooks, con la URL
+`https://barberos.sacia.tech/api/mp/webhook`. Los avisos de suscripciones NO
+llegan por `notification_url` como la seña. Sin eso, todo depende de la
+reconciliación diaria.
+
+El webhook ahora **procesa antes de responder** (antes respondía 200 y seguía):
+en Functions v2 lo que corre después de la respuesta puede quedarse sin CPU.
+
+Verificado contra el Mercado Pago REAL: nada todavía (no hay credenciales de
+prueba). La forma de `preapproval` y `authorized_payments` sale de la
+documentación; antes de darlo por cerrado, vincular una suscripción de sandbox
+y mirar los logs del webhook.
+
+Trampa: los rechazos de permiso de una function se mostraban siempre como "No
+tenés permiso para esta operación." (`functions.js` pisaba el mensaje). Ahora,
+si la function manda una frase, se muestra esa ("Ese turno lo reservó otra
+persona…").
+
+```bash
+echo MP_API_URL=http://127.0.0.1:5199 > functions/.env.local   # MP falso, solo emulador
+node scripts/test-membresias-emulador.mjs    # 121 casos
+node scripts/sembrar-membresias-emulador.mjs # escenario para mirar en el browser
+```
+
+Para el browser contra el emulador: `.env.emulador.local` con
+`VITE_USE_EMULATORS=true` y `npm run dev -- --mode emulador`.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
@@ -1437,14 +1561,15 @@ node scripts/test-sena-emulador.mjs        # seña: horario guardado y vencimien
 node scripts/test-sucursales-emulador.mjs  # cuentas con sucursales: aislamiento y topes
 node scripts/test-planes-emulador.mjs      # topes y funciones de cada plan
 node scripts/test-resenas-emulador.mjs     # reseñas: cuándo, quién y una por turno
+node scripts/test-membresias-emulador.mjs  # membresías: uso, fraude, webhooks (MP falso)
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulador)
 node scripts/test-preview.mjs              # vista previa del link (tampoco)
 ```
 
 Hoy: claims 77, reservas 46, facturación 14, rules 118, alta 22, mercadopago 16,
-seña 14, sucursales 68, planes 66, reseñas 36, whatsapp 23, preview 24. Todo en
-verde (524).
+seña 14, sucursales 68, planes 66, reseñas 36, membresías 121, whatsapp 23,
+preview 24. Todo en verde (645).
 
 Para mirar las páginas de presentación en el browser:
 

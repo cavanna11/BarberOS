@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { formatDate, toDateString, timeToMinutes, fechaCorta } from '../../utils/dateUtils';
 import { origenTurno } from '../../utils/origenTurno';
 import WhatsAppTurno from './WhatsAppTurno';
+import { turnoConMembresia } from '../../utils/membresias';
 
 /**
  * La agenda de un día, como un calendario: una fila por franja horaria, con
@@ -232,6 +233,14 @@ export default function AgendaDelDia({
                             {a.startTime}–{a.endTime || '?'} · {nombreSrv(a)}
                             {varios && !profActivo && <> · <strong>{nombreProf(a.professionalId)}</strong></>}
                           </div>
+                          {/* Lo cubre la membresía del cliente: no se cobra. Lo
+                              marcó el cliente al reservar (o el dueño); el
+                              barbero no lo puede poner ni sacar. */}
+                          {turnoConMembresia(a) && (
+                            <div className="agenda-turno-membresia">
+                              🪪 Membresía{a.membresia.planNombre ? ` · ${a.membresia.planNombre}` : ''} — no se cobra
+                            </div>
+                          )}
                           {!walkin && (
                             <div className="agenda-turno-origen" title={origenTurno(a).detalle}>
                               {origenTurno(a).icono} {origenTurno(a).etiqueta}

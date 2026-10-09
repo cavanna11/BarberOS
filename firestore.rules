@@ -207,7 +207,9 @@ service cloud.firestore {
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
                    'trialEndsAt', 'createdAt', 'maxBarbers', 'maxSucursales', 'origen',
-                   'mpConectado', 'mpUserId', 'grupoId', 'capacidades']) &&
+                   'mpConectado', 'mpUserId', 'grupoId', 'capacidades',
+                   // Membresías: las prende la plataforma, cuenta por cuenta.
+                   'membresiasHabilitadas']) &&
         (!request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['primaryColor', 'secondaryColor', 'accentColor'])
          || capacidadEn(resource.data, 'colores')) &&
@@ -361,7 +363,65 @@ service cloud.firestore {
         allow write: if canManage(bizId);
       }
 
+      // ── Membresías ───────────────────────────────────────────────────────
+      // Planes mensuales que la barbería le vende a sus clientes. Viven en la
+      // barbería PRINCIPAL de la cuenta (se usan en cualquier sucursal).
+      //
+      // NADIE escribe desde el browser, ni el dueño: el estado lo trae Mercado
+      // Pago o lo carga el dueño por las Functions (membresias.js), que validan
+      // plan, servicios, fechas y que no haya otra viva. Si el barbero pudiera
+      // escribir acá, se terminó el control: se pondría "activa" o se sumaría
+      // usos a quien quisiera. Los usos tampoco se pueden editar después: son
+      // la auditoría.
+      //
+      // El barbero no lee nada de esto: lo que necesita ver (que el turno es
+      // con membresía) viaja en el snapshot del turno.
+
+      // Los planes son información comercial, como los servicios y sus precios.
+      match /membresiaPlanes/{planId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /membresias/{membresiaId} {
+        allow read: if isBusinessOwner(bizId) || esEquipoPlataforma()
+                       || (signedIn() && resource.data.clienteUid == request.auth.uid);
+        allow write: if false;
+
+        match /periodos/{periodoId} {
+          allow read: if isBusinessOwner(bizId) || esEquipoPlataforma();
+          allow write: if false;
+        }
+      }
+
+      match /membresiaUsos/{usoId} {
+        allow read: if isBusinessOwner(bizId) || esEquipoPlataforma()
+                       || (signedIn() && resource.data.clienteUid == request.auth.uid);
+        allow write: if false;
+      }
+
+      // Plata que entró por membresías: igual que la facturación, el moderador
+      // no la ve.
+      match /membresiaPagos/{pagoId} {
+        allow read: if isBusinessOwner(bizId) || isPlatform();
+        allow write: if false;
+      }
+
       // ── Turnos ───────────────────────────────────────────────────────────
+      // El beneficio de la membresía viaja en el turno (`membresia`) y lo
+      // escribe SOLO el servidor. Desde el browser no se puede ponerlo, ni
+      // sacarlo, ni tocarle al turno con membresía lo que define el beneficio
+      // (servicio, precio, de quién es): cambiar el servicio de un turno
+      // cubierto por "Corte" a "Corte + barba" sería sacarle al plan algo que
+      // no incluye. Fecha, hora y estado sí se tocan: los sigue el trigger
+      // onTurnoMembresia (cancelar libera el uso, atender o faltar lo consume).
+      function noTocaLaMembresia() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['membresia'])
+               && (!('membresia' in resource.data)
+                   || !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['serviceId', 'price', 'precioLista', 'userId']));
+      }
+
       match /appointments/{aptId} {
         // El dueño ve toda la agenda; el barbero solo los suyos; el cliente
         // solo los propios.
@@ -406,6 +466,7 @@ service cloud.firestore {
         // El turno que carga el staff lleva SU uid como userId (quién lo cargó):
         // no puede plantarle un turno a otra cuenta, que lo vería en "Mis citas".
         allow create: if request.resource.data.userId == request.auth.uid
+                         && !('membresia' in request.resource.data)
                          && (isPlatform()
                              || isBusinessOwner(bizId)
                              || (esBarbero(bizId)
@@ -413,9 +474,10 @@ service cloud.firestore {
 
         // Cancelar: el cliente solo puede cambiar el estado a 'cancelada' de un
         // turno propio. Cambiar fecha, precio o profesional es cosa del staff.
-        allow update: if isBusinessOwner(bizId)
-                         || isPlatform()
-                         || (esBarbero(bizId) && esSuTurno())
+        allow update: if ((isBusinessOwner(bizId)
+                           || isPlatform()
+                           || (esBarbero(bizId) && esSuTurno()))
+                          && noTocaLaMembresia())
                          || (
                               signedIn()
                               && resource.data.userId == request.auth.uid
@@ -466,6 +528,74 @@ service cloud.firestore {
                && d.get('serviceId', null) == t.get('serviceId', null)
                && d.get('businessId', '') == bizId
                && d.get('appointmentId', '') == aptId;
+      }
+
+      // ── Cupones de descuento ─────────────────────────────────────────────
+      // CERRADOS AL CLIENTE, por completo. Ni leer uno suelto.
+      //
+      // Es la decisión central de todo esto y conviene no aflojarla después:
+      // si un cliente pudiera leer `cupones/CORTE20`, probando códigos
+      // encuentra los que andan — y un `list` le entrega la promoción entera de
+      // la barbería, incluida la que todavía no salió. Por eso la validación es
+      // la function `validarCupon`, que contesta "sirve / no sirve" y nada más,
+      // y por eso acá no hay ningún `allow read` para el cliente.
+      //
+      // Los números (usos, ingresos, clientes nuevos) los escribe el servidor
+      // con el Admin SDK, que pasa por arriba de esto. El dueño los lee; no
+      // puede editarlos, porque son el resultado de lo que pasó y no un campo.
+      match /cupones/{cuponId} {
+        allow read: if canManage(bizId);
+
+        // El id del documento ES el código normalizado. Que coincidan no es
+        // cosmético: es lo que hace imposible tener dos cupones con el mismo
+        // código sin ningún chequeo de unicidad — lo impide Firestore.
+        allow create: if canManage(bizId)
+                         && cuponValido()
+                         && request.resource.data.codigo == cuponId
+                         && request.resource.data.get('usos', 0) == 0;
+
+        allow update: if canManage(bizId)
+                         && cuponValido()
+                         && request.resource.data.codigo == resource.data.codigo
+                         // Los contadores son del servidor. Sin esto, el dueño
+                         // se pone los usos en 0 y revive un cupón agotado, o
+                         // se infla los ingresos del informe.
+                         && !request.resource.data.diff(resource.data).affectedKeys()
+                              .hasAny(['usos', 'usosConfirmados', 'ingresos', 'clientesNuevos']);
+
+        allow delete: if canManage(bizId);
+
+        // Un uso por turno, con el id del turno. Mismo truco que las reseñas:
+        // Firestore no deja dos documentos con el mismo id, así que el contador
+        // nunca puede contar dos veces el mismo turno.
+        //
+        // Solo el servidor escribe acá, adentro de la transacción que crea el
+        // turno. El dueño lo lee para el detalle del cupón.
+        match /usos/{aptId} {
+          allow read: if canManage(bizId);
+          allow write: if false;
+        }
+      }
+
+      // Lo que un cupón tiene que cumplir para poder guardarse.
+      //
+      // No es validación de formulario duplicada: el descuento sale de estos
+      // campos y se cobra de verdad. Un porcentaje en 200 o un valor negativo
+      // escritos con la consola abierta terminan en un turno a precio cero o en
+      // un número imposible, y el recorte del servidor existe justamente porque
+      // esto se puede intentar.
+      function cuponValido() {
+        let d = request.resource.data;
+        return d.codigo is string
+               && d.codigo.size() >= 3 && d.codigo.size() <= 24
+               && d.codigo == d.codigo.upper()
+               && d.tipo in ['porcentaje', 'fijo']
+               && d.valor is number
+               && d.valor > 0
+               && (d.tipo != 'porcentaje' || d.valor <= 100)
+               && d.activo is bool
+               && d.get('maxUsos', 0) is number
+               && d.get('maxUsosPorCliente', 0) is number;
       }
 
       match /reviews/{aptId} {

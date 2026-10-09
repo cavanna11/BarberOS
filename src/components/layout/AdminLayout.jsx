@@ -25,6 +25,10 @@ const ownerNavItems = [
   // propósito: el que no la tiene entra y ve qué es y desde qué plan está.
   // Esconderla lo deja creyendo que el sistema no la tiene.
   { to: '/admin/pagina',        icon: '🔗', label: 'Mi página' },
+  { to: '/admin/cupones',       icon: '🎟️', label: 'Cupones' },
+  // Solo en las cuentas donde la plataforma las habilitó (y para la plataforma,
+  // que es la que las prende desde esa misma pantalla).
+  { to: '/admin/membresias',    icon: '🪪', label: 'Membresías', soloMembresias: true },
   { to: '/admin/configuracion', icon: '⚙️', label: 'Configuración' },
   { to: '/admin/soporte',       icon: '💬', label: 'Soporte' },
   { to: '/admin/instalar',      icon: '📲', label: 'Instalar la app' },
@@ -126,7 +130,9 @@ export default function AdminLayout() {
   // permite (así el del Plan Empresarial encuentra dónde abrir la primera).
   const muestraSucursales = isOwner && (esMultiSucursal || permiteSucursales(business));
   const navItems = (isOwner ? ownerNavItems : adminNavItems)
-    .filter((item) => !item.soloSucursales || muestraSucursales);
+    .filter((item) => !item.soloSucursales || muestraSucursales)
+    .filter((item) => !item.soloMembresias || platformOwner
+      || (sucursales.find((s) => s.id === (business?.grupoId || businessId)) || business)?.membresiasHabilitadas === true);
   const roleInfo = ROLE_LABELS[user?.role] || ROLE_LABELS.admin;
 
   const handleLogout = async () => {

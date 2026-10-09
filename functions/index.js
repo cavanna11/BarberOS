@@ -23,6 +23,10 @@ const logger = require('firebase-functions/logger');
 // Mercado Pago vive aparte (OAuth + cobro de la seña); se usa en createAppointment.
 const mp = require('./mercadopago');
 const { limitesDelNegocio, capacidadesDelNegocio, camposDelPlan } = require('./planes');
+const cupones = require('./cupones');
+// Membresías: planes mensuales de la barbería a sus clientes (createAppointment
+// descuenta el uso; el resto vive allá).
+const membresias = require('./membresias');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
@@ -492,6 +496,8 @@ async function procesarFacturacion() {
   // Que la plataforma se entere de cada cuenta que se cortó por deuda: es
   // el momento de escribirle al dueño, no de descubrirlo en el panel días
   // después.
+  await liberarCuponesDePagosAbandonados();
+
   for (const s of suspendidos) {
     await notificarPlataforma({
       type: 'cuenta_suspendida',
@@ -500,6 +506,42 @@ async function procesarFacturacion() {
       businessId: s.id,
       url: '/super-admin/barberias',
     }).catch((err) => console.error('[billing] No se pudo avisar la suspensión:', err.message));
+  }
+}
+
+/**
+ * Devuelve los usos de cupón de los turnos que nunca se pagaron.
+ *
+ * Un turno con seña nace `esperando_pago` y, si el cliente no paga en 15
+ * minutos, deja de ocupar el horario — pero el documento NO se marca cancelado:
+ * `reservaViva()` lo descarta por reloj (`senaExpiraEn`) y nada más. Eso está
+ * bien para la agenda, pero deja el uso del cupón reservado para siempre, y el
+ * trigger de estados no se entera porque el estado nunca cambió.
+ *
+ * Sin esto, un cupón de 50 usos se agota con 50 personas que abrieron Mercado
+ * Pago y cerraron la pestaña.
+ *
+ * Va en el barrido diario porque es exactamente eso: limpieza de algo que no
+ * tiene apuro. El turno se marca `cancelada` —que es lo que es— y el trigger de
+ * arriba se encarga de devolver el uso, sin duplicar esa lógica acá.
+ */
+async function liberarCuponesDePagosAbandonados() {
+  const vencidos = await db.collectionGroup('appointments')
+    .where('status', '==', 'esperando_pago')
+    .where('senaExpiraEn', '<', new Date())
+    .limit(400)
+    .get();
+
+  for (const d of vencidos.docs) {
+    await d.ref.update({
+      status: 'cancelada',
+      cancelledBy: 'sistema',
+      cancellationReason: 'No se completó el pago',
+    }).catch((err) => console.error('[billing] no se pudo cerrar un pago abandonado:', err.message));
+  }
+
+  if (!vencidos.empty) {
+    logger.info('pagos abandonados cerrados', { cantidad: vencidos.size });
   }
 }
 
@@ -585,6 +627,150 @@ function hoyEnArgentina() {
   }).format(new Date());
 }
 
+// ============================================================================
+// CUPONES DE DESCUENTO
+// ============================================================================
+// El cálculo está en `cupones.js` (sin Firestore, para poder probarlo solo).
+// Acá está todo lo que necesita leer o escribir: validar contra la base,
+// consumir el uso dentro de la transacción del turno, y devolver el uso cuando
+// el turno se cae.
+//
+// Regla que atraviesa todo: el servidor NUNCA usa el descuento que mandó el
+// cliente. Recalcula sobre el precio del documento del servicio, que es el
+// único precio en el que se puede confiar. Lo que el browser muestra antes de
+// confirmar es una vista previa.
+
+/** Estados en los que un turno cuenta como "este cliente ya vino acá". */
+const ESTADOS_DE_CLIENTE = ['pendiente', 'confirmada', 'completada', 'no_asistio'];
+
+/**
+ * Freno a la fuerza bruta sobre códigos.
+ *
+ * Sin esto, `validarCupon` es un oráculo: se le tiran diccionarios hasta que
+ * conteste que sí. El mensaje de error ya es siempre el mismo —no dice si el
+ * código existe— pero eso solo hace falta MÁS intentos, no los hace inútiles.
+ *
+ * Se cuentan solo los intentos FALLIDOS, por cuenta y por barbería, en ventanas
+ * de 10 minutos. Un cliente real falla una o dos veces (lo copió con un espacio
+ * de más, el cupón venció); quince fallos en diez minutos no es un cliente.
+ *
+ * Vive en una colección que no lee ni escribe nadie desde el browser.
+ */
+const INTENTOS_MAX = 15;
+const INTENTOS_VENTANA_MS = 10 * 60 * 1000;
+
+async function frenarFuerzaBruta(bizId, uid) {
+  const ref = db.doc(`rateLimits/cupon_${bizId}_${uid}`);
+  const snap = await ref.get();
+  const ahora = Date.now();
+  const desde = snap.exists ? (snap.get('desde') || 0) : 0;
+
+  // Ventana vencida: se arranca de cero. No es un contador histórico, es "qué
+  // viene haciendo esta cuenta ahora".
+  if (ahora - desde > INTENTOS_VENTANA_MS) return { bloqueado: false, ref, reiniciar: true };
+
+  const intentos = snap.get('intentos') || 0;
+  return { bloqueado: intentos >= INTENTOS_MAX, ref, reiniciar: false };
+}
+
+async function anotarIntentoFallido(ref, reiniciar) {
+  if (reiniciar) await ref.set({ desde: Date.now(), intentos: 1 });
+  else await ref.set({ intentos: FieldValue.increment(1) }, { merge: true });
+}
+
+/**
+ * Lee el cupón y todo lo que hace falta para decidir si aplica.
+ *
+ * `tx` opcional: cuando viene, las lecturas entran en la transacción del turno
+ * y el tope de usos queda protegido contra la carrera de dos clientes por el
+ * último lugar. Sin `tx` es la vista previa, que puede quedar desactualizada
+ * entre que el cliente aplica el cupón y confirma — y está bien, porque lo que
+ * vale es la validación de adentro de la transacción.
+ */
+async function leerContextoDelCupon({ tx, businessId, codigo, uid, turnosPrevios = null }) {
+  const normalizado = cupones.normalizarCodigo(codigo);
+  if (!cupones.codigoValido(normalizado)) return { cupon: null, ctx: {} };
+
+  const ref = db.doc(`businesses/${businessId}/cupones/${normalizado}`);
+  const usosDelClienteQ = ref.collection('usos').where('userId', '==', uid);
+
+  // `turnosPrevios` viene resuelto cuando esto corre adentro de la transacción
+  // del turno: ahí la agenda del cliente YA se leyó para el tope de turnos
+  // activos, y volver a pedirla sería pagar dos veces la misma lectura en la
+  // operación más caliente del producto.
+  const agendaQ = db.collection(`businesses/${businessId}/appointments`).where('userId', '==', uid);
+  const faltaLaAgenda = turnosPrevios === null;
+
+  const snap = tx ? await tx.get(ref) : await ref.get();
+  if (!snap.exists) return { cupon: null, ctx: {}, ref };
+
+  const usos = tx ? await tx.get(usosDelClienteQ) : await usosDelClienteQ.get();
+  const propios = faltaLaAgenda ? (tx ? await tx.get(agendaQ) : await agendaQ.get()) : null;
+
+  // "Cliente nuevo" = no tenía un turno vivo o pasado en ESTA barbería antes de
+  // usar el cupón. Un turno cancelado no cuenta: nunca llegó a venir.
+  const tieneTurnosPrevios = faltaLaAgenda
+    ? propios.docs.some((d) => ESTADOS_DE_CLIENTE.includes(d.get('status')))
+    : turnosPrevios;
+
+  return {
+    cupon: { id: snap.id, ...snap.data() },
+    ref,
+    ctx: {
+      usosDelCliente: usos.size,
+      tieneTurnosPrevios,
+      ahora: new Date(),
+    },
+  };
+}
+
+/**
+ * "¿Sirve este código?" — lo que pregunta el browser antes de confirmar.
+ *
+ * Devuelve el descuento calculado, o un rechazo genérico. El motivo real queda
+ * en los logs y nunca viaja al cliente: decirle "ese cupón venció" confirma que
+ * el código existe, y con eso alguien arma la lista de los que andan.
+ */
+exports.validarCupon = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
+  }
+  const { businessId, codigo, serviceId = null, professionalId = null } = request.data || {};
+  if (!businessId || !codigo) {
+    throw new HttpsError('invalid-argument', 'Faltan datos.');
+  }
+
+  const uid = request.auth.uid;
+  const freno = await frenarFuerzaBruta(businessId, uid);
+  if (freno.bloqueado) {
+    throw new HttpsError('resource-exhausted', 'Probaste muchos códigos seguidos. Esperá unos minutos.');
+  }
+
+  const srvSnap = serviceId
+    ? await db.doc(`businesses/${businessId}/services/${serviceId}`).get()
+    : null;
+  const precio = srvSnap?.exists ? Number(srvSnap.data().price) || 0 : 0;
+
+  const { cupon, ctx } = await leerContextoDelCupon({ businessId, codigo, uid });
+  const r = cupones.aplicarCupon(cupon, precio, { ...ctx, serviceId, professionalId });
+
+  if (!r.aplica) {
+    await anotarIntentoFallido(freno.ref, freno.reiniciar);
+    logger.info('cupón rechazado', { businessId, uid, motivo: r.motivo });
+    return { valido: false, mensaje: cupones.MENSAJE_AL_CLIENTE };
+  }
+
+  return {
+    valido: true,
+    codigo: cupon.codigo,
+    tipo: cupon.tipo,
+    valor: cupon.valor,
+    descuento: r.descuento,
+    precioLista: precio,
+    precioFinal: r.precioFinal,
+  };
+});
+
 exports.createAppointment = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión para reservar.');
@@ -593,6 +779,10 @@ exports.createAppointment = onCall(async (request) => {
   const {
     businessId, professionalId, serviceId, appointmentDate, startTime,
     clientName = '', clientPhone = '', clientEmail = '', notes = '',
+    cuponCodigo = null,
+    // El cliente marcó "usar mi membresía". Es SU elección, desde SU cuenta:
+    // el barbero no tiene forma de marcarlo por él (ver membresias.js).
+    usarMembresia = false,
   } = request.data || {};
 
   if (!businessId || !professionalId || !serviceId || !appointmentDate || !startTime) {
@@ -737,8 +927,17 @@ exports.createAppointment = onCall(async (request) => {
     else if (pedido === 'local' && senaOpcional) tipoPago = null;
     else tipoPago = 'sena';
   }
-  const pideSena = tipoPago !== null;
-  const montoSena = tipoPago === 'total' ? precio : (pideSena ? Number(sena.monto) : 0);
+
+  // La seña se decide recién adentro de la transacción, porque depende del
+  // precio FINAL y el descuento se resuelve ahí. Lo que se sabe acá es si la
+  // barbería cobra online y de qué forma; cuánto, después.
+  let pideSena = tipoPago !== null;
+  let montoSena = 0;
+  // El snapshot que va a quedar guardado en el turno. Se completa adentro de la
+  // transacción; si no hay cupón, queda así.
+  let cobro = { precioLista: precio, descuento: 0, precioFinal: precio, cuponCodigo: null, cuponId: null };
+  // El beneficio de la membresía, si el cliente la usó. Se completa adentro.
+  let membresiaAplicada = null;
 
   // ── Solapamiento, en transacción ──────────────────────────────────────────
   // Va en transacción y no en un get suelto porque dos personas mirando la
@@ -747,7 +946,30 @@ exports.createAppointment = onCall(async (request) => {
   const agenda = db.collection(`businesses/${businessId}/appointments`);
   const ref = agenda.doc();
 
+  // El tipo de pago que PIDIÓ el cliente. Inmutable: lo que se decide adentro
+  // de la transacción puede recortarlo (un turno gratis no se cobra), y eso se
+  // recalcula en cada intento.
+  const tipoPagoPedido = tipoPago;
+
   await db.runTransaction(async (tx) => {
+    // Firestore REINTENTA la transacción cuando hay contención, y el callback
+    // vuelve a correr entero. Todo lo que se escribe en las variables de
+    // afuera tiene que volver a cero acá adentro, o el segundo intento arranca
+    // con los valores del primero.
+    //
+    // No es teórico: lo encontró la prueba de los tres clientes peleando por
+    // el último uso de un cupón. El primero se lo llevaba, los otros dos
+    // reintentaban, veían el cupón agotado —y por eso NO se les escribía el
+    // uso, que es lo correcto— pero `cobro` todavía tenía el precio con
+    // descuento del intento anterior, así que el turno se guardaba a precio
+    // de promoción sin haber consumido nada. Un cupón de un uso descontándole
+    // a todo el mundo, sin dejar rastro.
+    cobro = { precioLista: precio, descuento: 0, precioFinal: precio, cuponCodigo: null, cuponId: null };
+    membresiaAplicada = null;
+    tipoPago = tipoPagoPedido;
+    montoSena = 0;
+    pideSena = tipoPago !== null;
+
     // Los turnos de este cliente en esta barbería, todos, en una sola lectura.
     // Se filtran en memoria en vez de con dos queries por rango porque un
     // where por userId + rango de fecha exigiría un índice compuesto, que el
@@ -786,6 +1008,82 @@ exports.createAppointment = onCall(async (request) => {
             .where('professionalId', '==', professionalId)
     );
 
+    // ── El cupón ────────────────────────────────────────────────────────────
+    // Acá adentro y no antes: dos clientes peleando por el último uso leen el
+    // mismo contador si se chequea afuera, y los dos pasan. La transacción es
+    // lo único que hace que el tope sea un tope.
+    //
+    // Y se recalcula TODO: existencia, estado, vigencia, servicio, profesional,
+    // primera visita, topes y el descuento sobre el precio del documento del
+    // servicio. Lo que mandó el browser es, como mucho, el código.
+    let cuponRef = null;
+    let esClienteNuevo = false;
+
+    // ── La membresía ────────────────────────────────────────────────────────
+    // Misma razón que el cupón para ir acá adentro: dos reservas por el último
+    // uso del mes leen el mismo contador, y la transacción hace que pase una.
+    // Si no corresponde (no activa, servicio no incluido, sin usos, fecha
+    // fuera del mes pago) SÍ rompe la reserva, con el motivo: el cliente eligió
+    // no pagar, y reservarle a precio de lista sin avisar sería cobrarle algo
+    // que no aceptó.
+    let usoMembresia = null;
+    if (usarMembresia === true) {
+      usoMembresia = await membresias.prepararUso(tx, {
+        cuentaId: negocio.grupoId || businessId,
+        sucursalId: businessId,
+        serviceId,
+        appointmentDate,
+        clienteUid: request.auth.uid,
+        // Solo con el mail verificado: es lo que ata una membresía cargada
+        // antes de que el cliente entrara por primera vez.
+        clienteEmail: request.auth.token.email_verified === true
+          ? membresias.normalizarEmail(request.auth.token.email) : null,
+      });
+    }
+
+    if (cuponCodigo && !usoMembresia) {
+      const leido = await leerContextoDelCupon({
+        tx, businessId, codigo: cuponCodigo, uid: request.auth.uid,
+        // La agenda de este cliente ya se leyó arriba, para el tope de turnos.
+        turnosPrevios: propios.docs.some((d) => ESTADOS_DE_CLIENTE.includes(d.get('status'))),
+      });
+      const r = cupones.aplicarCupon(leido.cupon, precio, {
+        ...leido.ctx, serviceId, professionalId,
+      });
+
+      // Un cupón que dejó de servir NO rompe la reserva: se sigue sin él y el
+      // cliente paga el precio de lista. Romper acá sería lo peor: el cliente
+      // ya eligió horario, ya entró con Google, y lo perdemos por un código.
+      if (r.aplica) {
+        cuponRef = leido.ref;
+        esClienteNuevo = !leido.ctx.tieneTurnosPrevios;
+        cobro = {
+          precioLista: precio,
+          descuento: r.descuento,
+          precioFinal: r.precioFinal,
+          cuponCodigo: leido.cupon.codigo,
+          cuponId: leido.cupon.id,
+        };
+      } else {
+        logger.info('cupón no aplicado al reservar', {
+          businessId, uid: request.auth.uid, motivo: r.motivo,
+        });
+      }
+    }
+
+    // La seña sale del precio FINAL, nunca del de lista. Con el fijo hace falta
+    // el recorte: una seña de $5.000 sobre un corte de $15.000 con 80% OFF
+    // serían $5.000 de seña por un turno de $3.000 — se le estaría cobrando de
+    // más por adelantado. Y con el precio en cero no hay nada que cobrar
+    // online: el cupón ya pagó el turno.
+    // Con membresía no se cobra nada en el turno: ni seña ni total. El precio
+    // que cuenta en la caja es cero; el valor del servicio queda en el
+    // snapshot de la membresía (para "cuánto se consumió por membresías").
+    if (usoMembresia) cobro = { precioLista: precio, descuento: 0, precioFinal: 0, cuponCodigo: null, cuponId: null };
+    montoSena = tipoPago === 'total' ? cobro.precioFinal : Math.min(Number(sena.monto) || 0, cobro.precioFinal);
+    if (!(montoSena > 0)) { tipoPago = null; montoSena = 0; }
+    pideSena = tipoPago !== null;
+
     for (const d of delDia.docs) {
       const a = d.data();
       if (!reservaViva(a)) continue;
@@ -796,6 +1094,20 @@ exports.createAppointment = onCall(async (request) => {
       }
     }
 
+    const membresia = usoMembresia ? membresias.escribirUso(tx, usoMembresia, {
+      cuentaId: negocio.grupoId || businessId,
+      appointmentId: ref.id,
+      sucursalId: businessId,
+      professionalId,
+      serviceId,
+      serviceName: servicio.name || '',
+      valorServicio: precio,
+      appointmentDate,
+      origen: 'reserva',
+      registradoPor: { uid: request.auth.uid, rol: 'cliente' },
+    }) : null;
+    membresiaAplicada = membresia;
+
     tx.set(ref, {
       id: ref.id,
       businessId,
@@ -805,8 +1117,23 @@ exports.createAppointment = onCall(async (request) => {
       appointmentDate,
       startTime,
       endTime: minutesToTime(fin),
-      // Del servicio, no del cliente.
-      price: precio,
+      // El precio que se cobra: el final, ya con el descuento. El campo se
+      // llama `price` desde siempre y lo lee todo —la agenda, los ingresos del
+      // mes, las estadísticas—, así que es el que tiene que valer. El de lista
+      // queda al lado, para poder mostrar el tachado.
+      price: cobro.precioFinal,
+      // Snapshot del cobro. Es una COPIA histórica a propósito: que el cupón
+      // después venza, se apague o cambie de valor no puede tocar un turno ya
+      // hecho. Sin esto, el informe de ingresos del mes pasado cambiaría solo.
+      ...(cobro.cuponCodigo ? {
+        precioLista: cobro.precioLista,
+        descuento: cobro.descuento,
+        cuponCodigo: cobro.cuponCodigo,
+        cuponId: cobro.cuponId,
+      } : {}),
+      // Snapshot del beneficio aplicado. Lo escribe SOLO el servidor: las Rules
+      // rechazan cualquier escritura del browser que toque este campo.
+      ...(membresia ? { membresia, precioLista: precio } : {}),
       durationMinutes: duracion,
       serviceName: servicio.name || '',
       clientName: String(clientName).slice(0, 120),
@@ -829,6 +1156,26 @@ exports.createAppointment = onCall(async (request) => {
       origen: 'cliente',
       createdAt: FieldValue.serverTimestamp(),
     });
+
+    if (cuponRef) {
+      // Un documento por uso, con el id del turno. Mismo truco que las reseñas:
+      // Firestore no deja dos documentos con el mismo id, así que el mismo
+      // turno no puede contarse dos veces por más que algo se reintente.
+      tx.set(cuponRef.collection('usos').doc(ref.id), {
+        appointmentId: ref.id,
+        userId: request.auth.uid,
+        estado: 'reservado',
+        precioLista: cobro.precioLista,
+        descuento: cobro.descuento,
+        precioFinal: cobro.precioFinal,
+        esClienteNuevo,
+        creadoEn: FieldValue.serverTimestamp(),
+      });
+      // `usos` cuenta los RESERVADOS: entre que alguien saca el turno y lo paga
+      // pasan 15 minutos, y en ese rato el lugar está tomado. Los confirmados y
+      // la plata se cuentan aparte, cuando el turno se concreta.
+      tx.update(cuponRef, { usos: FieldValue.increment(1) });
+    }
   });
 
   // Rastro de la reserva. Cuando una barbería dice "el cliente mostró el turno
@@ -855,7 +1202,8 @@ exports.createAppointment = onCall(async (request) => {
       return {
         status: 'esperando_pago',
         id: ref.id,
-        price: precio,
+        price: cobro.precioFinal,
+        ...cobro,
         endTime: minutesToTime(fin),
         sena: montoSena,
         tipoPago,
@@ -871,7 +1219,7 @@ exports.createAppointment = onCall(async (request) => {
     }
   }
 
-  return { status: 'created', id: ref.id, price: precio, endTime: minutesToTime(fin) };
+  return { status: 'created', id: ref.id, price: cobro.precioFinal, ...cobro, membresia: membresiaAplicada, endTime: minutesToTime(fin) };
 });
 
 /**
@@ -1788,6 +2136,89 @@ exports.onTurnoCancelado = onDocumentUpdated('businesses/{bizId}/appointments/{a
   });
 });
 
+/**
+ * El uso del cupón sigue al turno.
+ *
+ * Por qué un trigger y no el panel: "Vino / No vino / Cancelar" y la
+ * cancelación del cliente son escrituras DIRECTAS a Firestore desde el browser
+ * (`updateAppointment`), no llamadas a una function. Ahí no se puede
+ * incrementar un contador de forma confiable —ni siquiera con las Rules, que no
+ * saben sumar— y tampoco se le puede dar al cliente permiso para tocar los
+ * números de un cupón. Acá corre con el Admin SDK, después del hecho, y ve el
+ * antes y el después.
+ *
+ * Qué consume y qué devuelve:
+ *
+ *   cancelada  → se devuelve el uso. El turno no pasó; el cupón vuelve a estar
+ *                disponible, para ese cliente y para el tope total.
+ *   no_asistio → se consume. Reservó con el descuento y dejó el horario
+ *                bloqueado: es exactamente el uso que el cupón pagó.
+ *   completada → se consume, y recién acá suma a los ingresos del cupón.
+ *
+ * `usos` es el contador de RESERVADOS (el que frena el tope). `usosConfirmados`,
+ * `ingresos` y `clientesNuevos` son el informe, y cuentan lo que de verdad
+ * ocurrió.
+ */
+const ESTADOS_QUE_CONSUMEN = ['completada', 'no_asistio'];
+
+exports.onTurnoConCupon = onDocumentUpdated('businesses/{bizId}/appointments/{aptId}', async (event) => {
+  const antes = event.data?.before?.data();
+  const ahora = event.data?.after?.data();
+  if (!antes || !ahora) return;
+  if (antes.status === ahora.status) return;
+
+  const cuponId = ahora.cuponId;
+  if (!cuponId) return;
+
+  const { bizId, aptId } = event.params;
+  const cuponRef = db.doc(`businesses/${bizId}/cupones/${cuponId}`);
+  const usoRef = cuponRef.collection('usos').doc(aptId);
+
+  // El uso manda sobre el turno: dice en qué estado quedó contado. Sin esto,
+  // dos cambios de estado seguidos (cancelada → confirmada → cancelada)
+  // devolverían el uso dos veces y el contador se iría a negativo.
+  await db.runTransaction(async (tx) => {
+    const uso = await tx.get(usoRef);
+    if (!uso.exists) return;
+    const contado = uso.get('estado');
+
+    if (ahora.status === 'cancelada') {
+      if (contado === 'liberado') return;
+      tx.update(usoRef, { estado: 'liberado', cerradoEn: FieldValue.serverTimestamp() });
+      // Si ya estaba confirmado, se descuenta de las dos cuentas.
+      tx.update(cuponRef, {
+        usos: FieldValue.increment(-1),
+        ...(contado === 'confirmado' ? {
+          usosConfirmados: FieldValue.increment(-1),
+          ingresos: FieldValue.increment(-(Number(uso.get('precioFinal')) || 0)),
+          ...(uso.get('esClienteNuevo') ? { clientesNuevos: FieldValue.increment(-1) } : {}),
+        } : {}),
+      });
+      return;
+    }
+
+    if (ESTADOS_QUE_CONSUMEN.includes(ahora.status)) {
+      if (contado === 'confirmado') return;
+      // Un uso que se había liberado y vuelve (el barbero reactiva un turno
+      // cancelado) tiene que volver a ocupar su lugar en el tope.
+      const vuelve = contado === 'liberado';
+      tx.update(usoRef, { estado: 'confirmado', cerradoEn: FieldValue.serverTimestamp() });
+      tx.update(cuponRef, {
+        ...(vuelve ? { usos: FieldValue.increment(1) } : {}),
+        usosConfirmados: FieldValue.increment(1),
+        // Los ingresos del cupón son lo que de verdad se cobró, no el precio de
+        // lista: es el número con el que el dueño decide si la promo le sirvió.
+        ingresos: FieldValue.increment(Number(uso.get('precioFinal')) || 0),
+        ...(uso.get('esClienteNuevo') ? { clientesNuevos: FieldValue.increment(1) } : {}),
+      });
+    }
+  }).catch((err) => {
+    logger.error('no se pudo actualizar el uso del cupón', {
+      bizId, aptId, cuponId, error: err.message,
+    });
+  });
+});
+
 // ============================================================================
 // 4c. NOTIFICACIONES A LA PLATAFORMA
 // ============================================================================
@@ -2257,6 +2688,23 @@ exports.callbackMercadoPago = mp.callbackMercadoPago;
 exports.desconectarMercadoPago = mp.desconectarMercadoPago;
 exports.webhookMercadoPago = mp.webhookMercadoPago;
 exports.devolverSena = mp.devolverSena;
+
+// ============================================================================
+// 3b. MEMBRESÍAS (planes mensuales de la barbería a sus clientes)
+// ============================================================================
+// Ver membresias.js. El uso al reservar está en createAppointment, arriba.
+
+exports.guardarPlanMembresia = membresias.guardarPlanMembresia;
+exports.buscarSuscripcionesMP = membresias.buscarSuscripcionesMP;
+exports.cargarMembresia = membresias.cargarMembresia;
+exports.renovarMembresia = membresias.renovarMembresia;
+exports.cancelarMembresia = membresias.cancelarMembresia;
+exports.aplicarMembresia = membresias.aplicarMembresia;
+exports.revertirUsoMembresia = membresias.revertirUsoMembresia;
+exports.miMembresia = membresias.miMembresia;
+exports.onTurnoMembresia = membresias.onTurnoMembresia;
+exports.reconciliarMembresias = membresias.reconciliarMembresias;
+exports.reconciliarMembresiasDiario = membresias.reconciliarMembresiasDiario;
 
 // ============================================================================
 // COMPLETAR PLANES EN LAS CUENTAS VIEJAS

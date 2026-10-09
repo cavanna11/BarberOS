@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTenant } from '../../hooks/useTenantData';
 import { getPagina } from '../../lib/repository';
 import { capacidadesDelNegocio } from '../../config/plans';
@@ -10,6 +10,7 @@ import {
 } from '../../utils/contactoBarberia';
 import { useSucursalesPublicas, recordarSucursal } from '../../hooks/useSucursalesPublicas';
 import TemaNegocio from '../../components/client/TemaNegocio';
+import { recordarCupon, cuponRecordado } from '../../utils/cupon';
 
 // ============================================================================
 // La página de presentación de la barbería
@@ -35,6 +36,7 @@ import TemaNegocio from '../../components/client/TemaNegocio';
 
 export default function PaginaBarberia({ business }) {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { services, slug, businessId } = useTenant();
   const { sucursales } = useSucursalesPublicas(business);
   const [pagina, setPagina] = useState(null);
@@ -79,11 +81,24 @@ export default function PaginaBarberia({ business }) {
   const ig = linkInstagram(business);
   const activos = services.filter((s) => s.isActive !== false);
 
+  // El link de una promo entra por acá: `/:slug?cupon=CORTE20`. Se anota apenas
+  // se ve, porque de acá hasta que el cliente confirme hay un login y
+  // posiblemente un viaje a Mercado Pago, y la query string no sobrevive a
+  // ninguno de los dos.
+  const cuponDelLink = params.get('cupon');
+  useEffect(() => {
+    if (businessId && cuponDelLink) recordarCupon(businessId, cuponDelLink);
+  }, [businessId, cuponDelLink]);
+  const codigoPromo = cuponDelLink || (businessId ? cuponRecordado(businessId) : null);
+
   // Al entrar a reservar se anota la sucursal: si no, el flujo de reserva
   // vuelve a preguntar "elegí tu sucursal", y acá ya la eligió.
   const irAReservar = () => {
     if (grupoId) recordarSucursal(grupoId, businessId);
-    navigate(`/${slug}/reservar`);
+    // El cupón viaja en la URL además de en el storage: si el cliente abre la
+    // reserva en otra pestaña, o el navegador le bloqueó el storage, el link
+    // sigue andando. Es el mismo criterio que usa `recordarSucursal`.
+    navigate(codigoPromo ? `/${slug}/reservar?cupon=${encodeURIComponent(codigoPromo)}` : `/${slug}/reservar`);
   };
 
   // Hasta que la configuración llegue no se pinta: la plantilla decide el fondo
@@ -116,6 +131,15 @@ export default function PaginaBarberia({ business }) {
             )}
 
             {direccion && <p className="pagina-direccion">📍 {direccion}</p>}
+
+            {/* Vino por un link de promoción: es lo que lo hizo tocar, así que
+                va arriba y no escondido entre los botones. El porcentaje no se
+                muestra acá porque el cupón todavía no se validó —eso pasa en la
+                reserva, con el servicio elegido— y prometer un número que
+                después no entra es peor que no prometerlo. */}
+            {codigoPromo && (
+              <p className="pagina-promo">🎉 Tenés un descuento con el código <strong>{codigoPromo}</strong></p>
+            )}
           </header>
 
           <nav className="pagina-botones">

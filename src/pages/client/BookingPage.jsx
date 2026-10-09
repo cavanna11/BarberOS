@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBooking } from '../../contexts/BookingContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
-import { createAppointment, getBusySlots } from '../../lib/functions';
+import { createAppointment, getBusySlots, miMembresia } from '../../lib/functions';
 import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/availabilityEngine';
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
 import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
@@ -11,6 +11,10 @@ import FichaBarberia from '../../components/client/FichaBarberia';
 import ElegirSucursal from '../../components/client/ElegirSucursal';
 import { useSucursalesPublicas, recordarSucursal, sucursalRecordada, olvidarSucursal } from '../../hooks/useSucursalesPublicas';
 import { guardarPendiente, leerPendiente, borrarPendiente } from '../../utils/reservaPendiente';
+import CuponEnReserva from '../../components/client/CuponEnReserva';
+import { recordarCupon, cuponRecordado, olvidarCupon, describirCupon } from '../../utils/cupon';
+import MembresiaEnReserva from '../../components/client/MembresiaEnReserva';
+import { coberturaDelServicio } from '../../utils/membresias';
 
 // ---- STEPPER ----
 function Stepper({ step }) {
@@ -63,7 +67,7 @@ function ProfessionalSelect({ professionals, selectedId, onSelect }) {
 }
 
 // ---- SERVICE SELECT ----
-function ServiceSelect({ services, professionalServices, professionalId, selectedId, onSelect, currency }) {
+function ServiceSelect({ services, professionalServices, professionalId, selectedId, onSelect, currency, incluido = () => false }) {
   const available = useMemo(() => {
     const psIds = professionalServices
       .filter(ps => ps.professionalId === professionalId)
@@ -91,6 +95,11 @@ function ServiceSelect({ services, professionalServices, professionalId, selecte
               {tieneVentana(service) && (
                 <span className="badge badge-warning" style={{ marginTop: 6, display: 'inline-block' }}>
                   {describirVentana(service)}
+                </span>
+              )}
+              {incluido(service.id) && (
+                <span className="badge badge-success" style={{ marginTop: 6, display: 'inline-block' }}>
+                  🪪 Incluido en tu membresía
                 </span>
               )}
             </div>
@@ -304,7 +313,7 @@ function PersonalInfoStep({ user, phone, onPhoneChange }) {
 }
 
 // ---- SUMMARY ----
-function BookingSummary({ professional, service, date, timeSlot, price, currency, clientName, clientPhone }) {
+function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false }) {
   return (
     <div>
       <h2 className="booking-step-title">Confirmar tu reserva</h2>
@@ -337,7 +346,12 @@ function BookingSummary({ professional, service, date, timeSlot, price, currency
             </div>
             <div className="summary-row">
               <span className="summary-label">💰 Total</span>
-              <span className="summary-value">{formatPrice(price, currency)}</span>
+              <span className="summary-value">
+                {precioLista != null && precioLista !== price && (
+                  <span className="cupon-tachado" style={{ marginRight: 6 }}>{formatPrice(precioLista, currency)}</span>
+                )}
+                {conMembresia ? 'Incluido en tu membresía' : formatPrice(price, currency)}
+              </span>
             </div>
             <div className="summary-row" style={{ borderTop: '1px solid var(--border-color)', marginTop: 'var(--space-sm)', paddingTop: 'var(--space-sm)' }}>
               <span className="summary-label">👤 Cliente</span>
@@ -411,6 +425,27 @@ export default function BookingPage() {
   // ¿Esta barbería es parte de una cuenta con varias sucursales? Si lo es, lo
   // primero es preguntarle al cliente a cuál va: cada local tiene su equipo, sus
   // servicios y sus horarios, y el link que le llegó puede ser el de otra.
+  // El cupón del link. Se anota apenas se ve y se lee de ahí en adelante: la
+  // query string no sobrevive al login ni al viaje a Mercado Pago, y el estado
+  // de React tampoco (esa navegación desmonta la app entera).
+  const [params, setParams] = useSearchParams();
+  const [cupon, setCupon] = useState(null);
+
+  // La membresía del cliente en esta cuenta (si tiene). Se pide una vez, cuando
+  // ya entró: antes no hay a quién preguntarle. Es una vista previa; el que
+  // decide es createAppointment.
+  const [membresia, setMembresia] = useState(null);
+  const [usarMembresia, setUsarMembresia] = useState(true);
+  const uidCliente = user?.id || null;
+  useEffect(() => {
+    if (!uidCliente || !businessId) return;
+    let vigente = true;
+    miMembresia(businessId)
+      .then((r) => { if (vigente) setMembresia(r.membresia || null); })
+      .catch((err) => console.warn('[BookingPage] No se pudo leer la membresía:', err.message));
+    return () => { vigente = false; };
+  }, [uidCliente, businessId]);
+
   const { sucursales, cargando: cargandoSucursales } = useSucursalesPublicas(business);
   const grupoId = business?.grupoId || null;
   const [yaEligio, setYaEligio] = useState(() => Boolean(sucursalRecordada(business?.grupoId)));
@@ -456,7 +491,37 @@ export default function BookingPage() {
   // Get customized price
   const ps = professionalServices.find(p => p.professionalId === professionalId && p.serviceId === serviceId);
   const finalPrice = ps?.customPrice || selectedService?.price || 0;
+  // Lo que de verdad va a pagar. Todo lo que muestra un total —el resumen, la
+  // opción de pagar entero, el botón de confirmar— usa este, no `finalPrice`:
+  // si no, el cliente ve el descuento en el desglose y el precio de lista en el
+  // botón que tiene que apretar.
+  // Con la membresía no paga nada acá: ni seña, ni total, ni cupón.
+  const cobertura = coberturaDelServicio(membresia, { businessId, serviceId, fecha: date });
+  const conMembresia = usarMembresia && Boolean(cobertura) && !cobertura.fueraDeFecha && cobertura.restantes !== 0;
+  const precioAPagar = conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice;
   const finalDuration = ps?.customDuration || selectedService?.durationMinutes || 30;
+
+  // El cupón del link se anota y se saca de la URL. Sacarlo no es cosmética:
+  // el cliente copia la dirección de la barra para mandársela a un amigo, y
+  // así le manda su propio cupón de un uso. Queda anotado igual, en esta visita.
+  const codigoDelLink = params.get('cupon');
+  useEffect(() => {
+    if (!businessId || !codigoDelLink) return;
+    recordarCupon(businessId, codigoDelLink);
+    const limpios = new URLSearchParams(params);
+    limpios.delete('cupon');
+    setParams(limpios, { replace: true });
+  }, [businessId, codigoDelLink, params, setParams]);
+
+  const codigoGuardado = businessId ? cuponRecordado(businessId) : null;
+
+  // Un servicio preseleccionado por el link de la promo ('?servicio=').
+  const servicioDelLink = params.get('servicio');
+  useEffect(() => {
+    if (!servicioDelLink || serviceId) return;
+    if (!services.some((x) => x.id === servicioDelLink)) return;
+    dispatch({ type: 'SET_SERVICE', payload: servicioDelLink });
+  }, [servicioDelLink, serviceId, services, dispatch]);
 
   // Lo que ya eligió queda guardado en su teléfono desde que elige el día y
   // la hora: si cierra la pestaña en el paso del login —creyendo que ya
@@ -663,7 +728,9 @@ export default function BookingPage() {
       // con la consola abierta lo saltea. El precio sale del servicio, no de
       // este formulario.
       const res = await createAppointment({
-        pagar: infoSena ? comoPaga : undefined,
+        pagar: infoSena && !conMembresia ? comoPaga : undefined,
+        // Lo marcó el cliente. El servidor revalida y descuenta el uso.
+        usarMembresia: conMembresia,
         businessId,
         professionalId,
         serviceId,
@@ -672,10 +739,14 @@ export default function BookingPage() {
         clientName: user.name,
         clientPhone: personalInfo.phone,
         clientEmail: user.email,
+        // SOLO el código. El descuento lo recalcula el servidor sobre el precio
+        // del documento del servicio; lo que se mostró acá es una vista previa.
+        cuponCodigo: conMembresia ? null : cupon?.codigo || null,
       });
       const id = res.id;
       datos.price = res.price;
       datos.endTime = res.endTime;
+      datos.membresia = res.membresia || null;
 
       // Con seña, el turno queda GUARDADO (no reservado) y hay que ir a pagar.
       // Lo pendiente no se borra todavía: si abandona el pago, al volver le
@@ -686,6 +757,8 @@ export default function BookingPage() {
       }
 
       borrarPendiente();
+      // El cupón ya se usó: que no se aplique solo en la reserva siguiente.
+      olvidarCupon(businessId);
       dispatch({ type: 'RESET' });
       navigate(`/${slug}/confirmacion`, {
         state: { appointment: { ...datos, id, businessId, status: 'pendiente' } },
@@ -714,6 +787,15 @@ export default function BookingPage() {
     <div className="booking-container">
       {/* La barbería se presenta antes del primer paso: dónde queda, cómo
           llegar, cómo contactarla. */}
+      {/* Vino por un link de promoción: que lo vea desde el primer paso, no
+          recién al final. Es lo que lo hizo tocar el link. */}
+      {codigoGuardado && step < 6 && (
+        <div className="cupon-aviso">
+          🎉 Tenés {cupon ? describirCupon(cupon) : 'un descuento'} con el código <strong>{codigoGuardado}</strong>
+          <span className="cupon-aviso-nota">Se aplica al confirmar</span>
+        </div>
+      )}
+
       {/* En qué sucursal está reservando, con la puerta de salida a la vista:
           el que entró por el link equivocado se da cuenta acá y no cuando ya
           eligió día y hora. */}
@@ -774,6 +856,7 @@ export default function BookingPage() {
           selectedId={serviceId}
           onSelect={id => dispatch({ type: 'SET_SERVICE', payload: id })}
           currency={business.currency}
+          incluido={(id) => Boolean(coberturaDelServicio(membresia, { businessId, serviceId: id }))}
         />
       )}
 
@@ -814,14 +897,24 @@ export default function BookingPage() {
 
       {/* Cómo paga. Solo aparece si la barbería dejó elegir: si la seña es
           obligatoria no hay nada que decidir, y si no cobra seña tampoco. */}
-      {step === 6 && hayQueElegir && (
+      {/* La membresía, antes de cómo paga: si la usa, no paga nada. */}
+      {step === 6 && selectedService && (
+        <MembresiaEnReserva
+          membresia={membresia}
+          cobertura={cobertura}
+          usar={usarMembresia}
+          onUsar={setUsarMembresia}
+        />
+      )}
+
+      {step === 6 && hayQueElegir && !conMembresia && (
         <div className="card mb-md" style={{ textAlign: 'left' }}>
           <strong>¿Cómo querés pagar?</strong>
 
           <label className="pago-opcion">
             <input type="radio" name="pago" checked={comoPaga === 'sena'} onChange={() => setComoPaga('sena')} />
             <span>
-              <strong>Dejo una seña de {formatPrice(infoSena.monto, business.currency)}</strong>
+              <strong>Dejo una seña de {formatPrice(Math.min(infoSena.monto, precioAPagar), business.currency)}</strong>
               <div className="text-sm text-secondary">
                 La pagás ahora por Mercado Pago y se te descuenta del total. El resto, en la barbería.
               </div>
@@ -832,7 +925,7 @@ export default function BookingPage() {
             <label className="pago-opcion">
               <input type="radio" name="pago" checked={comoPaga === 'total'} onChange={() => setComoPaga('total')} />
               <span>
-                <strong>Pago todo ahora: {formatPrice(finalPrice, business.currency)}</strong>
+                <strong>Pago todo ahora: {formatPrice(precioAPagar, business.currency)}</strong>
                 <div className="text-sm text-secondary">
                   Llegás con la cuenta saldada y no pagás nada en el local.
                 </div>
@@ -854,7 +947,7 @@ export default function BookingPage() {
         </div>
       )}
 
-      {step === 6 && infoSena && !hayQueElegir && (
+      {step === 6 && infoSena && !hayQueElegir && !conMembresia && (
         <div className="notice notice-info" style={{ marginBottom: 'var(--space-md)' }}>
           💳 Esta barbería pide una seña de <strong>{formatPrice(infoSena.monto, business.currency)}</strong> para
           confirmar el turno. Se paga ahora por Mercado Pago y se descuenta del total.
@@ -867,10 +960,27 @@ export default function BookingPage() {
           service={{ ...selectedService, finalDuration }}
           date={date}
           timeSlot={timeSlot}
-          price={finalPrice}
+          price={precioAPagar}
+          precioLista={cupon && !conMembresia ? finalPrice : null}
+          conMembresia={conMembresia}
           currency={business.currency}
           clientName={user.name}
           clientPhone={personalInfo.phone}
+        />
+      )}
+
+      {/* El cupón va DESPUÉS del resumen: primero que vea qué está reservando.
+          Arranca cerrado, salvo que el cupón haya venido en el link. */}
+      {step === 6 && selectedService && !conMembresia && (
+        <CuponEnReserva
+          businessId={businessId}
+          serviceId={serviceId}
+          professionalId={professionalId}
+          precio={finalPrice}
+          currency={business.currency}
+          cupon={cupon}
+          onCupon={setCupon}
+          codigoDelLink={codigoGuardado}
         />
       )}
 
@@ -887,11 +997,13 @@ export default function BookingPage() {
           <button className="btn btn-primary btn-lg" onClick={handleConfirm} disabled={reservando}>
             {reservando
               ? 'Confirmando…'
-              : !infoSena || comoPaga === 'local'
+              // Con membresía, el texto de siempre: el recuadro y el total ya
+              // dicen que no se paga, y uno más largo no entra en 375 px.
+              : conMembresia || !infoSena || comoPaga === 'local'
                 ? '✅ Confirmar Reserva'
                 : comoPaga === 'total'
-                  ? `💳 Pagar ${formatPrice(finalPrice, business.currency)}`
-                  : `💳 Pagar seña de ${formatPrice(infoSena.monto, business.currency)}`}
+                  ? `💳 Pagar ${formatPrice(precioAPagar, business.currency)}`
+                  : `💳 Pagar seña de ${formatPrice(Math.min(infoSena.monto, precioAPagar), business.currency)}`}
           </button>
         ) : null}
       </div>

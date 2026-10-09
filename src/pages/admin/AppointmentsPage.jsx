@@ -5,7 +5,9 @@ import { updateAppointment, cancelAppointment } from '../../lib/repository';
 import NuevoTurnoModal from '../../components/admin/NuevoTurnoModal';
 import { formatDate, formatPrice, fechaCorta, toDateString } from '../../utils/dateUtils';
 import { origenTurno } from '../../utils/origenTurno';
-import { devolverSena } from '../../lib/functions';
+import { devolverSena, revertirUsoMembresia } from '../../lib/functions';
+import AplicarMembresiaModal from '../../components/admin/AplicarMembresiaModal';
+import { turnoConMembresia } from '../../utils/membresias';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 import WhatsAppTurno from '../../components/admin/WhatsAppTurno';
 import FiltroSucursal from '../../components/admin/FiltroSucursal';
@@ -174,6 +176,21 @@ Sale de tu cuenta de Mercado Pago.`)) return;
     }
   };
 
+  // Membresías: solo el dueño aplica o quita (las functions lo exigen igual).
+  const [aplicando, setAplicando] = useState(null);
+  const quitarMembresia = async (apt) => {
+    const motivo = window.prompt(`¿Por qué se quita la membresía de este turno? (queda en la auditoría)
+
+El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
+    if (!motivo || motivo.trim().length < 3) return;
+    try {
+      await revertirUsoMembresia({ businessId: negocioDe(apt), appointmentId: apt.id, motivo: motivo.trim() });
+    } catch (err) {
+      alert('No se pudo quitar: ' + err.message);
+    }
+  };
+  const precioDe = (apt) => (turnoConMembresia(apt) ? '🪪 Membresía' : formatPrice(apt.price, business?.currency));
+
   const updateStatus = (apt, status) => {
     updateAppointment(negocioDe(apt), apt.id, { status }).catch((err) => {
       console.error('[AppointmentsPage] No se pudo actualizar el turno:', err);
@@ -225,6 +242,11 @@ Sale de tu cuenta de Mercado Pago.`)) return;
             title="Devolverle la seña desde tu Mercado Pago" onClick={() => devolver(apt)}>
             {devolviendo === apt.id ? 'Devolviendo…' : 'Devolver seña'}
           </button>
+        )}
+        {isOwner && apt.type !== 'walkin' && ['pendiente', 'confirmada', 'completada'].includes(apt.status) && (
+          turnoConMembresia(apt)
+            ? <button className="btn btn-sm btn-ghost" title="El turno vuelve a cobrarse" onClick={() => quitarMembresia(apt)}>Quitar membresía</button>
+            : <button className="btn btn-sm btn-ghost" title="Cubrir este turno con la membresía del cliente" onClick={() => setAplicando(apt)}>🪪 Membresía</button>
         )}
       </div>
     );
@@ -336,7 +358,7 @@ Sale de tu cuenta de Mercado Pago.`)) return;
               </div>
               <div className="text-sm text-muted" title={origen.detalle}>{origen.icono} {origen.etiqueta}</div>
               <div className="text-sm text-secondary">
-                {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'} · ${formatPrice(apt.price, business?.currency)}`}
+                {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'} · ${precioDe(apt)}`}
                 {isOwner && prof && <> · {prof.name}</>}
               </div>
               {apt.clientPhone && !isWalkin && (
@@ -415,7 +437,7 @@ Sale de tu cuenta de Mercado Pago.`)) return;
                     }
                   </td>
                   <td>
-                    {isWalkin ? '—' : formatPrice(apt.price, business?.currency)}
+                    {isWalkin ? '—' : precioDe(apt)}
                   </td>
                   <td>
                     <span className={`badge ${STATUS_BADGES[apt.status]}`}>
@@ -436,6 +458,16 @@ Sale de tu cuenta de Mercado Pago.`)) return;
           </div>
         )}
       </div>
+
+      {aplicando && (
+        <AplicarMembresiaModal
+          turno={aplicando}
+          businessId={negocioDe(aplicando)}
+          cuentaId={business?.grupoId || businessId}
+          onCerrar={() => setAplicando(null)}
+          onListo={() => setAplicando(null)}
+        />
+      )}
     </div>
   );
 }

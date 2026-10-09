@@ -33,7 +33,10 @@ const MP_CLIENT_SECRET = defineSecret('MP_CLIENT_SECRET');
 // us-central1 —otra URL— y el rewrite de Vercel apunta a southamerica-east1.
 const REGION = 'southamerica-east1';
 
-const API = 'https://api.mercadopago.com';
+// En el emulador se puede apuntar a un Mercado Pago falso (lo levanta
+// scripts/test-membresias-emulador.mjs) con MP_API_URL en functions/.env.local.
+// Fuera del emulador se ignora: en producción no hay forma de desviarlo.
+const API = (process.env.FUNCTIONS_EMULATOR === 'true' && process.env.MP_API_URL) || 'https://api.mercadopago.com';
 const SITIO = process.env.SITIO_URL || 'https://barberos.sacia.tech';
 const REDIRECT_URI = `${SITIO}/api/mp/callback`;
 
@@ -292,66 +295,84 @@ exports.webhookMercadoPago = onRequest(
     // Mercado Pago reintenta si no le contestás 200 rápido. Cualquier problema
     // nuestro se loguea, pero la respuesta es 200 igual: con un error reintenta
     // durante horas algo que no se va a arreglar solo.
-    res.status(200).send('ok');
-
+    //
+    // La respuesta va DESPUÉS de procesar, no antes: en Cloud Functions v2 lo
+    // que corre después de responder puede quedarse sin CPU y morir a mitad de
+    // camino. MP espera ~20 s; esto tarda dos o tres lecturas.
     try {
-      const tipo = req.query.type || req.query.topic || req.body?.type;
-      const pagoId = req.query['data.id'] || req.body?.data?.id || req.query.id;
-      if (tipo !== 'payment' || !pagoId) return;
-
-      // Para leer el pago hace falta el token del vendedor, así que primero hay
-      // que saber de qué barbería es. El aviso trae el user_id de Mercado Pago.
-      const vendedor = String(req.query.user_id || req.body?.user_id || '');
-      let bizId = null;
-      if (vendedor) {
-        const q = await db().collection('businesses').where('mpUserId', '==', vendedor).limit(1).get();
-        if (!q.empty) bizId = q.docs[0].id;
-      }
-      if (!bizId) {
-        logger.warn('aviso de Mercado Pago sin barbería', { vendedor, pagoId: String(pagoId) });
-        return;
-      }
-
-      const token = await tokenDe(bizId);
-      if (!token) return;
-
-      const pago = await pedirMP(`/v1/payments/${pagoId}`, { token });
-      const ref = String(pago.external_reference || '');
-      const [refBiz, appointmentId] = ref.split(':');
-      if (!appointmentId || refBiz !== bizId) {
-        logger.warn('pago sin referencia válida', { pagoId: String(pagoId), ref, bizId });
-        return;
-      }
-
-      const turnoRef = db().doc(`businesses/${bizId}/appointments/${appointmentId}`);
-      const turno = await turnoRef.get();
-      if (!turno.exists) {
-        logger.warn('pago de un turno que no existe', { pagoId: String(pagoId), bizId, appointmentId });
-        return;
-      }
-
-      if (pago.status === 'approved') {
-        // Se confirma aunque la reserva haya vencido: el cliente pagó, el lugar
-        // es suyo. Si mientras tanto otro tomó el horario lo va a ver el
-        // barbero en la agenda y lo resuelve; es mejor que quedarse con la
-        // plata de alguien sin darle el turno.
-        await turnoRef.update({
-          status: 'pendiente',
-          'sena.estado': 'pagada',
-          'sena.paymentId': String(pago.id),
-          'sena.pagadaEn': FieldValue.serverTimestamp(),
-          senaExpiraEn: FieldValue.delete(),
-        });
-        logger.info('seña pagada', { bizId, appointmentId, pagoId: String(pago.id), monto: pago.transaction_amount });
-      } else if (['rejected', 'cancelled'].includes(pago.status)) {
-        await turnoRef.update({ 'sena.estado': 'rechazada', 'sena.paymentId': String(pago.id) });
-        logger.info('seña rechazada', { bizId, appointmentId, estado: pago.status });
-      }
+      await procesarAviso(req);
     } catch (err) {
       logger.error('falló el aviso de Mercado Pago', { error: err.message });
     }
+    res.status(200).send('ok');
   }
 );
+
+async function procesarAviso(req) {
+  const tipo = req.query.type || req.query.topic || req.body?.type || req.body?.topic;
+  const pagoId = req.query['data.id'] || req.body?.data?.id || req.query.id || req.body?.id;
+
+  // Suscripciones (membresías): el estado de la suscripción y sus cobros
+  // mensuales. Se prenden como tópicos en el panel de la app de MP; no
+  // llegan por `notification_url` como la seña.
+  if (tipo && tipo !== 'payment') {
+    await require('./membresias').procesarAvisoMP(tipo, pagoId);
+    return;
+  }
+  if (tipo !== 'payment' || !pagoId) return;
+
+  // ¿Es la cuota de una membresía (devuelta o desconocida)? Tiene su índice.
+  if (await require('./membresias').procesarPagoDeMembresia(String(pagoId))) return;
+
+  // Para leer el pago hace falta el token del vendedor, así que primero hay
+  // que saber de qué barbería es. El aviso trae el user_id de Mercado Pago.
+  const vendedor = String(req.query.user_id || req.body?.user_id || '');
+  let bizId = null;
+  if (vendedor) {
+    const q = await db().collection('businesses').where('mpUserId', '==', vendedor).limit(1).get();
+    if (!q.empty) bizId = q.docs[0].id;
+  }
+  if (!bizId) {
+    logger.warn('aviso de Mercado Pago sin barbería', { vendedor, pagoId: String(pagoId) });
+    return;
+  }
+
+  const token = await tokenDe(bizId);
+  if (!token) return;
+
+  const pago = await pedirMP(`/v1/payments/${pagoId}`, { token });
+  const ref = String(pago.external_reference || '');
+  const [refBiz, appointmentId] = ref.split(':');
+  if (!appointmentId || refBiz !== bizId) {
+    logger.warn('pago sin referencia válida', { pagoId: String(pagoId), ref, bizId });
+    return;
+  }
+
+  const turnoRef = db().doc(`businesses/${bizId}/appointments/${appointmentId}`);
+  const turno = await turnoRef.get();
+  if (!turno.exists) {
+    logger.warn('pago de un turno que no existe', { pagoId: String(pagoId), bizId, appointmentId });
+    return;
+  }
+
+  if (pago.status === 'approved') {
+    // Se confirma aunque la reserva haya vencido: el cliente pagó, el lugar
+    // es suyo. Si mientras tanto otro tomó el horario lo va a ver el
+    // barbero en la agenda y lo resuelve; es mejor que quedarse con la
+    // plata de alguien sin darle el turno.
+    await turnoRef.update({
+      status: 'pendiente',
+      'sena.estado': 'pagada',
+      'sena.paymentId': String(pago.id),
+      'sena.pagadaEn': FieldValue.serverTimestamp(),
+      senaExpiraEn: FieldValue.delete(),
+    });
+    logger.info('seña pagada', { bizId, appointmentId, pagoId: String(pago.id), monto: pago.transaction_amount });
+  } else if (['rejected', 'cancelled'].includes(pago.status)) {
+    await turnoRef.update({ 'sena.estado': 'rechazada', 'sena.paymentId': String(pago.id) });
+    logger.info('seña rechazada', { bizId, appointmentId, estado: pago.status });
+  }
+}
 
 // ── 3. Devolver la seña ─────────────────────────────────────────────────────
 
