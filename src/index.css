@@ -1259,6 +1259,11 @@ select.form-input {
   max-width: 420px;
   margin: 0 auto;
   padding: var(--space-2xl) var(--space-md);
+  /* Es hijo de un contenedor flex: sin esto no se achica por debajo de su
+     contenido y a 375 px el login medía 391 (scroll horizontal). */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .auth-card {
@@ -1343,7 +1348,22 @@ select.form-input {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* El menú se desplaza solo cuando no entra (cuenta con sucursales: el
+     selector de arriba más Cupones y Membresías ya no entraban en una
+     notebook y lo de abajo —Configuración, Soporte— quedaba tapado). El
+     nombre, el selector y "Cerrar sesión" quedan siempre a la vista. */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
 }
+.admin-nav > * { flex-shrink: 0; }
+.admin-nav::-webkit-scrollbar { width: 6px; }
+.admin-nav::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.25); border-radius: 3px; }
+.admin-sidebar-header,
+.selector-sucursal,
+.admin-sidebar-footer { flex-shrink: 0; }
 
 .admin-nav-item {
   display: flex;
@@ -5276,3 +5296,20 @@ select.form-input {
 .alta-sucursal-cabecera { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .alta-sucursal-grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 @media (max-width: 600px) { .alta-sucursal-grilla { grid-template-columns: 1fr; } }
+
+/* Panel global: las sucursales adentro de la tarjeta de su cuenta. */
+.cuenta-sucursales { display: flex; flex-direction: column; gap: 6px; }
+.cuenta-sucursales-toggle { align-self: flex-start; padding-left: 0; }
+.cuenta-sucursal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.cuenta-sucursal-datos { display: flex; flex-direction: column; min-width: 0; }
+.cuenta-sucursal-datos strong { overflow-wrap: anywhere; }
+.cuenta-sucursal-acciones { display: flex; gap: 4px; flex-shrink: 0; }

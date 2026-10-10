@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import CampanaNotificaciones from '../admin/CampanaNotificaciones';
-import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBusiness } from '../../contexts/BusinessContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
@@ -187,6 +187,20 @@ export default function AdminLayout() {
     escucharEnPrimerPlano().then((f) => { cortar = f; });
     return () => cortar();
   }, []);
+
+  // Las secciones del dueño, escritas a mano en la barra por un barbero: no se
+  // muestran. Guardar no podría igual (las Rules lo frenan), pero ver la
+  // configuración del local o las membresías no le corresponde.
+  const esSeccionDelDueno = (ruta) => !isOwner && !platformOwner
+    && ownerNavItems.some((i) => !i.end && ruta.startsWith(i.to))
+    && !adminNavItems.some((i) => !i.end && ruta.startsWith(i.to));
+
+  // Con el menú más largo que la pantalla, la sección en la que estás puede
+  // quedar fuera de vista: se trae al medio al cambiar de pantalla.
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.querySelector('.admin-nav .admin-nav-item.active')?.scrollIntoView({ block: 'nearest' });
+  }, [pathname]);
 
   // Invitación a instalar, solo en el celular y solo si no está instalada.
   const [avisoInstalarOculto, setAvisoInstalarOculto] = useState(() => {
@@ -444,6 +458,12 @@ export default function AdminLayout() {
           <AvisoPlataforma />
           {business && debeElegirSucursal ? (
             <ElegirSucursalPanel sucursales={sucursales} grupoId={grupoCuenta} nombreCuenta={nombreCuenta} esPlataforma={platformOwner} onElegir={elegirSucursal} />
+          ) : business && esSeccionDelDueno(pathname) ? (
+            <div className="card empty-state" style={{ padding: 'var(--space-2xl)' }}>
+              <div className="empty-state-icon">🔒</div>
+              <h3 style={{ marginBottom: 8 }}>Esta sección es del dueño de la barbería</h3>
+              <Link to="/admin" className="btn btn-primary">Volver a mi agenda</Link>
+            </div>
           ) : business ? (
             <Outlet />
           ) : esperandoNegocios ? (

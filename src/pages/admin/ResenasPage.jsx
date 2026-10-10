@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { useDatosDeSucursales } from '../../hooks/useDatosDeSucursales';
 import { fechaCorta, formatDate } from '../../utils/dateUtils';
+import { resenasDeProfesional } from '../../lib/repository';
 import {
   PERIODOS,
   filtrarResenas,
@@ -45,10 +46,33 @@ export default function ResenasPage() {
   // Las reseñas de todas las sucursales de la cuenta (una sola si no es
   // empresarial). Los profesionales y servicios también, porque los nombres de
   // una sucursal no están en el contexto de la otra.
-  const { juntar, cargando, error, recargar } = useDatosDeSucursales(
-    ['reviews', 'professionals', 'services'],
+  // El barbero no puede listar las reseñas de todos (las Rules le exigen
+  // filtrar por su perfil), así que las suyas se piden aparte.
+  const sucursalesDatos = useDatosDeSucursales(
+    isOwner ? ['reviews', 'professionals', 'services'] : ['professionals', 'services'],
     { activo: Boolean(businessId) }
   );
+  const { juntar } = sucursalesDatos;
+  // La respuesta se guarda con la clave que la pidió: si cambia la clave (otro
+  // negocio, o "Actualizar"), la que hay deja de valer sola, sin un setState
+  // sincrónico en el efecto. Mismo patrón que los horarios ocupados de la reserva.
+  const [vuelta, setVuelta] = useState(0);
+  const clavePropias = isOwner || !businessId || !profIdPropio ? '' : `${businessId}|${profIdPropio}|${vuelta}`;
+  const [propias, setPropias] = useState({ clave: '', filas: [], error: '' });
+  useEffect(() => {
+    if (!clavePropias) return;
+    let vigente = true;
+    resenasDeProfesional(businessId, profIdPropio)
+      .then((filas) => { if (vigente) setPropias({ clave: clavePropias, filas, error: '' }); })
+      .catch((err) => {
+        console.error('[Reseñas] No se pudieron leer tus reseñas:', err);
+        if (vigente) setPropias({ clave: clavePropias, filas: [], error: 'No se pudieron leer tus reseñas. Probá de nuevo.' });
+      });
+    return () => { vigente = false; };
+  }, [clavePropias, businessId, profIdPropio]);
+  const cargando = sucursalesDatos.cargando || (Boolean(clavePropias) && propias.clave !== clavePropias);
+  const error = sucursalesDatos.error || propias.error;
+  const recargar = () => { sucursalesDatos.recargar(); setVuelta((v) => v + 1); };
 
   const [periodo, setPeriodo] = useState('todo');
   const [desde, setDesde] = useState('');
@@ -57,7 +81,7 @@ export default function ResenasPage() {
   const [sucFiltro, setSucFiltro] = useState('');
   const [estrellasFiltro, setEstrellasFiltro] = useState(0);
 
-  const todas = useMemo(() => juntar('reviews'), [juntar]);
+  const todas = useMemo(() => (isOwner ? juntar('reviews') : propias.filas), [isOwner, juntar, propias.filas]);
   const todosLosProfes = useMemo(() => {
     const delContexto = professionals.map((p) => ({ ...p, __bizId: businessId }));
     const deSucursales = juntar('professionals');

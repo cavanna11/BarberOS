@@ -25,7 +25,7 @@ import NewBusinessModal from './NewBusinessModal';
 import PlanAMedida from '../../components/super-admin/PlanAMedida';
 import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
 import TicketsPanel from './TicketsPanel';
-import { olvidarSucursalEnPanel } from '../../utils/sucursalEnPanel';
+import { olvidarSucursalEnPanel, elegirSucursalEnPanel } from '../../utils/sucursalEnPanel';
 
 // --- Professional SVG Icons ---
 const BusinessIcon = () => (
@@ -500,12 +500,31 @@ export default function SuperAdminDashboard({ seccion = null }) {
     }
   };
 
+  // Una tarjeta por CUENTA: las sucursales van adentro de la de su cuenta, no
+  // sueltas en la lista como si fueran clientes distintos (con tres cuentas de
+  // tres sucursales, la lista eran nueve tarjetas mezcladas).
+  const sucursalesDe = (b) => (b.grupoId === b.id ? businesses.filter((o) => o.grupoId === b.id) : [b]);
+  const esSucursalSuelta = (b) => Boolean(b.grupoId) && b.grupoId !== b.id;
+  const [cuentasAbiertas, setCuentasAbiertas] = useState({});
+
+  // Entrar DIRECTO a una sucursal desde la lista: ya se eligió acá, no hace
+  // falta la pantalla de "¿qué sucursal querés administrar?".
+  const handleManageSucursal = (s) => {
+    elegirSucursalEnPanel(s.grupoId, s.id);
+    dispatch({ type: 'SET_CURRENT_BUSINESS', payload: s.id });
+    navigate('/admin');
+  };
+
   const filteredBusinesses = businesses?.filter(b => {
+    if (esSucursalSuelta(b)) return false;
     // Con `|| ''`: un documento sin nombre o sin slug (uno sembrado a mano, o
     // un alta que quedó a medias) hacía reventar el filtro y con él la pantalla
     // entera del panel global — pantalla en blanco, sin ningún mensaje.
-    const matchesSearch = (b.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          (b.slug || '').toLowerCase().includes(searchTerm.toLowerCase());
+    // La cuenta aparece si coincide ella O cualquiera de sus sucursales.
+    const q = searchTerm.toLowerCase();
+    const matchesSearch = [b, ...sucursalesDe(b)].some((x) =>
+      (x.name || '').toLowerCase().includes(q) || (x.slug || '').toLowerCase().includes(q)
+      || (x.nombreCuenta || '').toLowerCase().includes(q));
     
     let matchesStatus = true;
     if (tenantStatusFilter === 'active') matchesStatus = !b.isFrozen;
@@ -922,6 +941,10 @@ export default function SuperAdminDashboard({ seccion = null }) {
               // plan" hace pensar que es una cuenta regalada, y peor: dejaba
               // cambiarle el plan a una sola sucursal y desincronizar el grupo.
               const esSucursal = Boolean(b.grupoId) && b.grupoId !== b.id;
+              // Sus locales (incluida ella misma, que es uno más).
+              const locales = sucursalesDe(b);
+              const conSucursales = locales.length > 1;
+              const abierta = cuentasAbiertas[b.id] === true;
 
               return (
                 <div key={b.id} className="card" style={{ 
@@ -949,23 +972,16 @@ export default function SuperAdminDashboard({ seccion = null }) {
                   {/* Header: Name & Status */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 4 }}>
                     <div>
-                      <strong style={{ fontSize: 16, color: 'var(--text)' }}>{b.name}</strong>
-                      {/* A qué cuenta pertenece. Sin esto, cuatro sucursales de la
-                          misma barbería parecen cuatro clientes distintos — y una
-                          de ellas, la que paga, es la única con abono. */}
-                      {b.grupoId && b.grupoId !== b.id && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                          Sucursal de <strong>{nombreDelNegocio(b.grupoId)}</strong> · el abono lo paga la principal
+                      <strong style={{ fontSize: 16, color: 'var(--text)' }}>{conSucursales ? (b.nombreCuenta || b.name) : b.name}</strong>
+                      {conSucursales ? (
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          Cuenta con <strong>{locales.length} sucursales</strong>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          URL: <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)' }}>/{b.slug}</span>
                         </div>
                       )}
-                      {b.grupoId && b.grupoId === b.id && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                          Cuenta con {businesses.filter((o) => o.grupoId === b.id).length} sucursales
-                        </div>
-                      )}
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                        URL: <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)' }}>/{b.slug}</span>
-                      </div>
                     </div>
                     <span className={`badge ${b.isFrozen ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: 11 }}>
                       {b.isFrozen ? 'Suspendido' : 'Activo'}
@@ -1078,6 +1094,44 @@ export default function SuperAdminDashboard({ seccion = null }) {
                   </div>
                   )}
 
+                  {/* Las sucursales de la cuenta, plegadas: cada una con su link,
+                      su estado y la entrada directa a administrarla. */}
+                  {conSucursales && (
+                    <div className="cuenta-sucursales">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm cuenta-sucursales-toggle"
+                        onClick={() => setCuentasAbiertas((p) => ({ ...p, [b.id]: !abierta }))}
+                        aria-expanded={abierta}
+                      >
+                        {abierta ? '▴ Ocultar sucursales' : `▾ Ver las ${locales.length} sucursales`}
+                      </button>
+                      {abierta && locales.map((s) => (
+                        <div key={s.id} className="cuenta-sucursal">
+                          <div className="cuenta-sucursal-datos">
+                            <strong>{s.name}</strong>
+                            <span className="text-xs text-muted" style={{ fontFamily: 'monospace' }}>/{s.slug}</span>
+                            {s.isFrozen && <span className="badge badge-danger" style={{ fontSize: 10 }}>Suspendida</span>}
+                          </div>
+                          <div className="cuenta-sucursal-acciones">
+                            <button type="button" className="btn btn-primary btn-sm" onClick={() => handleManageSucursal(s)}>
+                              Administrar
+                            </button>
+                            <a href={`/${s.slug}`} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm" style={{ textDecoration: 'none' }}>
+                              🔗
+                            </a>
+                            {!soloLectura && s.id !== b.id && (
+                              <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}
+                                title="Eliminar esta sucursal" onClick={() => handleOpenDeleteModal(s)}>
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Action Buttons Grid */}
                   <div style={{
                     display: 'grid',
@@ -1092,15 +1146,17 @@ export default function SuperAdminDashboard({ seccion = null }) {
                     >
                       ⚙️ Administrar esta cuenta
                     </button>
-                    <a
-                      href={`/${b.slug}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-outline"
-                      style={{ padding: '8px', fontSize: 12, justifyContent: 'center', gridColumn: '1 / -1', textDecoration: 'none' }}
-                    >
-                      🔗 Ver link público
-                    </a>
+                    {!conSucursales && (
+                      <a
+                        href={`/${b.slug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-outline"
+                        style={{ padding: '8px', fontSize: 12, justifyContent: 'center', gridColumn: '1 / -1', textDecoration: 'none' }}
+                      >
+                        🔗 Ver link público
+                      </a>
+                    )}
                     {!soloLectura && (<>
                     {/* Cobrar y cambiar de plan es de la cuenta, no de cada
                         local: en una sucursal esos botones no aparecen. */}

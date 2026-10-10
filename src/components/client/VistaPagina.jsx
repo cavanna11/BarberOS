@@ -27,6 +27,16 @@ function Enlace({ vistaPrevia, to, href, className, children }) {
   return <a className={className} href={href} target="_blank" rel="noreferrer nofollow">{children}</a>;
 }
 
+/**
+ * Un botón, o un span que se ve igual en la vista previa. Las miniaturas del
+ * editor son botones (se tocan para elegir el diseño), y un <button> adentro
+ * de otro es HTML inválido: React lo avisa y el navegador lo arma mal.
+ */
+function Boton({ vistaPrevia, className, onClick, children, ...resto }) {
+  if (vistaPrevia) return <span className={className} onClick={onClick}>{children}</span>;
+  return <button type="button" className={className} onClick={onClick} {...resto}>{children}</button>;
+}
+
 export default function VistaPagina({
   business, cfg, servicios = [], locales = [], businessId, slug,
   codigoPromo = null, onReservar = () => {}, vistaPrevia = false,
@@ -107,16 +117,16 @@ export default function VistaPagina({
               </>
             )}
 
-            <button type="button" className="pagina-boton pagina-boton-principal" onClick={vistaPrevia ? undefined : onReservar}>
+            <Boton vistaPrevia={vistaPrevia} className="pagina-boton pagina-boton-principal" onClick={vistaPrevia ? undefined : onReservar}>
               <span className="pagina-boton-texto">
                 {locales.length > 0 ? `Reservar en ${business.name}` : 'Reservar un turno'}
               </span>
-            </button>
+            </Boton>
 
             {cfg.mostrarServicios !== false && activos.length > 0 && (
               <>
-                <button
-                  type="button"
+                <Boton
+                  vistaPrevia={vistaPrevia}
                   className="pagina-boton"
                   aria-expanded={verServicios}
                   onClick={() => setVerServicios((v) => !v)}
@@ -125,7 +135,7 @@ export default function VistaPagina({
                   <span className="pagina-boton-nota">
                     {verServicios ? 'ocultar' : `${activos.length} ${activos.length === 1 ? 'servicio' : 'servicios'}`}
                   </span>
-                </button>
+                </Boton>
                 {verServicios && (
                   <ul className="pagina-servicios">
                     {activos.map((s) => (

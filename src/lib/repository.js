@@ -498,6 +498,17 @@ export async function misResenas(businessId, uid) {
   return rows(await getDocs(q));
 }
 
+/**
+ * Las reseñas de los turnos de UN barbero. Las Rules le dejan al barbero
+ * listar solo las suyas, y exigen que la consulta lo diga: pedir todas y
+ * filtrar después se rechaza entera (y la pantalla de Reseñas del barbero
+ * quedaba en "No se pudieron leer los datos").
+ */
+export async function resenasDeProfesional(businessId, professionalId) {
+  const q = query(subCol(businessId, 'reviews'), where('professionalId', '==', professionalId));
+  return rows(await getDocs(q)).map((r) => ({ ...r, __bizId: businessId }));
+}
+
 /** Todas las reseñas de una barbería, de la más nueva a la más vieja. */
 export async function obtenerResenas(businessId) {
   const filas = rows(await getDocs(subCol(businessId, 'reviews')));

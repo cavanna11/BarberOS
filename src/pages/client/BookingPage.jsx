@@ -278,11 +278,13 @@ function PersonalInfoStep({ user, phone, onPhoneChange }) {
           ? <img src={user.avatarUrl} alt={user.name} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
           : <div className="avatar avatar-md">{user.name.split(' ').map(n => n[0]).join('')}</div>
         }
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600 }}>{user.name}</div>
-          <div className="text-sm text-secondary">{user.email}</div>
+        {/* minWidth 0: sin esto un mail largo no se corta y empuja la fila
+            (y la página entera) fuera de los 375 px del celular. */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{user.name}</div>
+          <div className="text-sm text-secondary" style={{ overflowWrap: 'anywhere' }}>{user.email}</div>
         </div>
-        <span className="badge badge-success">✓ Verificado</span>
+        <span className="badge badge-success" style={{ flexShrink: 0 }}>✓ Verificado</span>
       </div>
 
       <div className="personal-form">
