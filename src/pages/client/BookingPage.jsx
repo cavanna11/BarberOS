@@ -9,7 +9,7 @@ import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils
 import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
 import FichaBarberia from '../../components/client/FichaBarberia';
 import ElegirSucursal from '../../components/client/ElegirSucursal';
-import { useSucursalesPublicas, recordarSucursal, sucursalRecordada, olvidarSucursal } from '../../hooks/useSucursalesPublicas';
+import { useSucursalesPublicas, recordarSucursal, olvidarSucursal } from '../../hooks/useSucursalesPublicas';
 import { guardarPendiente, leerPendiente, borrarPendiente } from '../../utils/reservaPendiente';
 import CuponEnReserva from '../../components/client/CuponEnReserva';
 import { recordarCupon, cuponRecordado, olvidarCupon, describirCupon } from '../../utils/cupon';
@@ -450,7 +450,10 @@ export default function BookingPage() {
 
   const { sucursales, cargando: cargandoSucursales } = useSucursalesPublicas(business);
   const grupoId = business?.grupoId || null;
-  const [yaEligio, setYaEligio] = useState(() => Boolean(sucursalRecordada(business?.grupoId)));
+  // El link de una SUCURSAL entra directo a esa sucursal: el que lo abrió ya
+  // eligió (para preguntar está el link de la cuenta, `/franlook`). El selector
+  // aparece solo si toca "Cambiar de sucursal".
+  const [yaEligio, setYaEligio] = useState(true);
   const { step, professionalId, serviceId, date, timeSlot, personalInfo } = booking;
 
   // Seña: solo si el dueño conectó Mercado Pago y la activó con un monto.

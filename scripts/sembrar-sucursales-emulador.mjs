@@ -210,6 +210,13 @@ for (const [i, monto] of [48000, 48000, 25000, 25000, 12000].entries()) {
   await ref.set({ businessId: GRUPO, monto, fecha: diaDe(i * 20), nota: '', createdAt: new Date() });
 }
 
+// El mapa público del grupo (lo escribe crearSucursal en producción): sin él,
+// el link de la cuenta y "Elegí tu sucursal" no encuentran las sucursales.
+await db.doc(`grupos/${GRUPO}`).set({ principalId: GRUPO, businessIds: SUCURSALES.map((x) => x.id) });
+// Y el link de la CUENTA, que pregunta a qué sucursal va: /clasica.
+await db.doc('slugs/clasica').set({ grupoId: GRUPO, esCuenta: true });
+await db.doc(`businesses/${GRUPO}`).update({ slugCuenta: 'clasica', nombreCuenta: 'Clásica' });
+
 console.log(`
 Listo. En el emulador quedaron:
 

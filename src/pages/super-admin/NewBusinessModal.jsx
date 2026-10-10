@@ -3,7 +3,7 @@ import { useBusiness } from '../../contexts/BusinessContext';
 import { PLANS, DEFAULT_PLAN_ID, getPlan, DEFAULT_BUSINESS_HOURS, precioLindo } from '../../config/plans';
 import { isPlatformOwner } from '../../config/platform';
 import { slugify, isReservedSlug } from '../../utils/slug';
-import { createBusiness, isSlugAvailable } from '../../lib/repository';
+import { createBusiness, isSlugAvailable, guardarLinkDeCuenta } from '../../lib/repository';
 import { setBusinessAdmin, createOwnerWithPassword, crearSucursal } from '../../lib/functions';
 import PlanAMedida from '../../components/super-admin/PlanAMedida';
 import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
@@ -79,6 +79,9 @@ export default function NewBusinessModal({ onClose, onCreated }) {
   const [created, setCreated] = useState(null);
   // Las sucursales, cuando el plan permite más de una.
   const [sucs, setSucs] = useState([{ ...SUCURSAL_VACIA }]);
+  // El link de la CUENTA (`/franlook`): pregunta a qué sucursal va. Se propone
+  // del nombre de la marca hasta que se lo edita a mano.
+  const [linkCuenta, setLinkCuenta] = useState({ slug: '', editado: false });
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -99,6 +102,7 @@ export default function NewBusinessModal({ onClose, onCreated }) {
     } else {
       set({ name, slug: slugify(name) });
     }
+    if (!linkCuenta.editado) setLinkCuenta({ slug: slugify(name), editado: false });
   };
 
   const handleSlugChange = (slug) => {
@@ -122,6 +126,15 @@ export default function NewBusinessModal({ onClose, onCreated }) {
         else if (vistos.has(x.slug)) e[clave] = 'Dos sucursales no pueden tener el mismo link.';
         else if (!(await isSlugAvailable(x.slug))) e[clave] = 'Ya hay una barbería con el link /' + x.slug + '.';
         vistos.add(x.slug);
+      }
+      // El link de la cuenta, solo si hay más de una sucursal (con una sola no
+      // hay nada que elegir).
+      if (sucs.length > 1) {
+        const l = linkCuenta.slug;
+        if (!l || l.length < 3) e.linkCuenta = 'Falta el link de la cuenta (mínimo 3 letras).';
+        else if (isReservedSlug(l)) e.linkCuenta = 'Ese link es una ruta interna de la app. Elegí otro.';
+        else if (vistos.has(l)) e.linkCuenta = 'Tiene que ser distinto del link de cada sucursal.';
+        else if (!(await isSlugAvailable(l))) e.linkCuenta = 'Ya hay una barbería con el link /' + l + '.';
       }
     } else if (!form.slug) {
       e.slug = 'Hace falta un slug para la URL pública.';
@@ -315,7 +328,18 @@ export default function NewBusinessModal({ onClose, onCreated }) {
         }
       }
 
-      setCreated({ business: { ...business, id: businessId, ...billing }, ownerAdmin, claims, sucursalesCreadas });
+      // El link de la cuenta, cuando quedaron al menos dos sucursales.
+      let linkDeCuenta = null;
+      if (multi && sucursalesCreadas.filter((x) => x.ok).length > 1) {
+        try {
+          await guardarLinkDeCuenta({ grupoId: businessId, slug: linkCuenta.slug });
+          linkDeCuenta = { slug: linkCuenta.slug, ok: true };
+        } catch (err) {
+          linkDeCuenta = { slug: linkCuenta.slug, ok: false, error: err.message };
+        }
+      }
+
+      setCreated({ business: { ...business, id: businessId, ...billing }, ownerAdmin, claims, sucursalesCreadas, linkDeCuenta });
     } catch (err) {
       console.error('[NewBusinessModal] No se pudo crear el negocio:', err);
       setErrors({
@@ -349,6 +373,13 @@ export default function NewBusinessModal({ onClose, onCreated }) {
               <label className="form-label">
                 {created.sucursalesCreadas?.length > 1 ? 'Link de cada sucursal' : 'Link público para sus clientes'}
               </label>
+              {created.linkDeCuenta && (
+                <div className="form-input" style={{ background: 'var(--bg-secondary)', fontSize: 13, wordBreak: 'break-all', marginBottom: 6, borderColor: 'var(--primary)' }}>
+                  <strong>Link de la cuenta</strong> (pregunta a qué sucursal va):{' '}
+                  <span style={{ fontFamily: 'monospace' }}>{window.location.origin}/{created.linkDeCuenta.slug}</span>
+                  {!created.linkDeCuenta.ok && <div className="form-error">No se pudo crear: {created.linkDeCuenta.error} Definilo desde la tarjeta de la cuenta.</div>}
+                </div>
+              )}
               {created.sucursalesCreadas?.length > 1 ? (
                 created.sucursalesCreadas.map((x) => (
                   <div key={x.slug} className="form-input" style={{ background: 'var(--bg-secondary)', fontSize: 13, wordBreak: 'break-all', marginBottom: 6 }}>
@@ -739,6 +770,24 @@ export default function NewBusinessModal({ onClose, onCreated }) {
                 <button type="button" className="btn btn-outline btn-sm" onClick={() => setSucs((p) => [...p, { ...SUCURSAL_VACIA }])}>
                   + Agregar otra sucursal
                 </button>
+              )}
+              {sucs.length > 1 && (
+                <div className="form-group" style={{ marginTop: 'var(--space-md)' }}>
+                  <label className="form-label">Link de la cuenta <span className="required">*</span></label>
+                  <input
+                    className="form-input"
+                    style={{ fontFamily: 'monospace' }}
+                    value={linkCuenta.slug}
+                    placeholder="franlook"
+                    onChange={(e) => setLinkCuenta({ slug: slugify(e.target.value), editado: true })}
+                  />
+                  {errors.linkCuenta
+                    ? <div className="form-error">{errors.linkCuenta}</div>
+                    : <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                        El que va en la bio de Instagram de la marca: le pregunta al cliente a qué sucursal va.
+                        El link de cada sucursal entra directo a esa sucursal.
+                      </div>}
+                </div>
               )}
             </>
           )}

@@ -30,6 +30,7 @@ const BookingPage      = lazy(() => import('./pages/client/BookingPage'));
 const PaginaBarberia   = lazy(() => import('./pages/client/PaginaBarberia'));
 const ConfirmationPage = lazy(() => import('./pages/client/ConfirmationPage'));
 const MyAppointments   = lazy(() => import('./pages/client/MyAppointments'));
+const CuentaPublica    = lazy(() => import('./pages/client/CuentaPublica'));
 
 // Panel del negocio
 const DashboardPage       = lazy(() => import('./pages/admin/DashboardPage'));
@@ -104,6 +105,17 @@ function useNegocioDelSlug() {
   const { user, loading } = useAuth();
   const business = (state.businesses || []).find((b) => b.slug === businessSlug);
 
+  // El link de la CUENTA de una cuenta con sucursales (no es ninguna de ellas).
+  // Para el visitante lo resuelve BusinessSync leyendo /slugs; la plataforma
+  // tiene todas las barberías cargadas y lo encuentra en `slugCuenta`.
+  if (!business) {
+    if (state.slugEstado?.slug === businessSlug && state.slugEstado.estado === 'cuenta') {
+      return { business: null, estado: 'cuenta', grupoId: state.slugEstado.grupoId };
+    }
+    const principal = (state.businesses || []).find((b) => b.slugCuenta && b.slugCuenta === businessSlug);
+    if (principal) return { business: null, estado: 'cuenta', grupoId: principal.grupoId || principal.id };
+  }
+
   if (!business) {
     // "No existe" recién cuando se SABE que no existe. Antes se mostraba
     // mientras el slug todavía se estaba resolviendo, y cada apertura del
@@ -126,8 +138,9 @@ function useNegocioDelSlug() {
  * por falta de pago antes de dejar reservar.
  */
 function TenantRoute({ children }) {
-  const { estado } = useNegocioDelSlug();
+  const { estado, grupoId } = useNegocioDelSlug();
   if (estado === 'resolviendo') return <SessionLoading />;
+  if (estado === 'cuenta') return <CuentaPublica grupoId={grupoId} />;
   if (estado === 'no-existe') return <NoBusinessPage reason="not-found" />;
   if (estado === 'cerrado') return <NoBusinessPage reason="frozen" />;
   return children;
@@ -171,6 +184,7 @@ function EntradaPublica() {
   const { business, estado } = useNegocioDelSlug();
 
   if (estado === 'resolviendo') return <SessionLoading />;
+  if (estado === 'cuenta') return <RutaDeCliente><BookingPage /></RutaDeCliente>;
   if (estado === 'ok' && tienePagina(business)) {
     return <PaginaBarberia business={business} />;
   }

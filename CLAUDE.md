@@ -935,6 +935,20 @@ en el doc de la primera) y una ficha por sucursal con su link, teléfono, WhatsA
 la primera es el documento que se crea, las demás salen por `crearSucursal`. Y `crearSucursal`
 ya no hereda teléfono ni WhatsApp de la principal (las tres quedaban con el mismo número).
 
+### El link de la CUENTA y los de cada sucursal (09/10/2026)
+
+Reemplaza lo de abajo: el link de una SUCURSAL (`/franlook-olivos`) entra DIRECTO a esa
+sucursal, sin preguntar (queda "Cambiar de sucursal" a mano). El que pregunta "Elegí tu
+sucursal" es el link de la CUENTA (`/franlook`): un doc en `/slugs/{link}` con
+`{ grupoId, esCuenta: true }` (sin `businessId`) más `slugCuenta` en la principal.
+`BusinessSync` lo resuelve como `slugEstado.estado === 'cuenta'` y `TenantRoute` muestra
+`CuentaPublica`, que manda al link de la sucursal elegida conservando el resto de la ruta
+(`/franlook/reservar` → `/franlook-olivos/reservar`). Lo define la plataforma: en el alta
+de una cuenta con varias sucursales, o con "Definir" en la tarjeta de la cuenta del panel
+global (`guardarLinkDeCuenta`). Necesita `/grupos/{grupoId}`: si una cuenta vieja no lo
+tiene, "Mantenimiento" lo reconstruye. `api/preview.js` arma la tarjeta del link de la
+cuenta con `nombreCuenta`.
+
 ### El cliente elige sucursal (07/10/2026)
 
 Cada sucursal tiene su propio link, pero el cliente que recibe UNO por Instagram

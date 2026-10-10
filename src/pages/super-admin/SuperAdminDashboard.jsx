@@ -19,7 +19,9 @@ import {
   updateBilling,
   upgradePlan,
   savePlatformConfig,
+  guardarLinkDeCuenta,
 } from '../../lib/repository';
+import { slugify, isReservedSlug } from '../../utils/slug';
 import { deleteBusiness, migrarPlanes } from '../../lib/functions';
 import NewBusinessModal from './NewBusinessModal';
 import PlanAMedida from '../../components/super-admin/PlanAMedida';
@@ -515,6 +517,25 @@ export default function SuperAdminDashboard({ seccion = null }) {
     navigate('/admin');
   };
 
+  // Define o cambia el link de la cuenta (`/franlook`). Va en /slugs como
+  // "cuenta", no como barbería: al abrirlo, el cliente elige la sucursal.
+  const handleLinkDeCuenta = async (b) => {
+    const propuesto = b.slugCuenta || slugify(b.nombreCuenta || String(b.name || '').split(/[—-]/)[0]);
+    const escrito = window.prompt(
+      'Link de la cuenta (el que pregunta a qué sucursal va el cliente).\nLos links de cada sucursal siguen entrando directo a esa sucursal.\n\nbarberos.sacia.tech/',
+      propuesto
+    );
+    if (escrito === null) return;
+    const slug = slugify(escrito);
+    if (!slug || slug.length < 3) { alert('El link tiene que tener al menos 3 letras o números.'); return; }
+    if (isReservedSlug(slug)) { alert(`"${slug}" es una ruta interna de la app. Elegí otro.`); return; }
+    try {
+      await guardarLinkDeCuenta({ grupoId: b.grupoId || b.id, slug, anterior: b.slugCuenta || null });
+    } catch (err) {
+      alert('No se pudo guardar: ' + err.message);
+    }
+  };
+
   const filteredBusinesses = businesses?.filter(b => {
     if (esSucursalSuelta(b)) return false;
     // Con `|| ''`: un documento sin nombre o sin slug (uno sembrado a mano, o
@@ -974,9 +995,24 @@ export default function SuperAdminDashboard({ seccion = null }) {
                     <div>
                       <strong style={{ fontSize: 16, color: 'var(--text)' }}>{conSucursales ? (b.nombreCuenta || b.name) : b.name}</strong>
                       {conSucursales ? (
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                          Cuenta con <strong>{locales.length} sucursales</strong>
-                        </div>
+                        <>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            Cuenta con <strong>{locales.length} sucursales</strong>
+                          </div>
+                          {/* El link de la CUENTA: el que pregunta "¿a qué
+                              sucursal vas?". Los de cada sucursal entran directo. */}
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            Link de la cuenta:{' '}
+                            {b.slugCuenta
+                              ? <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)' }}>/{b.slugCuenta}</span>
+                              : <span className="text-muted">sin definir</span>}
+                            {!soloLectura && (
+                              <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '2px 6px' }} onClick={() => handleLinkDeCuenta(b)}>
+                                {b.slugCuenta ? 'Cambiar' : 'Definir'}
+                              </button>
+                            )}
+                          </div>
+                        </>
                       ) : (
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                           URL: <span style={{ fontFamily: 'monospace', background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)' }}>/{b.slug}</span>

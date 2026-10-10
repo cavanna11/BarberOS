@@ -90,7 +90,11 @@ async function leerNegocio(slug) {
   // y ahí cualquiera se baja la cartera entera de clientes.
   const mapa = await fetch(`${DOCS}/slugs/${encodeURIComponent(slug)}?key=${API_KEY}`);
   if (!mapa.ok) return null;
-  const businessId = campo(await mapa.json(), 'businessId');
+  const datosMapa = await mapa.json();
+  // El link de la CUENTA de una cuenta con sucursales apunta al grupo, no a una
+  // barbería: la tarjeta lleva el nombre de la marca (lo guarda la principal).
+  const esCuenta = campo(datosMapa, 'esCuenta') === true;
+  const businessId = campo(datosMapa, 'businessId') || (esCuenta ? campo(datosMapa, 'grupoId') : null);
   if (!businessId) return null;
 
   const r = await fetch(`${DOCS}/businesses/${encodeURIComponent(businessId)}?key=${API_KEY}`);
@@ -98,10 +102,11 @@ async function leerNegocio(slug) {
   const doc = await r.json();
 
   return {
-    name: campo(doc, 'name'),
+    name: (esCuenta && campo(doc, 'nombreCuenta')) || campo(doc, 'name'),
     welcomeMessage: campo(doc, 'welcomeMessage'),
-    address: campo(doc, 'address'),
-    city: campo(doc, 'city'),
+    // La dirección de UNA sucursal no describe a la cuenta entera.
+    address: esCuenta ? '' : campo(doc, 'address'),
+    city: esCuenta ? '' : campo(doc, 'city'),
     isFrozen: campo(doc, 'isFrozen') === true,
   };
 }

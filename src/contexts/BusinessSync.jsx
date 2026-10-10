@@ -13,7 +13,7 @@ import {
   subscribeNotifications,
   subscribePlatformNotifications,
   subscribeCobros,
-  getBusinessIdBySlug,
+  obtenerSlug,
 } from '../lib/repository';
 
 // Subcolecciones del negocio que la app mantiene en vivo.
@@ -196,12 +196,19 @@ export default function BusinessSync() {
       (async () => {
         try {
           const cache = slugResuelto.current;
-          const businessId =
-            cache.slug === slug ? cache.businessId : await getBusinessIdBySlug(slug);
+          const datos = cache.slug === slug ? cache.datos : await obtenerSlug(slug);
+          const businessId = datos?.businessId || null;
 
-          slugResuelto.current = { slug, businessId };
+          slugResuelto.current = { slug, businessId, datos };
 
           if (cancelado) return;
+          // El link de la CUENTA (no de una sucursal): no hay una barbería que
+          // escuchar, la pantalla pregunta a qué sucursal va.
+          if (datos?.esCuenta && datos.grupoId) {
+            dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'cuenta', grupoId: datos.grupoId } } });
+            dispatch({ type: 'SET_BUSINESSES', payload: [] });
+            return;
+          }
           if (!businessId) {
             dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'no-existe' } } });
             dispatch({ type: 'SET_BUSINESSES', payload: [] });

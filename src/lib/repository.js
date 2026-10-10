@@ -185,6 +185,33 @@ export async function getBusinessIdBySlug(slug) {
 }
 
 /**
+ * Qué hay detrás de un link: una barbería (`{ businessId }`) o, en una cuenta
+ * con sucursales, el link de la CUENTA (`{ esCuenta: true, grupoId }`), que no
+ * es ninguna sucursal: es el que pregunta "¿a cuál vas?". null si no existe.
+ */
+export async function obtenerSlug(slug) {
+  const snap = await getDoc(slugDoc(slug));
+  return snap.exists() ? snap.data() : null;
+}
+
+/**
+ * Crea o cambia el link de una cuenta con sucursales (`/franlook`). Solo la
+ * plataforma (las Rules de /slugs y de los campos de la cuenta). Queda en dos
+ * lados: el mapa público `/slugs/{link}` —es lo que resuelve la URL— y
+ * `slugCuenta` en la barbería principal, para mostrarlo y para poder cambiarlo.
+ */
+export async function guardarLinkDeCuenta({ grupoId, slug, anterior = null }) {
+  if (slug !== anterior && !(await isSlugAvailable(slug))) {
+    throw new Error(`El link /${slug} ya está en uso.`);
+  }
+  const lote = writeBatch(db);
+  lote.set(slugDoc(slug), { grupoId, esCuenta: true });
+  if (anterior && anterior !== slug) lote.delete(slugDoc(anterior));
+  lote.update(businessDoc(grupoId), { slugCuenta: slug });
+  await lote.commit();
+}
+
+/**
  * Las sucursales de una cuenta, para la página pública.
  *
  * Dos pasos y los dos son lecturas públicas:
