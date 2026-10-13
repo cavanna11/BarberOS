@@ -308,3 +308,21 @@ export function revertirUsoMembresia({ businessId, appointmentId, motivo }) {
 export function miMembresia(businessId) {
   return llamar('miMembresia', { businessId });
 }
+
+// ============================================================================
+// Turnos fijos (functions/turnosFijos.js)
+// ============================================================================
+
+/**
+ * El cliente que viene siempre el mismo día a la misma hora. Crea el turno
+ * fijo y agenda las próximas semanas; después se agendan solas.
+ * Devuelve { serieId, creados: [fechas], saltados: [{ fecha, motivo }] }.
+ */
+export function crearTurnoFijo(datos) {
+  return llamar('crearTurnoFijo', datos);
+}
+
+/** Da de baja un turno fijo y cancela los que ya estaban agendados a futuro. */
+export function darDeBajaTurnoFijo({ businessId, serieId }) {
+  return llamar('darDeBajaTurnoFijo', { businessId, serieId });
+}

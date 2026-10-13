@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { createAppointment, updateAppointment } from '../../lib/repository';
+import { crearTurnoFijo } from '../../lib/functions';
 import { calculateAvailableSlots } from '../../utils/availabilityEngine';
 import { formatPrice, toDateString } from '../../utils/dateUtils';
 import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
@@ -39,7 +40,11 @@ export default function NuevoTurnoModal({ onClose }) {
     clientName: '',
     clientPhone: '',
     notes: '',
+    // 0 = solo esta vez. 1..4 = turno fijo cada N semanas.
+    cadaSemanas: 0,
   });
+  // Al crear un turno fijo: qué se agendó y qué se salteó, antes de cerrar.
+  const [resultadoFijo, setResultadoFijo] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
 
@@ -48,7 +53,7 @@ export default function NuevoTurnoModal({ onClose }) {
     setForm((f) => {
       const nuevo = { ...f, [campo]: valor };
       // Cambiar de profesional, servicio o día invalida el horario elegido.
-      if (campo !== 'startTime' && campo !== 'clientName' && campo !== 'clientPhone' && campo !== 'notes') {
+      if (!['startTime', 'clientName', 'clientPhone', 'notes', 'cadaSemanas'].includes(campo)) {
         nuevo.startTime = '';
       }
       if (campo === 'professionalId') nuevo.serviceId = '';
@@ -96,6 +101,24 @@ export default function NuevoTurnoModal({ onClose }) {
     setGuardando(true);
     setError('');
     try {
+      // Turno fijo: lo arma el servidor, que agenda las próximas semanas y las
+      // sigue agendando solo.
+      if (Number(form.cadaSemanas) > 0) {
+        const r = await crearTurnoFijo({
+          businessId,
+          professionalId: form.professionalId,
+          serviceId: form.serviceId,
+          fecha: form.date,
+          startTime: slot.startTime,
+          cadaSemanas: Number(form.cadaSemanas),
+          clientName: form.clientName.trim(),
+          clientPhone: form.clientPhone.trim(),
+          notes: form.notes.trim(),
+        });
+        setResultadoFijo(r);
+        setGuardando(false);
+        return;
+      }
       const id = await createAppointment(businessId, {
         professionalId: form.professionalId,
         serviceId: form.serviceId,
@@ -122,6 +145,36 @@ export default function NuevoTurnoModal({ onClose }) {
       setGuardando(false);
     }
   };
+
+  if (resultadoFijo) {
+    const fecha = (f) => f.split('-').reverse().slice(0, 2).join('/');
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+          <div className="modal-header">
+            <h3>🔁 Turno fijo agendado</h3>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+          <div className="modal-body">
+            <p>
+              <strong>{form.clientName}</strong> quedó agendado {Number(form.cadaSemanas) === 1 ? 'todas las semanas' : `cada ${form.cadaSemanas} semanas`} a
+              las <strong>{form.startTime}</strong>. Ya están en la agenda {resultadoFijo.creados.length} turnos
+              ({resultadoFijo.creados.map(fecha).join(', ')}); los siguientes se agendan solos.
+            </p>
+            {resultadoFijo.saltados.length > 0 && (
+              <div className="notice notice-warn">
+                <strong>Se saltearon:</strong>
+                {resultadoFijo.saltados.map((x) => <div key={x.fecha}>{fecha(x.fecha)} — {x.motivo}</div>)}
+              </div>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-primary" onClick={onClose}>Listo</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -218,6 +271,24 @@ export default function NuevoTurnoModal({ onClose }) {
             )}
           </div>
 
+          {/* El cliente de siempre: mismo día, misma hora, cada N semanas. */}
+          <div className="form-group">
+            <label className="form-label">Repetir</label>
+            <select className="form-input" value={form.cadaSemanas} onChange={set('cadaSemanas')}>
+              <option value={0}>Solo esta vez</option>
+              <option value={1}>Todas las semanas (turno fijo)</option>
+              <option value={2}>Cada 2 semanas</option>
+              <option value={3}>Cada 3 semanas</option>
+              <option value={4}>Cada 4 semanas</option>
+            </select>
+            {Number(form.cadaSemanas) > 0 && (
+              <p className="text-sm text-muted" style={{ marginTop: 6 }}>
+                Se agendan solos, siempre el mismo día y horario. Si una semana ese horario ya está
+                tomado o no trabajás, esa se saltea. Se da de baja desde Citas → Turnos fijos.
+              </p>
+            )}
+          </div>
+
           <div className="form-group">
             <label className="form-label">Nota (opcional)</label>
             <input className="form-input" value={form.notes} onChange={set('notes')} placeholder="Viene con el hijo" maxLength={500} />
@@ -226,7 +297,7 @@ export default function NuevoTurnoModal({ onClose }) {
         <div className="modal-footer">
           <button className="btn btn-outline" onClick={onClose} disabled={guardando}>Cancelar</button>
           <button className="btn btn-primary" onClick={guardar} disabled={!listo}>
-            {guardando ? 'Agendando…' : slot ? `Agendar ${slot.startTime}` : 'Agendar'}
+            {guardando ? 'Agendando…' : slot ? (Number(form.cadaSemanas) > 0 ? `Agendar turno fijo ${slot.startTime}` : `Agendar ${slot.startTime}`) : 'Agendar'}
           </button>
         </div>
       </div>

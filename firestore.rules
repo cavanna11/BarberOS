@@ -415,6 +415,15 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Turnos fijos ("todos los martes a las 18"): los crea y da de baja una
+      // function, que también agenda las semanas siguientes. El barbero ve los
+      // de su agenda; el dueño, todos.
+      match /turnosFijos/{serieId} {
+        allow read: if isBusinessOwner(bizId) || esEquipoPlataforma()
+                       || (esBarbero(bizId) && resource.data.professionalId == claims().get('professionalId', ''));
+        allow write: if false;
+      }
+
       // Plata que entró por membresías: igual que la facturación, el moderador
       // no la ve.
       match /membresiaPagos/{pagoId} {

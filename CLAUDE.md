@@ -962,6 +962,30 @@ tarjeta se paga en el local con el recargo. La preferencia de MP excluye `ticket
 (Rapipago, Pago Fácil, cajero): se acreditan en días y el turno se guarda 15 minutos. Casos en
 la suite de seña.
 
+### Turnos fijos: el cliente de siempre (13/10/2026)
+
+En Citas → "Agendar turno" → **Repetir** (todas las semanas, o cada 2, 3 o 4): el
+turno queda fijo ese día de la semana a esa hora. Lo arma `crearTurnoFijo`
+(`functions/turnosFijos.js`), no el browser: guarda la serie en
+`businesses/{id}/turnosFijos/{serieId}` (Rules: lee el dueño, la plataforma y el
+barbero las suyas; escribe solo el servidor) y agenda las próximas **8 semanas**.
+`extenderTurnosFijosDiario` (4 AM) corre la ventana todas las noches.
+
+- Cada turno tiene id `${serieId}_${fecha}`: regenerar no duplica y un turno
+  CANCELADO a mano no vuelve a aparecer (el doc existe). Así se cancela una sola
+  fecha: cancelando ese turno en la agenda.
+- La primera fecha se valida y si no entra, no se crea nada (error claro). Las
+  siguientes que no entran (cerrado, el barbero no trabaja, fuera de horario,
+  corte del mediodía, horario tomado) se SALTEAN y quedan en `saltados` con el
+  motivo; el modal "🔁 Turnos fijos" las muestra.
+- Nacen `confirmada`, `type: 'fijo'`; `onNuevoTurno` no avisa (los cargó el staff).
+- "Dar de baja" (`darDeBajaTurnoFijo`) cancela los turnos futuros vivos de la serie.
+- El barbero solo crea en su propia agenda.
+
+```bash
+node scripts/test-turnos-fijos-emulador.mjs   # 28 casos
+```
+
 ### El link de la CUENTA y los de cada sucursal (09/10/2026)
 
 Reemplaza lo de abajo: el link de una SUCURSAL (`/franlook-olivos`) entra DIRECTO a esa
@@ -1703,6 +1727,7 @@ node scripts/test-sucursales-emulador.mjs  # cuentas con sucursales: aislamiento
 node scripts/test-planes-emulador.mjs      # topes y funciones de cada plan
 node scripts/test-resenas-emulador.mjs     # reseñas: cuándo, quién y una por turno
 node scripts/test-membresias-emulador.mjs  # membresías: uso, fraude, webhooks (MP falso)
+node scripts/test-turnos-fijos-emulador.mjs # turnos fijos: serie, salteos, baja
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulador)
 node scripts/test-preview.mjs              # vista previa del link (tampoco)
@@ -1710,7 +1735,7 @@ node scripts/test-preview.mjs              # vista previa del link (tampoco)
 
 Hoy: claims 77, reservas 58, facturación 14, rules 118, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
-whatsapp 23, preview 24. Todo en verde (711).
+turnos fijos 28, whatsapp 23, preview 24. Todo en verde (739).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

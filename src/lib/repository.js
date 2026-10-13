@@ -574,6 +574,16 @@ export async function obtenerPlanesMembresia(cuentaId) {
     .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
 }
 
+/**
+ * Los turnos fijos activos de una barbería. El barbero solo puede leer los de
+ * su agenda (las Rules), así que la consulta tiene que decirlo.
+ */
+export async function obtenerTurnosFijos(businessId, professionalId = null) {
+  const base = subCol(businessId, 'turnosFijos');
+  const q = professionalId ? query(base, where('professionalId', '==', professionalId)) : base;
+  return rows(await getDocs(q)).filter((s) => s.activo !== false);
+}
+
 /** Las membresías de una cuenta (para elegir una al aplicarla a un turno). */
 export async function obtenerMembresias(cuentaId) {
   return rows(await getDocs(subCol(cuentaId, 'membresias')));

@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { updateAppointment, cancelAppointment } from '../../lib/repository';
 import NuevoTurnoModal from '../../components/admin/NuevoTurnoModal';
+import TurnosFijosModal from '../../components/admin/TurnosFijosModal';
 import { formatDate, formatPrice, fechaCorta, toDateString } from '../../utils/dateUtils';
 import { origenTurno } from '../../utils/origenTurno';
 import { devolverSena, revertirUsoMembresia } from '../../lib/functions';
@@ -93,6 +94,7 @@ export default function AppointmentsPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterDate,   setFilterDate]   = useState('');
   const [agendando,    setAgendando]    = useState(false);
+  const [verFijos,     setVerFijos]     = useState(false);
   // Arranca en los de hoy: es lo que se mira noventa veces al día. Antes la
   // lista venía toda junta, por orden de carga, y había que ir buscando cuál
   // era de hoy entre los de la semana que viene.
@@ -260,8 +262,12 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
     <div>
       <div className="admin-page-header">
         <h1>{isOwner ? 'Citas' : 'Mis Citas'}</h1>
-        <div className="flex items-center gap-md">
+        <div className="flex items-center gap-md citas-acciones">
           <span className="badge badge-neutral">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''}</span>
+          {/* Los clientes de siempre: mismo día y horario, cada N semanas. */}
+          <button className="btn btn-outline" onClick={() => setVerFijos(true)}>
+            🔁 Turnos fijos
+          </button>
           {/* El barbero carga los turnos que le piden por WhatsApp o en persona,
               así la agenda online y la de siempre son la misma. */}
           <button className="btn btn-primary" onClick={() => setAgendando(true)}>
@@ -271,6 +277,12 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
       </div>
 
       {agendando && <NuevoTurnoModal onClose={() => setAgendando(false)} />}
+      {verFijos && (
+        <TurnosFijosModal
+          onClose={() => setVerFijos(false)}
+          onNuevo={() => { setVerFijos(false); setAgendando(true); }}
+        />
+      )}
 
       {/* Solapas de día: lo primero que se mira. */}
       <div className="citas-solapas">

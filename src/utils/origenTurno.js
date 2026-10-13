@@ -9,6 +9,7 @@
 
 export function origenTurno(apt) {
   if (apt?.type === 'walkin') return { clave: 'walkin', etiqueta: 'Sin turno', detalle: 'Servicio sin turno previo', icono: '\u2702\ufe0f', clase: 'badge-neutral' };
+  if (apt?.type === 'fijo') return { clave: 'fijo', etiqueta: 'Turno fijo', detalle: 'Se agenda solo, siempre el mismo día y horario', icono: '\ud83d\udd01', clase: 'badge-primary' };
   if (apt?.type === 'manual') return { clave: 'manual', etiqueta: 'Lo cargaste vos', detalle: 'Cargado a mano desde el panel', icono: '\u270d\ufe0f', clase: 'badge-neutral' };
   return { clave: 'cliente', etiqueta: 'Lo reservó el cliente', detalle: 'Reservado por el cliente desde el link', icono: '\ud83d\udcf1', clase: 'badge-primary' };
 }

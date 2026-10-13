@@ -27,6 +27,8 @@ const cupones = require('./cupones');
 // Membresías: planes mensuales de la barbería a sus clientes (createAppointment
 // descuenta el uso; el resto vive allá).
 const membresias = require('./membresias');
+// Turnos fijos: el cliente de todos los martes a las 18 (ver turnosFijos.js).
+const turnosFijos = require('./turnosFijos');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
@@ -2167,8 +2169,9 @@ exports.estadoPushDelEquipo = onCall(async (request) => {
 exports.onNuevoTurno = onDocumentCreated('businesses/{bizId}/appointments/{aptId}', async (event) => {
   const a = event.data?.data();
   if (!a) return;
-  // Lo cargó el propio staff (walk-in o a mano): ya lo sabe.
-  if (a.type === 'walkin' || a.type === 'manual') return;
+  // Lo cargó el propio staff (walk-in, a mano, o un turno fijo que se agenda
+  // solo cada semana): ya lo sabe.
+  if (a.type === 'walkin' || a.type === 'manual' || a.type === 'fijo') return;
 
   await notificar(event.params.bizId, {
     type: 'nuevo_turno',
@@ -2767,6 +2770,12 @@ exports.miMembresia = membresias.miMembresia;
 exports.onTurnoMembresia = membresias.onTurnoMembresia;
 exports.reconciliarMembresias = membresias.reconciliarMembresias;
 exports.reconciliarMembresiasDiario = membresias.reconciliarMembresiasDiario;
+
+// Turnos fijos (se agendan solos cada N semanas).
+exports.crearTurnoFijo = turnosFijos.crearTurnoFijo;
+exports.darDeBajaTurnoFijo = turnosFijos.darDeBajaTurnoFijo;
+exports.extenderTurnosFijos = turnosFijos.extenderTurnosFijos;
+exports.extenderTurnosFijosDiario = turnosFijos.extenderTurnosFijosDiario;
 
 // ============================================================================
 // COMPLETAR PLANES EN LAS CUENTAS VIEJAS

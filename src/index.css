@@ -5746,3 +5746,15 @@ select.form-input {
 }
 
 .sitio-mapa-muestra span:first-child { font-size: 1.5rem; }
+
+/* Turnos fijos: la lista en el modal y los botones de Citas. */
+.turno-fijo-fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.turno-fijo-fila:last-child { border-bottom: none; }
+.citas-acciones { flex-wrap: wrap; justify-content: flex-end; }
