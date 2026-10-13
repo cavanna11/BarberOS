@@ -41,6 +41,13 @@
      los links desaparecen, mientras el botón se ve impecable. Ver
      config/theme.js → legibleSobreClaro(). */
   --primary-texto: var(--primary);
+  /* El color del TEXTO que va encima del primario (el botón de reservar).
+     Para BarberOS, blanco sobre el naranja: 4.34:1, que es la marca y es lo
+     que hay desde siempre. Para una barbería con color propio lo calcula
+     textoSobre() por luminancia — con un verde lima tiene que ser NEGRO, y
+     hasta ahora `.btn-primary` lo ignoraba con un `#ffffff !important`, así
+     que el botón más importante del producto quedaba en 2.09:1. */
+  --sobre-primary: #ffffff;
   --primary-glow: rgba(224, 61, 0, 0.12);
   --secondary: #ff5c1a;
   --accent: #ff5c1a;
@@ -244,16 +251,16 @@ h4 {
 
 .btn-primary {
   background: var(--primary);
-  color: #ffffff !important;
+  color: var(--sobre-primary) !important;
   border-color: var(--primary);
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-hover);
-  color: #ffffff !important;
+  color: var(--sobre-primary) !important;
   border-color: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(224, 61, 0, 0.28);
+  box-shadow: 0 4px 12px var(--primary-glow);
 }
 
 /* Contorno naranja sobre blanco. Antes era un relleno pálido con texto naranja
@@ -399,7 +406,7 @@ h4 {
 
 .form-input:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(224, 61, 0, 0.12);
+  box-shadow: 0 0 0 3px var(--primary-glow);
 }
 
 .form-input::placeholder {
@@ -2173,7 +2180,7 @@ select.form-input {
   margin: var(--space-md) 0 var(--space-lg);
 }
 
-.landing-title .acento { color: var(--primary); }
+.landing-title .acento { color: var(--primary-texto); }
 
 .landing-lead {
   font-size: clamp(1rem, 2.2vw, 1.2rem);
@@ -2993,14 +3000,14 @@ select.form-input {
 
 .prof-card strong, .service-card strong { display: block; font-size: 0.775rem; }
 .prof-card span, .service-card span { font-size: 0.7rem; color: var(--text-secondary); }
-.check-mark { margin-left: auto; color: var(--primary); font-weight: 700; }
+.check-mark { margin-left: auto; color: var(--primary-texto); font-weight: 700; }
 
 .service-meta {
   margin-left: auto;
   text-align: right;
 }
 
-.service-price { display: block; font-weight: 700; color: var(--primary); }
+.service-price { display: block; font-weight: 700; color: var(--primary-texto); }
 .service-dur { font-size: 9px; color: var(--text-muted); }
 
 .mini-calendar {
@@ -4027,7 +4034,7 @@ select.form-input {
 }
 .ficha-presentacion { margin-bottom: 6px; color: var(--text); }
 .ficha-datos { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--text-secondary); }
-.ficha-datos a { color: var(--primary); font-weight: 600; text-decoration: none; }
+.ficha-datos a { color: var(--primary-texto); font-weight: 600; text-decoration: none; }
 
 /* Horario semanal con corte (HorarioSemanal) */
 .schedule-day {
