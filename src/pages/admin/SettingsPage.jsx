@@ -230,6 +230,22 @@ export default function SettingsPage() {
                 </p>
               </div>
               <div className="form-group">
+                <label className="form-label">Recargo por pagar con tarjeta o QR ($)</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={form.recargoTarjeta || ''}
+                  placeholder="0 = sin recargo"
+                  onChange={e => editar({ recargoTarjeta: Math.max(0, parseInt(e.target.value) || 0) })}
+                />
+                <p className="text-sm text-muted" style={{ marginTop: 6 }}>
+                  Al reservar, el cliente elige si paga en efectivo/transferencia o con tarjeta/QR,
+                  y si elige tarjeta ve el recargo sumado al total. Vacío o 0: no se pregunta.
+                </p>
+              </div>
+              <div className="form-group">
                 <label className="form-label">Teléfono</label>
                 <input className="form-input" value={form.phone || ''} onChange={e => editar({ phone: e.target.value })} />
               </div>

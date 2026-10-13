@@ -283,5 +283,23 @@ chequear('un servicio común no se puede colar como adicional', r.error === 'FAI
 r = await reservar(c13, { ...base, appointmentDate: '2027-03-16', startTime: '11:00', adicionales: ['no-existe'] });
 chequear('un adicional que no existe se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 
+titulo('Recargo por pagar con tarjeta o QR:');
+const c14 = await usuario('c14@gmail.com');
+r = await reservar(c14, { ...base, appointmentDate: '2027-03-23', startTime: '10:00', metodoPago: 'tarjeta' });
+chequear('sin recargo configurado, elegir tarjeta no cambia el precio', r.ok?.price === 12000, JSON.stringify(r));
+await db.doc(`businesses/${BID}`).update({ recargoTarjeta: 2000 });
+const c15 = await usuario('c15@gmail.com');
+r = await reservar(c15, { ...base, appointmentDate: '2027-03-23', startTime: '11:00', metodoPago: 'tarjeta', adicionales: ['srv-cejas'] });
+chequear('con tarjeta: servicio + adicional + recargo', r.ok?.price === 18000, JSON.stringify(r));
+const tRec = r.ok?.id ? (await db.doc(`businesses/${BID}/appointments/${r.ok.id}`).get()).data() : null;
+chequear('el turno guarda que paga con tarjeta y cuánto fue el recargo', tRec?.metodoPago === 'tarjeta' && tRec?.recargoTarjeta === 2000, JSON.stringify({ m: tRec?.metodoPago, r: tRec?.recargoTarjeta }));
+const c16 = await usuario('c16@gmail.com');
+r = await reservar(c16, { ...base, appointmentDate: '2027-03-23', startTime: '12:00', metodoPago: 'efectivo' });
+chequear('en efectivo no hay recargo', r.ok?.price === 12000, JSON.stringify(r));
+const c17 = await usuario('c17@gmail.com');
+r = await reservar(c17, { ...base, appointmentDate: '2027-03-23', startTime: '14:00', metodoPago: 'cualquiera' });
+chequear('un método inventado no suma recargo', r.ok?.price === 12000, JSON.stringify(r));
+await db.doc(`businesses/${BID}`).update({ recargoTarjeta: 0 });
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

@@ -945,6 +945,15 @@ documento; guarda `adicionales: [{ id, name, price }]` en el turno y `price` ya 
 extras. No suman tiempo (se hacen durante el corte). La membresía cubre el servicio, no los
 adicionales; el cupón descuenta el servicio, no los adicionales. Casos en la suite de reservas.
 
+### Recargo por pagar con tarjeta o QR (13/10/2026)
+
+`recargoTarjeta` en el negocio (Configuración, $ por turno; 0 = no se pregunta). En la reserva,
+si hay algo para pagar en el local, el cliente elige "Efectivo o transferencia" o "Tarjeta o
+QR (+$X)" y ve el total con el recargo. `createAppointment` lo recalcula (recibe solo
+`metodoPago`), lo suma a `price` y guarda `metodoPago` y `recargoTarjeta` en el turno. No corre
+si paga todo online por Mercado Pago ni si el turno no cuesta nada. Va por TURNO, no por cada
+adicional. Casos en la suite de reservas.
+
 ### El link de la CUENTA y los de cada sucursal (09/10/2026)
 
 Reemplaza lo de abajo: el link de una SUCURSAL (`/franlook-olivos`) entra DIRECTO a esa
@@ -1691,7 +1700,7 @@ node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulado
 node scripts/test-preview.mjs              # vista previa del link (tampoco)
 ```
 
-Hoy: claims 77, reservas 53, facturación 14, rules 118, alta 22, mercadopago 16,
+Hoy: claims 77, reservas 58, facturación 14, rules 118, alta 22, mercadopago 16,
 seña 14, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
 whatsapp 23, preview 24. Todo en verde (711).
 

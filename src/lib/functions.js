@@ -90,7 +90,7 @@ export function revokeBusinessAdmin({ email, businessId }) {
  *
  * Devuelve { status: 'created', id, price, precioLista, descuento, cuponCodigo, endTime }.
  */
-export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false, adicionales = [] }) {
+export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false, adicionales = [], metodoPago = null }) {
   return llamar('createAppointment', {
     businessId, professionalId, serviceId, appointmentDate, startTime,
     clientName, clientPhone, clientEmail, notes, cuponCodigo,
@@ -99,6 +99,8 @@ export function createAppointment({ businessId, professionalId, serviceId, appoi
     usarMembresia: usarMembresia === true,
     // Solo los ids: el precio de cada adicional lo pone el servidor.
     adicionales,
+    // 'efectivo' | 'tarjeta': el recargo por tarjeta o QR lo calcula el servidor.
+    metodoPago,
   });
 }
 

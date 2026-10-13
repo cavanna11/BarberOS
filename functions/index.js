@@ -787,6 +787,9 @@ exports.createAppointment = onCall(async (request) => {
     // son un turno aparte. Del cliente llegan SOLO los ids; el precio sale de
     // cada documento.
     adicionales = [],
+    // Cómo dice que va a pagar en el local: 'efectivo' (o transferencia) o
+    // 'tarjeta' (o QR). Solo importa si la barbería cobra recargo por tarjeta.
+    metodoPago = null,
   } = request.data || {};
 
   if (!businessId || !professionalId || !serviceId || !appointmentDate || !startTime) {
@@ -1108,6 +1111,14 @@ exports.createAppointment = onCall(async (request) => {
     // Los adicionales se pagan siempre (la membresía cubre el servicio, no los
     // extras) y el cupón no los toca: descuenta el servicio.
     if (totalExtras > 0) cobro = { ...cobro, precioFinal: cobro.precioFinal + totalExtras, adicionalesTotal: totalExtras };
+    // Recargo por pagar con tarjeta o QR ("$2.000 más por servicio"): lo
+    // configura la barbería (`recargoTarjeta`) y se suma solo si el cliente
+    // eligió pagar así EN EL LOCAL. Pagando todo online por Mercado Pago no
+    // corre (no paga en el local), y un turno que no cuesta nada tampoco.
+    const montoRecargo = Number(negocio.recargoTarjeta) || 0;
+    const recargoAplicado = metodoPago === 'tarjeta' && montoRecargo > 0 && tipoPagoPedido !== 'total' && cobro.precioFinal > 0
+      ? montoRecargo : 0;
+    if (recargoAplicado) cobro = { ...cobro, precioFinal: cobro.precioFinal + recargoAplicado, recargoTarjeta: recargoAplicado };
     montoSena = tipoPago === 'total' ? cobro.precioFinal : Math.min(Number(sena.monto) || 0, cobro.precioFinal);
     if (!(montoSena > 0)) { tipoPago = null; montoSena = 0; }
     pideSena = tipoPago !== null;
@@ -1163,6 +1174,10 @@ exports.createAppointment = onCall(async (request) => {
       // rechazan cualquier escritura del browser que toque este campo.
       ...(membresia ? { membresia, precioLista: precio } : {}),
       ...(extras.length ? { adicionales: extras } : {}),
+      // Cómo dijo que paga en el local (si la barbería distingue), y el recargo.
+      ...(montoRecargo > 0 && tipoPagoPedido !== 'total'
+        ? { metodoPago: recargoAplicado ? 'tarjeta' : 'efectivo', recargoTarjeta: recargoAplicado }
+        : {}),
       durationMinutes: duracion,
       serviceName: servicio.name || '',
       clientName: String(clientName).slice(0, 120),

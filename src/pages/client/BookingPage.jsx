@@ -344,7 +344,7 @@ function PersonalInfoStep({ user, phone, onPhoneChange }) {
 }
 
 // ---- SUMMARY ----
-function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [] }) {
+function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [], recargoTarjeta = 0 }) {
   return (
     <div>
       <h2 className="booking-step-title">Confirmar tu reserva</h2>
@@ -367,6 +367,12 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
               <div className="summary-row">
                 <span className="summary-label">➕ Adicionales</span>
                 <span className="summary-value">{adicionales.map((a) => a.name).join(', ')}</span>
+              </div>
+            )}
+            {recargoTarjeta > 0 && (
+              <div className="summary-row">
+                <span className="summary-label">💳 Tarjeta o QR</span>
+                <span className="summary-value">+ {formatPrice(recargoTarjeta, currency)}</span>
               </div>
             )}
             <div className="summary-row">
@@ -472,6 +478,8 @@ export default function BookingPage() {
   // Los adicionales que sumó al servicio (ids). Se vacían si cambia de servicio
   // en el paso 2 (ver abajo), no a mitad del flujo.
   const [extras, setExtras] = useState([]);
+  // Cómo paga en el local, si la barbería cobra recargo por tarjeta o QR.
+  const [metodoPago, setMetodoPago] = useState('efectivo');
 
   // La membresía del cliente en esta cuenta (si tiene). Se pide una vez, cuando
   // ya entró: antes no hay a quién preguntarle. Es una vista previa; el que
@@ -548,7 +556,13 @@ export default function BookingPage() {
   const totalAdicionales = adicionalesElegidos.reduce((t, s) => t + (Number(s.price) || 0), 0);
   // Los adicionales se pagan siempre: la membresía cubre el servicio y el cupón
   // descuenta el servicio, no los extras (igual que en el servidor).
-  const precioAPagar = (conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice) + totalAdicionales;
+  const precioSinRecargo = (conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice) + totalAdicionales;
+  // Recargo por tarjeta o QR: solo si la barbería lo cobra, si hay algo que
+  // pagar y si NO paga todo online (ahí no paga nada en el local).
+  const montoRecargo = Number(business?.recargoTarjeta) || 0;
+  const preguntaMetodo = montoRecargo > 0 && precioSinRecargo > 0 && comoPaga !== 'total';
+  const recargoTarjeta = preguntaMetodo && metodoPago === 'tarjeta' ? montoRecargo : 0;
+  const precioAPagar = precioSinRecargo + recargoTarjeta;
   const finalDuration = ps?.customDuration || selectedService?.durationMinutes || 30;
 
   // El cupón del link se anota y se saca de la URL. Sacarlo no es cosmética:
@@ -793,12 +807,15 @@ export default function BookingPage() {
         // del documento del servicio; lo que se mostró acá es una vista previa.
         cuponCodigo: conMembresia ? null : cupon?.codigo || null,
         adicionales: adicionalesElegidos.map((s) => s.id),
+        metodoPago: preguntaMetodo ? metodoPago : null,
       });
       const id = res.id;
       datos.price = res.price;
       datos.endTime = res.endTime;
       datos.membresia = res.membresia || null;
       datos.adicionales = adicionalesElegidos.map((s) => ({ id: s.id, name: s.name, price: s.price }));
+      datos.recargoTarjeta = recargoTarjeta;
+      datos.metodoPago = preguntaMetodo ? metodoPago : null;
 
       // Con seña, el turno queda GUARDADO (no reservado) y hay que ir a pagar.
       // Lo pendiente no se borra todavía: si abandona el pago, al volver le
@@ -969,6 +986,25 @@ export default function BookingPage() {
         />
       )}
 
+      {/* Cómo paga en el local, cuando la barbería cobra recargo con tarjeta o
+          QR: que lo vea ANTES de confirmar, no en el mostrador. */}
+      {step === 6 && preguntaMetodo && (
+        <div className="card mb-md" style={{ textAlign: 'left' }}>
+          <strong>¿Cómo vas a pagar en el local?</strong>
+          <label className="pago-opcion">
+            <input type="radio" name="metodo" checked={metodoPago === 'efectivo'} onChange={() => setMetodoPago('efectivo')} />
+            <span><strong>Efectivo o transferencia</strong></span>
+          </label>
+          <label className="pago-opcion">
+            <input type="radio" name="metodo" checked={metodoPago === 'tarjeta'} onChange={() => setMetodoPago('tarjeta')} />
+            <span>
+              <strong>Tarjeta o QR</strong>
+              <div className="text-sm text-secondary">+ {formatPrice(montoRecargo, business.currency)} de recargo</div>
+            </span>
+          </label>
+        </div>
+      )}
+
       {step === 6 && hayQueElegir && !conMembresia && (
         <div className="card mb-md" style={{ textAlign: 'left' }}>
           <strong>¿Cómo querés pagar?</strong>
@@ -1026,6 +1062,7 @@ export default function BookingPage() {
           precioLista={cupon && !conMembresia ? finalPrice : null}
           conMembresia={conMembresia}
           adicionales={adicionalesElegidos}
+          recargoTarjeta={recargoTarjeta}
           currency={business.currency}
           clientName={user.name}
           clientPhone={personalInfo.phone}

@@ -8,7 +8,7 @@ import { origenTurno } from '../../utils/origenTurno';
 import { devolverSena, revertirUsoMembresia } from '../../lib/functions';
 import AplicarMembresiaModal from '../../components/admin/AplicarMembresiaModal';
 import { turnoConMembresia } from '../../utils/membresias';
-import { textoAdicionales } from '../../utils/adicionales';
+import { textoAdicionales, textoMetodoPago } from '../../utils/adicionales';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 import WhatsAppTurno from '../../components/admin/WhatsAppTurno';
 import FiltroSucursal from '../../components/admin/FiltroSucursal';
@@ -362,7 +362,7 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
               </div>
               <div className="text-sm text-muted" title={origen.detalle}>{origen.icono} {origen.etiqueta}</div>
               <div className="text-sm text-secondary">
-                {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'}${textoAdicionales(apt)} · ${precioDe(apt)}`}
+                {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'}${textoAdicionales(apt)} · ${precioDe(apt)}${textoMetodoPago(apt)}`}
                 {isOwner && prof && <> · {prof.name}</>}
               </div>
               {apt.clientPhone && !isWalkin && (
