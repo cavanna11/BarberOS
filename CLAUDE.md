@@ -1192,6 +1192,24 @@ el observer. Se pone **solo** cuando el observer va a correr (no en la vista
 previa). Un efecto que esconde contenido cuando no se ejecuta no es un efecto,
 es una página en blanco.
 
+### Páginas exclusivas: diseño a medida pagado aparte (13/10/2026)
+
+La excepción consciente a "no hacerle una página a mano a nadie". Neytan Barber
+777 pagó aparte un diseño propio y Santiago decidió que sea código a medida,
+mantenido aparte. Viven en `src/paginas-exclusivas/`, registradas por
+**businessId** (no por slug: si el dueño cambia el link, no pierde lo que pagó)
+y cargadas con `lazy()`: ninguna otra barbería baja ese código ni su CSS.
+
+- Reemplazan SOLO lo que se ve en `/:slug`. La reserva sigue en
+  `/:slug/reservar`, sin tocar. Se muestran aunque `paginaActiva` esté apagada.
+- El botón de reservar va arriba de todo, sin scrollear, a 375x667.
+- No esperan a `public/pagina` (trae la portada, cientos de KB); el "Sobre mí"
+  de ahí aparece cuando llega.
+- Todo dato sale de lo cargado (servicios, horarios, contacto): no hay que
+  actualizarlas a mano.
+- `irAReservar(servicioId)` en `PaginaBarberia` acepta un servicio y lo pasa
+  como `?servicio=`, el mismo parámetro de los links de promo.
+
 ### Los colores de la barbería no llegaban a ningún lado (08/10/2026)
 
 `applyTheme()` existía desde el principio en `config/theme.js` y **no la llamaba
