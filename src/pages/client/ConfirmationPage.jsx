@@ -1,6 +1,7 @@
 import { useLocation, Link, useSearchParams } from 'react-router-dom';
 import { useTenant } from '../../hooks/useTenantData';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
+import { textoAdicionales } from '../../utils/adicionales';
 import FichaBarberia from '../../components/client/FichaBarberia';
 
 export default function ConfirmationPage() {
@@ -67,7 +68,7 @@ export default function ConfirmationPage() {
           </div>
           <div className="summary-row">
             <span className="summary-label">✂️ Servicio</span>
-            <span className="summary-value">{service?.name}</span>
+            <span className="summary-value">{service?.name}{textoAdicionales(appointment)}</span>
           </div>
           <div className="summary-row">
             <span className="summary-label">📅 Fecha</span>
@@ -80,7 +81,9 @@ export default function ConfirmationPage() {
           <div className="summary-row">
             <span className="summary-label">💰 Precio</span>
             <span className="summary-value">
-              {appointment.membresia ? 'Incluido en tu membresía' : formatPrice(appointment.price, business?.currency)}
+              {appointment.membresia
+                ? (Number(appointment.price) > 0 ? `Membresía + ${formatPrice(appointment.price, business?.currency)}` : 'Incluido en tu membresía')
+                : formatPrice(appointment.price, business?.currency)}
             </span>
           </div>
         </div>

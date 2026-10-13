@@ -935,6 +935,16 @@ en el doc de la primera) y una ficha por sucursal con su link, teléfono, WhatsA
 la primera es el documento que se crea, las demás salen por `crearSucursal`. Y `crearSucursal`
 ya no hereda teléfono ni WhatsApp de la principal (las tres quedaban con el mismo número).
 
+### Adicionales: se suman al servicio, no son un turno (13/10/2026)
+
+Cejas, lavado, café, mascarilla: un servicio con `adicional: true` (se marca en Servicios) no
+se reserva solo. En la reserva, después de elegir el servicio, aparece "¿Querés agregar
+algo?" y se suma al precio. `createAppointment` recibe solo los ids (`adicionales`), los
+revalida (existen, activos, son adicionales de ESA barbería) y suma el precio de cada
+documento; guarda `adicionales: [{ id, name, price }]` en el turno y `price` ya incluye los
+extras. No suman tiempo (se hacen durante el corte). La membresía cubre el servicio, no los
+adicionales; el cupón descuenta el servicio, no los adicionales. Casos en la suite de reservas.
+
 ### El link de la CUENTA y los de cada sucursal (09/10/2026)
 
 Reemplaza lo de abajo: el link de una SUCURSAL (`/franlook-olivos`) entra DIRECTO a esa
@@ -1605,7 +1615,7 @@ node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulado
 node scripts/test-preview.mjs              # vista previa del link (tampoco)
 ```
 
-Hoy: claims 77, reservas 46, facturación 14, rules 118, alta 22, mercadopago 16,
+Hoy: claims 77, reservas 53, facturación 14, rules 118, alta 22, mercadopago 16,
 seña 14, sucursales 68, planes 66, reseñas 36, membresías 121, whatsapp 23,
 preview 24. Todo en verde (645).
 

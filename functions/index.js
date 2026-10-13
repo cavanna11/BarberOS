@@ -783,6 +783,10 @@ exports.createAppointment = onCall(async (request) => {
     // El cliente marcó "usar mi membresía". Es SU elección, desde SU cuenta:
     // el barbero no tiene forma de marcarlo por él (ver membresias.js).
     usarMembresia = false,
+    // Adicionales (cejas, lavado, café…): se suman al servicio principal, no
+    // son un turno aparte. Del cliente llegan SOLO los ids; el precio sale de
+    // cada documento.
+    adicionales = [],
   } = request.data || {};
 
   if (!businessId || !professionalId || !serviceId || !appointmentDate || !startTime) {
@@ -831,6 +835,27 @@ exports.createAppointment = onCall(async (request) => {
   if (!Number.isFinite(duracion) || duracion <= 0) {
     throw new HttpsError('failed-precondition', 'El servicio no tiene una duración válida.');
   }
+  // Un adicional no se reserva solo: se agrega a un servicio principal.
+  if (servicio.adicional === true) {
+    throw new HttpsError('failed-precondition', `${servicio.name || 'Ese servicio'} se agrega a un corte: elegí el servicio principal y sumalo ahí.`);
+  }
+
+  // Los adicionales elegidos, revalidados acá: que existan, que estén activos y
+  // que sean adicionales de ESTA barbería. El precio de cada uno sale de su
+  // documento. No suman tiempo: se hacen durante el servicio principal.
+  const idsAdicionales = [...new Set(Array.isArray(adicionales) ? adicionales.map(String) : [])].slice(0, 10);
+  const extras = [];
+  if (idsAdicionales.length) {
+    const snaps = await Promise.all(idsAdicionales.map((id) => db.doc(`businesses/${businessId}/services/${id}`).get()));
+    for (const s of snaps) {
+      const d = s.exists ? s.data() : null;
+      if (!d || d.adicional !== true || d.isActive === false) {
+        throw new HttpsError('failed-precondition', 'Uno de los adicionales que elegiste ya no está disponible. Volvé a elegirlos.');
+      }
+      extras.push({ id: s.id, name: d.name || '', price: Number(d.price) || 0 });
+    }
+  }
+  const totalExtras = extras.reduce((t, x) => t + x.price, 0);
 
   // ¿Este profesional hace este servicio?
   const vinculo = await db.collection(`businesses/${businessId}/professionalServices`)
@@ -1080,6 +1105,9 @@ exports.createAppointment = onCall(async (request) => {
     // que cuenta en la caja es cero; el valor del servicio queda en el
     // snapshot de la membresía (para "cuánto se consumió por membresías").
     if (usoMembresia) cobro = { precioLista: precio, descuento: 0, precioFinal: 0, cuponCodigo: null, cuponId: null };
+    // Los adicionales se pagan siempre (la membresía cubre el servicio, no los
+    // extras) y el cupón no los toca: descuenta el servicio.
+    if (totalExtras > 0) cobro = { ...cobro, precioFinal: cobro.precioFinal + totalExtras, adicionalesTotal: totalExtras };
     montoSena = tipoPago === 'total' ? cobro.precioFinal : Math.min(Number(sena.monto) || 0, cobro.precioFinal);
     if (!(montoSena > 0)) { tipoPago = null; montoSena = 0; }
     pideSena = tipoPago !== null;
@@ -1134,6 +1162,7 @@ exports.createAppointment = onCall(async (request) => {
       // Snapshot del beneficio aplicado. Lo escribe SOLO el servidor: las Rules
       // rechazan cualquier escritura del browser que toque este campo.
       ...(membresia ? { membresia, precioLista: precio } : {}),
+      ...(extras.length ? { adicionales: extras } : {}),
       durationMinutes: duracion,
       serviceName: servicio.name || '',
       clientName: String(clientName).slice(0, 120),

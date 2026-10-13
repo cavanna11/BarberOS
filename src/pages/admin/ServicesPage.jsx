@@ -27,14 +27,14 @@ export default function ServicesPage() {
   const [guardando, setGuardando] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', description: '', durationMinutes: 30, price: 0, category: '' });
+  const [form, setForm] = useState({ name: '', description: '', durationMinutes: 30, price: 0, category: '', adicional: false });
   // Promo por día y horario (ver utils/ventanaServicio.js).
   const [ventana, setVentana] = useState({ activa: false, dias: [], desde: '16:30', hasta: '19:30' });
   const [assignedProfs, setAssignedProfs] = useState([]);
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ name: '', description: '', durationMinutes: 30, price: 0, category: '' });
+    setForm({ name: '', description: '', durationMinutes: 30, price: 0, category: '', adicional: false });
     setVentana({ activa: false, dias: [], desde: '16:30', hasta: '19:30' });
     setAssignedProfs([]);
     setShowModal(true);
@@ -42,7 +42,7 @@ export default function ServicesPage() {
 
   const openEdit = (srv) => {
     setEditing(srv);
-    setForm({ name: srv.name, description: srv.description || '', durationMinutes: srv.durationMinutes, price: srv.price, category: srv.category || '' });
+    setForm({ name: srv.name, description: srv.description || '', durationMinutes: srv.durationMinutes, price: srv.price, category: srv.category || '', adicional: srv.adicional === true });
     setVentana(srv.ventana
       ? { activa: true, dias: srv.ventana.dias || [], desde: srv.ventana.desde || '', hasta: srv.ventana.hasta || '' }
       : { activa: false, dias: [], desde: '16:30', hasta: '19:30' });
@@ -166,6 +166,7 @@ export default function ServicesPage() {
                       )}
                       {srv.category && <div className="text-sm text-muted">{srv.category}</div>}
                       {tieneVentana(srv) && <div className="text-sm" style={{ color: 'var(--warning)' }}>🏷️ {describirVentana(srv)}</div>}
+                      {srv.adicional && <div className="text-sm text-secondary">➕ Adicional: se suma a otro servicio</div>}
                     </div>
                   </td>
                   <td className="oculta-mobile">{srv.durationMinutes} min</td>
@@ -238,6 +239,19 @@ export default function ServicesPage() {
                 <div className="form-group">
                   <label className="form-label">Categoría</label>
                   <input className="form-input" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="Ej: Cortes, Barba, Tratamientos" />
+                </div>
+
+                {/* Adicional: cejas, lavado, café… No es un turno: el cliente lo
+                    suma al servicio que reserva y se cobra junto. */}
+                <div className="form-group" style={{ background: 'var(--bg-secondary)', padding: '12px 14px', borderRadius: 8 }}>
+                  <label className="flex items-center gap-sm" style={{ cursor: 'pointer', fontWeight: 600 }}>
+                    <input type="checkbox" checked={form.adicional === true} onChange={e => setForm({ ...form, adicional: e.target.checked })} />
+                    Es un adicional (se suma a otro servicio)
+                  </label>
+                  <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                    No se reserva solo: al reservar un corte, el cliente lo puede agregar y se suma al precio.
+                    No agrega tiempo al turno.
+                  </p>
                 </div>
 
                 {/* Promo por día y horario: "corte de media tarde, martes y

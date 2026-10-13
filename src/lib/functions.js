@@ -90,13 +90,15 @@ export function revokeBusinessAdmin({ email, businessId }) {
  *
  * Devuelve { status: 'created', id, price, precioLista, descuento, cuponCodigo, endTime }.
  */
-export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false }) {
+export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false, adicionales = [] }) {
   return llamar('createAppointment', {
     businessId, professionalId, serviceId, appointmentDate, startTime,
     clientName, clientPhone, clientEmail, notes, cuponCodigo,
     // "Usar mi membresía": lo marca el cliente. El servidor revalida todo
     // (activa, mes pago, servicio incluido, usos) y descuenta el uso.
     usarMembresia: usarMembresia === true,
+    // Solo los ids: el precio de cada adicional lo pone el servidor.
+    adicionales,
   });
 }
 

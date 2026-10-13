@@ -105,6 +105,53 @@ export function textoSobre(hex) {
   return L > 0.179 ? '#0a0a0a' : '#ffffff';
 }
 
+/** El contraste de WCAG entre dos colores. 1 = iguales, 21 = negro sobre blanco. */
+export function contraste(hexA, hexB) {
+  const a = hexARgb(hexA), b = hexARgb(hexB);
+  if (!a || !b) return 1;
+  const lineal = (v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const lum = (c) => 0.2126 * lineal(c.r) + 0.7152 * lineal(c.g) + 0.0722 * lineal(c.b);
+  const [alto, bajo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (alto + 0.05) / (bajo + 0.05);
+}
+
+/**
+ * El mismo color, pero oscurecido hasta que se LEA sobre fondo claro.
+ *
+ * Esto existe por un agujero que no se ve hasta que una barbería elige un
+ * color claro. `--primary` se usa de dos formas que piden cosas opuestas:
+ *
+ *   - como FONDO (el botón de reservar), y ahí el texto se calcula con
+ *     `textoSobre()`, que ya resuelve el contraste;
+ *   - como TEXTO, en 23 reglas del CSS, y la primera es `a { }`: TODOS los
+ *     links.
+ *
+ * Un verde lima da 13:1 como fondo y 1.5:1 como texto sobre blanco. O sea: el
+ * botón se ve perfecto y los links desaparecen. Le pasa a cualquier marca con
+ * amarillo, lima, cyan o naranja claro — que en barberías son muchas.
+ *
+ * Se oscurece el color de a poco hasta llegar al contraste pedido, y se
+ * devuelve el primero que entra. No se cambia el tono: es el mismo color de la
+ * marca, más oscuro. Si ya se leía, vuelve igual y esto no hace nada.
+ *
+ * 4.5:1 es el AA de WCAG para texto normal. Si el color es tan claro que ni
+ * al 5% de brillo llega (no pasa con colores reales), devuelve el más oscuro
+ * que pudo, que siempre es mejor que el original.
+ */
+export function legibleSobreClaro(hex, objetivo = 4.5, fondo = '#ffffff') {
+  const c = hexARgb(hex);
+  if (!c) return null;
+  let ultimo = hex;
+  for (let f = 1; f >= 0.05; f -= 0.01) {
+    ultimo = aHex({ r: c.r * f, g: c.g * f, b: c.b * f });
+    if (contraste(ultimo, fondo) >= objetivo) return ultimo;
+  }
+  return ultimo;
+}
+
 /**
  * Las variables CSS de ESTE negocio, listas para un `style={}`.
  *
@@ -136,6 +183,10 @@ export function variablesDelTema(business, habilitado = true) {
     // tema. Van derivadas para no pedirle a nadie que elija cuatro colores.
     vars['--border-accent'] = `rgba(${c.r}, ${c.g}, ${c.b}, 0.2)`;
     vars['--primary-glow'] = `rgba(${c.r}, ${c.g}, ${c.b}, 0.12)`;
+    // El color de la marca, pero usable como TEXTO sobre fondo claro. Ver
+    // `legibleSobreClaro`: sin esto, una barbería con un color claro se queda
+    // con los links invisibles mientras el botón se ve impecable.
+    vars['--primary-texto'] = legibleSobreClaro(primary);
   }
   if (secondary || primary) {
     vars['--secondary'] = secondary || primary;

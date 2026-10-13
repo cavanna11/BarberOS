@@ -262,5 +262,26 @@ chequear('anónimo también la ve (la grilla es pública, sin datos de nadie)', 
 r = await llamar(c7, 'getBusySlots', { businessId: BID, professionalId: PROF, appointmentDate: '2/3/2027' });
 chequear('fecha mal formada, rechazada', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
 
+titulo('Adicionales (cejas, lavado…: se suman al servicio, no son un turno):');
+await db.doc(`businesses/${BID}/services/srv-cejas`).set({ name: 'Perfilado de cejas', price: 4000, durationMinutes: 15, isActive: true, adicional: true });
+await db.doc(`businesses/${BID}/services/srv-cafe`).set({ name: 'Café', price: 4000, durationMinutes: 5, isActive: true, adicional: true });
+await db.doc(`businesses/${BID}/services/srv-viejo`).set({ name: 'Mascarilla', price: 5000, durationMinutes: 10, isActive: false, adicional: true });
+await db.doc(`businesses/${BID}/professionalServices/ps-cejas`).set({ professionalId: PROF, serviceId: 'srv-cejas' });
+const c12 = await usuario('c12@gmail.com');
+r = await reservar(c12, { ...base, appointmentDate: '2027-03-16', startTime: '10:00', adicionales: ['srv-cejas', 'srv-cafe', 'srv-cejas'] });
+chequear('corte + cejas + café: el precio suma los adicionales (sin contar dos veces el repetido)', r.ok?.price === 20000, JSON.stringify(r));
+const tAd = r.ok?.id ? (await db.doc(`businesses/${BID}/appointments/${r.ok.id}`).get()).data() : null;
+chequear('el turno guarda qué adicionales lleva, con su precio', tAd?.adicionales?.length === 2 && tAd.adicionales.every((a) => a.name && a.price === 4000), JSON.stringify(tAd?.adicionales));
+chequear('los adicionales no alargan el turno', tAd?.endTime === '10:30', tAd?.endTime);
+const c13 = await usuario('c13@gmail.com');
+r = await reservar(c13, { ...base, serviceId: 'srv-cejas', appointmentDate: '2027-03-16', startTime: '11:00' });
+chequear('un adicional solo no se reserva como turno', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(c13, { ...base, appointmentDate: '2027-03-16', startTime: '11:00', adicionales: ['srv-viejo'] });
+chequear('un adicional desactivado se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(c13, { ...base, appointmentDate: '2027-03-16', startTime: '11:00', adicionales: [SRV_HUERFANO] });
+chequear('un servicio común no se puede colar como adicional', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(c13, { ...base, appointmentDate: '2027-03-16', startTime: '11:00', adicionales: ['no-existe'] });
+chequear('un adicional que no existe se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

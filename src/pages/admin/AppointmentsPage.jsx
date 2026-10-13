@@ -8,6 +8,7 @@ import { origenTurno } from '../../utils/origenTurno';
 import { devolverSena, revertirUsoMembresia } from '../../lib/functions';
 import AplicarMembresiaModal from '../../components/admin/AplicarMembresiaModal';
 import { turnoConMembresia } from '../../utils/membresias';
+import { textoAdicionales } from '../../utils/adicionales';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 import WhatsAppTurno from '../../components/admin/WhatsAppTurno';
 import FiltroSucursal from '../../components/admin/FiltroSucursal';
@@ -189,7 +190,10 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
       alert('No se pudo quitar: ' + err.message);
     }
   };
-  const precioDe = (apt) => (turnoConMembresia(apt) ? '🪪 Membresía' : formatPrice(apt.price, business?.currency));
+  // Con membresía, lo que queda por cobrar son los adicionales (si los hay).
+  const precioDe = (apt) => (turnoConMembresia(apt)
+    ? (Number(apt.price) > 0 ? `🪪 Membresía + ${formatPrice(apt.price, business?.currency)}` : '🪪 Membresía')
+    : formatPrice(apt.price, business?.currency));
 
   const updateStatus = (apt, status) => {
     updateAppointment(negocioDe(apt), apt.id, { status }).catch((err) => {
@@ -358,7 +362,7 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
               </div>
               <div className="text-sm text-muted" title={origen.detalle}>{origen.icono} {origen.etiqueta}</div>
               <div className="text-sm text-secondary">
-                {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'} · ${precioDe(apt)}`}
+                {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'}${textoAdicionales(apt)} · ${precioDe(apt)}`}
                 {isOwner && prof && <> · {prof.name}</>}
               </div>
               {apt.clientPhone && !isWalkin && (
@@ -433,7 +437,7 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
                   <td>
                     {isWalkin
                       ? <span className="badge badge-neutral" style={{ fontSize: 11 }}>bloqueado</span>
-                      : (srv?.name || '—')
+                      : (srv?.name || '—') + textoAdicionales(apt)
                     }
                   </td>
                   <td>

@@ -8,6 +8,7 @@ import ValorarTurno from '../../components/client/ValorarTurno';
 import MiMembresia from '../../components/client/MiMembresia';
 import { miMembresia } from '../../lib/functions';
 import { turnoConMembresia } from '../../utils/membresias';
+import { textoAdicionales } from '../../utils/adicionales';
 
 const STATUS_LABELS = {
   pendiente: { label: 'Pendiente', className: 'badge-warning' },
@@ -127,7 +128,7 @@ export default function MyAppointments() {
           return (
             <div key={apt.id} className="card appointment-card">
               <div className="appointment-info">
-                <h3>{srv?.name} con {prof?.name}</h3>
+                <h3>{srv?.name}{textoAdicionales(apt)} con {prof?.name}</h3>
                 <div className="details">
                   <span>📅 {formatDate(apt.appointmentDate)}</span>
                   <span>🕐 {apt.startTime}</span>

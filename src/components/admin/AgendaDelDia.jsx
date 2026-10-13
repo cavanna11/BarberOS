@@ -3,6 +3,7 @@ import { formatDate, toDateString, timeToMinutes, fechaCorta } from '../../utils
 import { origenTurno } from '../../utils/origenTurno';
 import WhatsAppTurno from './WhatsAppTurno';
 import { turnoConMembresia } from '../../utils/membresias';
+import { textoAdicionales } from '../../utils/adicionales';
 
 /**
  * La agenda de un día, como un calendario: una fila por franja horaria, con
@@ -99,7 +100,7 @@ export default function AgendaDelDia({
   })();
 
   const nombreProf = (id) => professionals.find((p) => p.id === id)?.name || '—';
-  const nombreSrv = (a) => a.serviceName || services.find((s) => s.id === a.serviceId)?.name || (a.type === 'walkin' ? 'Servicio sin turno' : '—');
+  const nombreSrv = (a) => (a.serviceName || services.find((s) => s.id === a.serviceId)?.name || (a.type === 'walkin' ? 'Servicio sin turno' : '—')) + textoAdicionales(a);
 
   const activos = delDia.filter((a) => a.status === 'pendiente' || a.status === 'confirmada');
 

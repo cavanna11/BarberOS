@@ -72,7 +72,8 @@ function ServiceSelect({ services, professionalServices, professionalId, selecte
     const psIds = professionalServices
       .filter(ps => ps.professionalId === professionalId)
       .map(ps => ps.serviceId);
-    return services.filter(s => s.isActive && psIds.includes(s.id)).map(s => {
+    // Los adicionales (cejas, lavado…) no se reservan solos: van abajo, para sumar.
+    return services.filter(s => s.isActive && !s.adicional && psIds.includes(s.id)).map(s => {
       const ps = professionalServices.find(p => p.professionalId === professionalId && p.serviceId === s.id);
       return { ...s, finalPrice: ps?.customPrice || s.price, finalDuration: ps?.customDuration || s.durationMinutes };
     });
@@ -108,6 +109,29 @@ function ServiceSelect({ services, professionalServices, professionalId, selecte
               <div className="service-duration">⏱ {service.finalDuration} min</div>
             </div>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---- ADICIONALES ----
+// Cejas, lavado, café, mascarilla: se suman al servicio elegido y al precio.
+// No son un turno aparte ni agregan tiempo (se hacen durante el corte).
+function AdicionalesSelect({ adicionales, elegidos, onCambiar, currency }) {
+  if (adicionales.length === 0) return null;
+  const alternar = (id) => onCambiar(elegidos.includes(id) ? elegidos.filter((x) => x !== id) : [...elegidos, id]);
+  return (
+    <div className="adicionales-reserva">
+      <h3>¿Querés agregar algo?</h3>
+      <p className="text-sm text-secondary">Se hace en el mismo turno y se suma al precio.</p>
+      <div className="adicionales-lista">
+        {adicionales.map((a) => (
+          <label key={a.id} className={`adicional-opcion ${elegidos.includes(a.id) ? 'activa' : ''}`}>
+            <input type="checkbox" checked={elegidos.includes(a.id)} onChange={() => alternar(a.id)} />
+            <span className="adicional-nombre">{a.name}</span>
+            <span className="adicional-precio">+ {formatPrice(a.price, currency)}</span>
+          </label>
         ))}
       </div>
     </div>
@@ -315,7 +339,7 @@ function PersonalInfoStep({ user, phone, onPhoneChange }) {
 }
 
 // ---- SUMMARY ----
-function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false }) {
+function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [] }) {
   return (
     <div>
       <h2 className="booking-step-title">Confirmar tu reserva</h2>
@@ -334,6 +358,12 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
               <span className="summary-label">✂️ Servicio</span>
               <span className="summary-value">{service.name}</span>
             </div>
+            {adicionales.length > 0 && (
+              <div className="summary-row">
+                <span className="summary-label">➕ Adicionales</span>
+                <span className="summary-value">{adicionales.map((a) => a.name).join(', ')}</span>
+              </div>
+            )}
             <div className="summary-row">
               <span className="summary-label">📅 Fecha</span>
               <span className="summary-value">{formatDate(date)}</span>
@@ -352,7 +382,9 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
                 {precioLista != null && precioLista !== price && (
                   <span className="cupon-tachado" style={{ marginRight: 6 }}>{formatPrice(precioLista, currency)}</span>
                 )}
-                {conMembresia ? 'Incluido en tu membresía' : formatPrice(price, currency)}
+                {conMembresia
+                  ? (price > 0 ? `Membresía + ${formatPrice(price, currency)}` : 'Incluido en tu membresía')
+                  : formatPrice(price, currency)}
               </span>
             </div>
             <div className="summary-row" style={{ borderTop: '1px solid var(--border-color)', marginTop: 'var(--space-sm)', paddingTop: 'var(--space-sm)' }}>
@@ -432,6 +464,9 @@ export default function BookingPage() {
   // de React tampoco (esa navegación desmonta la app entera).
   const [params, setParams] = useSearchParams();
   const [cupon, setCupon] = useState(null);
+  // Los adicionales que sumó al servicio (ids). Se vacían si cambia de servicio
+  // en el paso 2 (ver abajo), no a mitad del flujo.
+  const [extras, setExtras] = useState([]);
 
   // La membresía del cliente en esta cuenta (si tiene). Se pide una vez, cuando
   // ya entró: antes no hay a quién preguntarle. Es una vista previa; el que
@@ -503,7 +538,12 @@ export default function BookingPage() {
   // Con la membresía no paga nada acá: ni seña, ni total, ni cupón.
   const cobertura = coberturaDelServicio(membresia, { businessId, serviceId, fecha: date });
   const conMembresia = usarMembresia && Boolean(cobertura) && !cobertura.fueraDeFecha && cobertura.restantes !== 0;
-  const precioAPagar = conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice;
+  const adicionalesDisponibles = services.filter((s) => s.adicional && s.isActive !== false);
+  const adicionalesElegidos = adicionalesDisponibles.filter((s) => extras.includes(s.id));
+  const totalAdicionales = adicionalesElegidos.reduce((t, s) => t + (Number(s.price) || 0), 0);
+  // Los adicionales se pagan siempre: la membresía cubre el servicio y el cupón
+  // descuenta el servicio, no los extras (igual que en el servidor).
+  const precioAPagar = (conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice) + totalAdicionales;
   const finalDuration = ps?.customDuration || selectedService?.durationMinutes || 30;
 
   // El cupón del link se anota y se saca de la URL. Sacarlo no es cosmética:
@@ -747,11 +787,13 @@ export default function BookingPage() {
         // SOLO el código. El descuento lo recalcula el servidor sobre el precio
         // del documento del servicio; lo que se mostró acá es una vista previa.
         cuponCodigo: conMembresia ? null : cupon?.codigo || null,
+        adicionales: adicionalesElegidos.map((s) => s.id),
       });
       const id = res.id;
       datos.price = res.price;
       datos.endTime = res.endTime;
       datos.membresia = res.membresia || null;
+      datos.adicionales = adicionalesElegidos.map((s) => ({ id: s.id, name: s.name, price: s.price }));
 
       // Con seña, el turno queda GUARDADO (no reservado) y hay que ir a pagar.
       // Lo pendiente no se borra todavía: si abandona el pago, al volver le
@@ -859,9 +901,19 @@ export default function BookingPage() {
           professionalServices={professionalServices}
           professionalId={professionalId}
           selectedId={serviceId}
-          onSelect={id => dispatch({ type: 'SET_SERVICE', payload: id })}
+          onSelect={id => { if (id !== serviceId) setExtras([]); dispatch({ type: 'SET_SERVICE', payload: id }); }}
           currency={business.currency}
           incluido={(id) => Boolean(coberturaDelServicio(membresia, { businessId, serviceId: id }))}
+        />
+      )}
+
+      {/* Los adicionales, recién cuando eligió el servicio al que se suman. */}
+      {step === 2 && serviceId && (
+        <AdicionalesSelect
+          adicionales={adicionalesDisponibles}
+          elegidos={extras}
+          onCambiar={setExtras}
+          currency={business.currency}
         />
       )}
 
@@ -968,6 +1020,7 @@ export default function BookingPage() {
           price={precioAPagar}
           precioLista={cupon && !conMembresia ? finalPrice : null}
           conMembresia={conMembresia}
+          adicionales={adicionalesElegidos}
           currency={business.currency}
           clientName={user.name}
           clientPhone={personalInfo.phone}
