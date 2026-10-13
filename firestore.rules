@@ -245,11 +245,26 @@ service cloud.firestore {
         allow create, update: if canManage(bizId)
                         && capacidadDelNegocio(bizId, 'pagina')
                         && portadaRazonable()
+                        && textosRazonables()
                         && (!('coverUrl' in request.resource.data)
                             || request.resource.data.coverUrl == null
                             || capacidadDelNegocio(bizId, 'paginaFoto'));
 
         allow delete: if canManage(bizId);
+      }
+
+      // Los textos de la página. El tope no es cosmético: este documento lo
+      // baja CADA visitante del link, así que un "sobre mí" de 200 KB lo paga
+      // el cliente en datos cada vez que abre la página. 800 caracteres dan
+      // para tres párrafos, que es lo que alguien lee en un celular.
+      function textosRazonables() {
+        let d = request.resource.data;
+        return (!('sobreMi' in d) || d.sobreMi == null
+                || (d.sobreMi is string && d.sobreMi.size() <= 800))
+               && (!('titular' in d) || d.titular == null
+                   || (d.titular is string && d.titular.size() <= 60))
+               && (!('bajada' in d) || d.bajada == null
+                   || (d.bajada is string && d.bajada.size() <= 160));
       }
 
       // La portada va como data URL adentro de este documento. Sin tope, una

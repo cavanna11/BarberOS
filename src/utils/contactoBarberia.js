@@ -54,8 +54,67 @@ export function linkInstagram(business) {
  * vacío se lee como que falta algo.
  */
 export function inicialesDe(nombre) {
-  const partes = String(nombre || '').trim().split(/\s+/).filter(Boolean);
+  // Solo palabras que EMPIEZAN con letra. "Neytan Barber 777" daba "N7",
+  // porque la última palabra es un número: la inicial de un número no es una
+  // inicial, es ruido. Con el filtro da "NB", que es lo que alguien escribiría.
+  const partes = String(nombre || '')
+    .trim()
+    .split(/\s+/)
+    .filter((p) => p && /^\p{L}/u.test(p));
   if (!partes.length) return '·';
   if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+/**
+ * La URL del mapa para incrustar, armada por nosotros.
+ *
+ * Se construye desde la dirección que la barbería ya cargó, y NUNCA desde una
+ * URL que escriba el dueño. La diferencia es de seguridad, no de comodidad: un
+ * `src` de iframe que viene de un campo de texto es una puerta abierta
+ * (`javascript:`, una página que imita un login, publicidad). Acá el dominio
+ * está fijo en el código y lo único variable es el texto de la búsqueda, que va
+ * codificado.
+ *
+ * `output=embed` es el mapa clásico: no pide clave de API ni facturación, que
+ * es lo que lo hace viable para cada barbería sin administrar nada.
+ *
+ * Devuelve null sin dirección: un mapa apuntando al centro de la nada es peor
+ * que no tener mapa.
+ */
+export function mapaIncrustado(business) {
+  const dir = direccionDe(business);
+  if (!dir) return null;
+  return `https://maps.google.com/maps?q=${encodeURIComponent(dir)}&z=16&output=embed`;
+}
+
+/** Los días que abre, agrupados: "Lun a Vie 09:00–20:00 · Sáb 09:00–18:00". */
+export function horarioDeAtencion(business) {
+  const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const dias = (business?.businessHours || [])
+    .filter((d) => d && d.isActive !== false && d.startTime && d.endTime)
+    .sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+  if (!dias.length) return [];
+
+  // Se juntan los días seguidos con el mismo horario: "Lunes a viernes de 9 a
+  // 20" es como lo diría cualquiera, y siete renglones iguales no los lee nadie.
+  const tramos = [];
+  for (const d of dias) {
+    const ultimo = tramos[tramos.length - 1];
+    const mismo = ultimo
+      && ultimo.startTime === d.startTime
+      && ultimo.endTime === d.endTime
+      && ultimo.breakStart === d.breakStart
+      && ultimo.breakEnd === d.breakEnd
+      && ultimo.hasta === d.dayOfWeek - 1;
+    if (mismo) ultimo.hasta = d.dayOfWeek;
+    else tramos.push({ desde: d.dayOfWeek, hasta: d.dayOfWeek, ...d });
+  }
+
+  return tramos.map((t) => ({
+    dias: t.desde === t.hasta ? DIAS[t.desde] : `${DIAS[t.desde]} a ${DIAS[t.hasta]}`,
+    horas: t.breakStart && t.breakEnd
+      ? `${t.startTime}–${t.breakStart} y ${t.breakEnd}–${t.endTime}`
+      : `${t.startTime}–${t.endTime}`,
+  }));
 }

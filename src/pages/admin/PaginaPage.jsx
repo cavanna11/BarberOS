@@ -4,7 +4,7 @@ import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
 import { getPagina, savePagina, updateBusiness } from '../../lib/repository';
 import { puede, CAPACIDADES, capacidadesDelNegocio } from '../../config/plans';
 import {
-  PLANTILLAS, PAGINA_VACIA, MAX_BOTONES, linkValido, getPlantilla, paginaEfectiva,
+  PLANTILLAS, PAGINA_VACIA, MAX_BOTONES, SOBRE_MI_MAX, linkValido, getPlantilla, paginaEfectiva,
 } from '../../config/pagina';
 import { useTenant } from '../../hooks/useTenantData';
 import { useSucursalesPublicas } from '../../hooks/useSucursalesPublicas';
@@ -99,6 +99,9 @@ export default function PaginaPage() {
         bajada: String(cfg.bajada || '').trim(),
         coverUrl: puedeFoto ? cfg.coverUrl || null : null,
         mostrarServicios: cfg.mostrarServicios !== false,
+        sobreMi: String(cfg.sobreMi || '').trim().slice(0, SOBRE_MI_MAX),
+        mostrarMapa: cfg.mostrarMapa !== false,
+        mostrarHorarios: cfg.mostrarHorarios !== false,
         botones,
       });
       setCfg((c) => ({ ...c, botones }));
@@ -178,6 +181,8 @@ export default function PaginaPage() {
 
   const activa = business.paginaActiva === true;
   const plantilla = getPlantilla(cfg.plantilla);
+  const esSitio = plantilla?.id === 'landing';
+  const tieneDireccion = Boolean(direccionDe(business));
   const necesitaFoto = plantilla?.id === 'foto';
   const botones = cfg.botones || [];
 
@@ -375,6 +380,59 @@ export default function PaginaPage() {
           <span>Mostrar mis servicios y precios en la página</span>
         </label>
       </div>
+
+      {/* ── Lo que solo usa la plantilla Sitio ───────────────────────────── */}
+      {/* Se muestra solo con esa plantilla elegida: ofrecerle "Sobre mí" a
+          alguien que eligió Simple es pedirle que escriba un texto que su
+          página no va a mostrar en ningún lado. */}
+      {esSitio && (
+        <div className="card mt-md">
+          <h3 className="mb-sm">Tu sitio</h3>
+          <p className="text-sm text-secondary mb-md">
+            La plantilla <strong>Sitio</strong> arma una página larga. Esto es lo que suma,
+            además de lo que ya cargaste.
+          </p>
+
+          <div className="form-group">
+            <label className="form-label">Sobre mí</label>
+            <textarea
+              className="form-input"
+              rows={6}
+              value={cfg.sobreMi || ''}
+              maxLength={SOBRE_MI_MAX}
+              placeholder={'Quién sos, hace cuánto cortás, qué hacés mejor.\n\nDejá un renglón en blanco para separar párrafos.'}
+              onChange={(e) => editar({ sobreMi: e.target.value })}
+            />
+            <p className="text-sm text-muted" style={{ marginTop: 6 }}>
+              {(cfg.sobreMi || '').length} de {SOBRE_MI_MAX} caracteres.
+              Si lo dejás vacío, la sección no aparece.
+            </p>
+          </div>
+
+          <label className="pagina-check">
+            <input
+              type="checkbox"
+              checked={cfg.mostrarHorarios !== false}
+              onChange={(e) => editar({ mostrarHorarios: e.target.checked })}
+            />
+            <span>Mostrar mis horarios de atención</span>
+          </label>
+
+          <label className="pagina-check" style={{ marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={cfg.mostrarMapa !== false}
+              onChange={(e) => editar({ mostrarMapa: e.target.checked })}
+            />
+            <span>Mostrar el mapa de Google con mi dirección</span>
+          </label>
+          {cfg.mostrarMapa !== false && !tieneDireccion && (
+            <p className="text-sm" style={{ marginTop: 6, color: 'var(--warning)' }}>
+              Todavía no cargaste tu dirección en Configuración, así que el mapa no se va a ver.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ── Botones libres ───────────────────────────────────────────────── */}
       <div className="card mt-md">

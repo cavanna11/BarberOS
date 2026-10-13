@@ -47,7 +47,24 @@ export const PLANTILLAS = [
     descripcion: 'Tu foto a pantalla completa de fondo, con los botones encima.',
     requiere: CAPACIDADES.paginaFoto,
   },
+  {
+    // La única que no es un Linktree. Las otras tres son una pantalla con
+    // botones; esta es una página que se baja: portada, quién sos, qué hacés,
+    // cuánto sale, cuándo abrís y dónde quedás.
+    //
+    // Existe porque "quiero que parezca una web" es un pedido real y recurrente,
+    // y la respuesta no puede ser hacerle una a mano a cada uno: eso es código
+    // que no se puede vender dos veces. Es una plantilla más, la elige
+    // cualquiera, y lo que la hace suya son sus datos, su logo y sus colores.
+    id: 'landing',
+    label: 'Sitio',
+    descripcion: 'Una página larga: portada, sobre vos, servicios, horarios y el mapa.',
+    requiere: null,
+  },
 ];
+
+/** Lo que entra en "Sobre mí". Da para tres párrafos y corta la novela. */
+export const SOBRE_MI_MAX = 800;
 
 export const PLANTILLA_POR_DEFECTO = 'simple';
 
@@ -90,6 +107,12 @@ export const PAGINA_VACIA = {
   bajada: '',
   coverUrl: null,
   mostrarServicios: true,
+  // Solo los usa la plantilla "Sitio". Van con el resto y no en un documento
+  // aparte porque son dos líneas de texto y dos booleanos: separarlos sería
+  // una lectura más por una ganancia de nada.
+  sobreMi: '',
+  mostrarMapa: true,
+  mostrarHorarios: true,
   botones: [],
 };
 
@@ -109,6 +132,7 @@ export function paginaEfectiva(pagina, capacidades) {
 
   return {
     ...base,
+    sobreMi: String(base.sobreMi || '').slice(0, SOBRE_MI_MAX),
     plantilla: permitida ? plantilla.id : PLANTILLA_POR_DEFECTO,
     coverUrl: capacidades?.[CAPACIDADES.paginaFoto] === true ? base.coverUrl || null : null,
     botones: botonesValidos(base),

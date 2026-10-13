@@ -819,7 +819,7 @@ Lo bloqueado NO se esconde: se muestra apagado, con desde qué plan está y el
 link para ampliar. Esconderlo deja al dueño creyendo que el sistema no lo tiene.
 
 ```bash
-node scripts/test-planes-emulador.mjs   # 66 casos
+node scripts/test-planes-emulador.mjs   # 71 casos
 ```
 
 ### WhatsApp por wa.me, sin API ni bot (06/10/2026)
@@ -1052,10 +1052,9 @@ barbería que ya lo repartió sin que ella lo decida.
 de la página, el `from` del login y los "Reservar otra cita" de la confirmación
 y de Mis Citas. El flujo de reserva no se tocó.
 
-**Tres plantillas, UNA estructura.** `Simple`, `Tarjeta` y `Foto` (esta última
-del Full) comparten el mismo JSX y se diferencian por una clase. Agregar una
-cuarta es escribir CSS, no una pantalla nueva que después hay que acordarse de
-arreglar cuando se le suma un botón.
+**Cuatro plantillas.** `Simple`, `Tarjeta` y `Foto` (esta última del Full)
+comparten el mismo JSX y se diferencian por una clase: agregar otra de esas es
+escribir CSS. **`Sitio`** es la excepción y es a propósito — ver abajo.
 
 **Se elige, no se diseña.** El dueño elige plantilla y escribe dos líneas; todo
 lo demás —nombre, logo, presentación, dirección, Instagram, WhatsApp,
@@ -1102,6 +1101,54 @@ cambiaba). Todo usa `VistaPagina`, el MISMO componente que ve el cliente: la vis
 puede separarse de la página real. `CelularPagina` la dibuja a 390 px y la achica con
 `transform`, que además hace que la portada (`position: fixed`) quede fija al celular.
 
+### La plantilla "Sitio": cuando piden una web, no un Linktree (13/10/2026)
+
+"Quiero que parezca una página web hecha para mí" es un pedido real y
+recurrente, y la respuesta no puede ser hacerle una a mano a cada barbería: eso
+es código que no se puede vender dos veces y que se rompe en el próximo cambio
+del producto. Es una **plantilla más**, la elige cualquiera, y lo que la hace
+suya son sus datos, su logo y sus colores.
+
+Las otras tres son una pantalla con botones. Esta se baja:
+
+```
+portada (logo grande + nombre + bajada + Reservar)
+Sobre mí          cfg.sobreMi, hasta 800 caracteres, párrafos por renglón
+Servicios         con precio y duración
+Horarios          agrupados: "Lun a Vie 09:00–20:00 · Sáb 09:00–18:00"
+Nuestros locales  solo en cuentas con sucursales
+Dónde estamos     el mapa de Google incrustado
+Escribinos        WhatsApp, Instagram y los botones libres
+```
+
+Vive en el MISMO archivo que las otras (`VistaPagina.jsx`) porque el editor
+dibuja la vista previa con ese componente: lo que el dueño ve mientras edita
+tiene que ser lo que ve el cliente, no una imitación que con el tiempo se
+separa.
+
+**El mapa se arma solo, desde la dirección cargada** (`mapaIncrustado()` en
+`utils/contactoBarberia.js`). NUNCA desde una URL que escriba el dueño: un `src`
+de iframe que sale de un campo de texto es una puerta abierta. El dominio está
+fijo en el código y lo único variable es el texto de la búsqueda, codificado.
+Usa `output=embed`, que no pide clave de API ni facturación — es lo que lo hace
+viable para cada barbería sin administrar nada.
+
+**En el editor el mapa es un marcador, no el mapa.** La vista previa se dibuja
+dos veces (la miniatura de la plantilla y el celular grande) y se redibuja con
+cada tecla: serían dos pedidos a Google por apertura del panel para mostrarle al
+dueño dónde queda su propio local.
+
+**El único efecto** es que las secciones aparecen al llegar scrolleando
+(`IntersectionObserver`, veinte líneas, cero kB de librería) y la barra de
+abajo con "Reservar" fija en el celular — que no es decoración: en una página
+larga el botón queda arriba de todo y el que terminó de leer tiene que volver a
+buscarlo.
+
+Ojo con la clase que esconde: `.sitio-aparece` arranca en opacidad 0 y la saca
+el observer. Se pone **solo** cuando el observer va a correr (no en la vista
+previa). Un efecto que esconde contenido cuando no se ejecuta no es un efecto,
+es una página en blanco.
+
 ### Los colores de la barbería no llegaban a ningún lado (08/10/2026)
 
 `applyTheme()` existía desde el principio en `config/theme.js` y **no la llamaba
@@ -1131,6 +1178,35 @@ Tres detalles que hacen que funcione de verdad:
 - **`--border-accent` y `--primary-glow`** se derivan del color elegido. En
   `:root` están escritas como un `rgba()` literal con el naranja adentro, así que
   sin pisarlas el botón verde quedaba con el aro naranja alrededor.
+
+**Lo que faltaba, y apareció recién con un color claro de verdad (13/10/2026).**
+Preparando el verde lima de Neytan Barber 777:
+
+- **`--primary` se usa de dos formas que piden cosas opuestas**: como FONDO del
+  botón, y como TEXTO en 23 reglas del CSS — la primera es `a { }`, o sea TODOS
+  los links. Un verde lima da 13:1 como fondo y **1.5:1 como texto sobre
+  blanco**. El botón impecable y los links invisibles. Ahora `variablesDelTema()`
+  deriva **`--primary-texto`** con `legibleSobreClaro()`: el mismo color
+  oscurecido hasta 4.5:1. Un color que ya se leía vuelve igual.
+- **`.btn-primary` tenía `color: #ffffff !important`**, así que el valor que
+  `textoSobre()` calcula no llegaba nunca al botón más importante del producto.
+  Con el verde eran 2.09:1.
+- **`--sobre-primary` no estaba en `:root`**, solo dentro de `.pagina-barberia`
+  — y ahí es peor que no estar: al declararlo el propio elemento, le gana al
+  valor que hereda de `TemaNegocio`, así que las cuatro plantillas se quedaban
+  con el blanco fijo. Ahora vive en `:root` y nadie lo pisa.
+
+BarberOS no cambia: en `:root` las dos variables apuntan a lo que ya había. Su
+naranja como texto queda en 4.34:1, apenas por debajo de AA; se deja porque es
+la marca y oscurecerla es una decisión de identidad (sería `#d93b00`, 4.59:1).
+
+Para sacar la paleta de un logo y validar los contrastes antes de cargar nada:
+
+```bash
+node scripts/paleta-de-logo.mjs ruta/al/logo.png
+```
+
+
 
 El panel sigue con los colores de BarberOS a propósito, y Configuración ahora lo
 dice.
@@ -1616,8 +1692,13 @@ node scripts/test-preview.mjs              # vista previa del link (tampoco)
 ```
 
 Hoy: claims 77, reservas 53, facturación 14, rules 118, alta 22, mercadopago 16,
-seña 14, sucursales 68, planes 66, reseñas 36, membresías 121, whatsapp 23,
-preview 24. Todo en verde (645).
+seña 14, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
+whatsapp 23, preview 24. Todo en verde (711).
+
+Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
+falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales
+con id automático que el `recursiveDelete` del principal no se llevaba, y la
+segunda corrida encontraba tres locales donde el caso espera dos.
 
 Para mirar las páginas de presentación en el browser:
 

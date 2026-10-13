@@ -4416,9 +4416,6 @@ select.form-input {
   padding: var(--space-xl) var(--space-md);
   position: relative;
   background: var(--bg);
-  /* El color del texto de los botones se calcula en config/theme.js contra el
-     color que eligió la barbería: su naranja puede necesitar texto negro. */
-  --sobre-primary: #ffffff;
 }
 
 .pagina-contenido {
@@ -5428,3 +5425,324 @@ select.form-input {
 .adicional-opcion input { width: 18px; height: 18px; flex-shrink: 0; }
 .adicional-nombre { flex: 1; min-width: 0; }
 .adicional-precio { font-weight: 700; white-space: nowrap; }
+
+/* ============================================================================
+   PLANTILLA "SITIO" — la pagina larga, la unica que no es un Linktree
+   ============================================================================
+   Las otras tres son una pantalla con botones. Esta se baja: portada, sobre mi,
+   servicios, horarios, locales, mapa y contacto.
+
+   Celular primero y en serio: este link se abre desde la bio de Instagram. En
+   escritorio no se estira a 1400 px — se mantiene en una columna legible y
+   centrada, que es como se ve una web de un negocio chico, no como se ve un
+   dashboard.
+   ============================================================================ */
+
+.pagina-sitio {
+  min-height: 100vh;
+  display: block;
+  padding: 0;
+  background: var(--bg);
+}
+
+/* -- Portada -------------------------------------------------------------- */
+
+.sitio-hero {
+  position: relative;
+  padding: var(--space-2xl) var(--space-md) var(--space-xl);
+  text-align: center;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Con foto, el encabezado pasa a oscuro. El velo no es decoracion: la foto la
+   elige el dueño y nadie le revisa el contraste, asi que el texto tiene que
+   quedar legible sobre cualquier cosa. */
+.sitio-hero-foto {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.sitio-hero-foto::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.78) 100%);
+}
+
+.sitio-hero-contenido {
+  position: relative;
+  z-index: 1;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* El logo grande y sin recortar: es lo primero que tiene que reconocer el
+   cliente. `object-fit: contain` y no `cover` — un logo recortado es un logo
+   roto. */
+.sitio-logo {
+  max-width: 260px;
+  max-height: 150px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  margin-bottom: var(--space-xs);
+}
+
+.sitio-nombre {
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.sitio-bajada {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 40ch;
+}
+
+.sitio-direccion {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.sitio-cta {
+  width: 100%;
+  max-width: 320px;
+  margin-top: var(--space-sm);
+}
+
+.sitio-con-foto .sitio-nombre { color: #ffffff; }
+.sitio-con-foto .sitio-bajada { color: rgba(255,255,255,0.88); }
+.sitio-con-foto .sitio-direccion { color: rgba(255,255,255,0.72); }
+
+/* -- Secciones ------------------------------------------------------------ */
+
+.sitio-cuerpo {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 var(--space-md);
+}
+
+.sitio-seccion {
+  padding: var(--space-xl) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sitio-seccion:last-of-type { border-bottom: none; }
+
+.sitio-titulo {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-md);
+}
+
+.sitio-texto p {
+  line-height: 1.65;
+  margin-bottom: var(--space-sm);
+}
+
+.sitio-texto p:last-child { margin-bottom: 0; }
+
+/* -- Servicios y horarios ------------------------------------------------- */
+
+.sitio-servicios,
+.sitio-horarios {
+  list-style: none;
+}
+
+.sitio-servicios li,
+.sitio-horarios li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-md);
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.sitio-servicios li:last-child,
+.sitio-horarios li:last-child { border-bottom: none; }
+
+.sitio-servicio-nombre {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-weight: 600;
+}
+
+.sitio-servicio-min {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.sitio-servicio-precio {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sitio-horario-horas {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* -- Locales -------------------------------------------------------------- */
+
+.sitio-locales {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sitio-local {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  text-decoration: none;
+  color: var(--text);
+}
+
+.sitio-local-link:hover { border-color: var(--primary); }
+
+.sitio-local-dir { font-size: 0.875rem; color: var(--text-secondary); }
+
+.sitio-local-nota {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+/* -- Mapa ----------------------------------------------------------------- */
+
+.sitio-mapa {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: var(--space-sm);
+  background: var(--bg-secondary);
+}
+
+.sitio-mapa iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* -- Botones de contacto -------------------------------------------------- */
+
+.sitio-contacto {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sitio-boton-ancho {
+  width: 100%;
+  text-decoration: none;
+  justify-content: center;
+}
+
+/* -- La barra de abajo ---------------------------------------------------- */
+/* En una pagina larga el boton de reservar queda arriba de todo y el que
+   termino de leer tiene que volver a buscarlo. Aca lo tiene siempre. */
+
+.sitio-barra {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  padding: var(--space-sm) var(--space-md);
+  padding-bottom: calc(var(--space-sm) + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+}
+
+.sitio-barra-btn {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
+}
+
+.sitio-pie {
+  margin-top: 0;
+  padding: var(--space-lg) var(--space-md) var(--space-xl);
+}
+
+/* -- El efecto ------------------------------------------------------------ */
+/* Una sola cosa: la seccion aparece al llegar. Nada que rebote ni que gire. */
+
+.sitio-aparece {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 420ms ease, transform 420ms ease;
+}
+
+.sitio-aparece.sitio-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Sin JavaScript —o con el observer no disponible— las secciones TIENEN que
+   verse igual. Un efecto que esconde contenido cuando falla no es un efecto,
+   es una pagina rota. */
+@media (prefers-reduced-motion: reduce) {
+  .sitio-aparece { opacity: 1; transform: none; transition: none; }
+}
+
+/* -- Escritorio ----------------------------------------------------------- */
+/* No se estira: una columna legible centrada. Lo unico que cambia es que la
+   portada respira mas y la barra de abajo deja de hacer falta. */
+
+@media (min-width: 768px) {
+  .sitio-hero { padding: calc(var(--space-2xl) * 1.5) var(--space-lg) var(--space-2xl); }
+  .sitio-nombre { font-size: 2.25rem; }
+  .sitio-logo { max-width: 320px; max-height: 190px; }
+  .sitio-barra { display: none; }
+}
+
+/* En el editor, en lugar del mapa de Google va esto. Ver VistaPagina. */
+.sitio-mapa-muestra {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--space-md);
+  text-align: center;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.sitio-mapa-muestra span:first-child { font-size: 1.5rem; }

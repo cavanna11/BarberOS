@@ -242,6 +242,14 @@ console.log('\nPlan a medida (capacidades mezcladas):');
 await db.recursiveDelete(db.doc('businesses/plan-medida')).catch(() => {});
 await db.doc('slugs/plan-medida-2').delete().catch(() => {});
 await db.doc('slugs/plan-medida-3').delete().catch(() => {});
+// Y las SUCURSALES que creó la corrida anterior. `crearSucursal` les da un id
+// automático, así que borrar `businesses/plan-medida` no se las lleva: quedan
+// con el `grupoId` puesto y la segunda corrida encuentra tres locales donde el
+// caso espera dos. Se buscan por grupo, que es lo que las ata.
+for (const d of (await db.collection('businesses').where('grupoId', '==', 'plan-medida').get()).docs) {
+  await db.recursiveDelete(d.ref).catch(() => {});
+}
+await db.doc('grupos/plan-medida').delete().catch(() => {});
 await db.doc('businesses/plan-medida').set({
   id: 'plan-medida', name: 'A medida', slug: 'plan-medida', isFrozen: false,
   primaryColor: '#e03d00', logoUrl: null,
@@ -323,6 +331,21 @@ await esperar('Full: una portada gigante se rechaza igual',
 // que poder dejar la pagina sin la foto que ya no le corresponde.
 await esperar('Full: sacar la portada se permite',
   editar(duenoFull, `businesses/${CUENTAS.full}/public/pagina`, { coverUrl: null }), 'permitido');
+
+// Los textos de la pagina tienen tope. No es cosmetico: este documento lo baja
+// CADA visitante del link, asi que un "sobre mi" enorme lo paga el cliente en
+// datos cada vez que abre la pagina.
+await esperar('Intermedio: un "sobre mi" normal entra',
+  editar(duenoInter, `businesses/${CUENTAS.intermedio}/public/pagina`,
+    { sobreMi: 'Corto hace diez anios en el centro.\n\nTrabajo con turno.' }), 'permitido');
+await esperar('un "sobre mi" de 2000 caracteres se rechaza',
+  editar(duenoInter, `businesses/${CUENTAS.intermedio}/public/pagina`, { sobreMi: 'a'.repeat(2000) }), 'denegado');
+await esperar('un titular larguisimo se rechaza',
+  editar(duenoInter, `businesses/${CUENTAS.intermedio}/public/pagina`, { titular: 'a'.repeat(200) }), 'denegado');
+await esperar('una bajada larguisima se rechaza',
+  editar(duenoInter, `businesses/${CUENTAS.intermedio}/public/pagina`, { bajada: 'a'.repeat(500) }), 'denegado');
+await esperar('la plantilla Sitio no necesita ninguna capacidad extra',
+  editar(duenoInter, `businesses/${CUENTAS.intermedio}/public/pagina`, { plantilla: 'landing' }), 'permitido');
 
 // Aislamiento: la pagina es de lectura publica, la escritura no.
 await esperar('nadie escribe la pagina de otra barberia',
