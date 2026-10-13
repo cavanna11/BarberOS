@@ -66,6 +66,11 @@ function ProfessionalSelect({ professionals, selectedId, onSelect }) {
   );
 }
 
+// El orden en que la barbería cargó sus servicios (`displayOrder`), y si no
+// tiene, por nombre: es el de su lista de precios, no el alfabético.
+const enOrden = (a, b) => (a.displayOrder ?? 999) - (b.displayOrder ?? 999)
+  || String(a.name).localeCompare(String(b.name));
+
 // ---- SERVICE SELECT ----
 function ServiceSelect({ services, professionalServices, professionalId, selectedId, onSelect, currency, incluido = () => false }) {
   const available = useMemo(() => {
@@ -76,7 +81,7 @@ function ServiceSelect({ services, professionalServices, professionalId, selecte
     return services.filter(s => s.isActive && !s.adicional && psIds.includes(s.id)).map(s => {
       const ps = professionalServices.find(p => p.professionalId === professionalId && p.serviceId === s.id);
       return { ...s, finalPrice: ps?.customPrice || s.price, finalDuration: ps?.customDuration || s.durationMinutes };
-    });
+    }).sort(enOrden);
   }, [services, professionalServices, professionalId]);
 
   return (
@@ -538,7 +543,7 @@ export default function BookingPage() {
   // Con la membresía no paga nada acá: ni seña, ni total, ni cupón.
   const cobertura = coberturaDelServicio(membresia, { businessId, serviceId, fecha: date });
   const conMembresia = usarMembresia && Boolean(cobertura) && !cobertura.fueraDeFecha && cobertura.restantes !== 0;
-  const adicionalesDisponibles = services.filter((s) => s.adicional && s.isActive !== false);
+  const adicionalesDisponibles = services.filter((s) => s.adicional && s.isActive !== false).sort(enOrden);
   const adicionalesElegidos = adicionalesDisponibles.filter((s) => extras.includes(s.id));
   const totalAdicionales = adicionalesElegidos.reduce((t, s) => t + (Number(s.price) || 0), 0);
   // Los adicionales se pagan siempre: la membresía cubre el servicio y el cupón
