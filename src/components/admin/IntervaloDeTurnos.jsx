@@ -111,6 +111,26 @@ export default function IntervaloDeTurnos({ valor, servicios = [], businessHours
         </Aviso>
       )}
 
+      {d.estado === 'muy-fino' && (
+        <Aviso tipo="info">
+          <strong>Podés agrandar la grilla sin perder nada.</strong>
+          <p className="text-sm" style={{ margin: '6px 0' }}>
+            Con {intervalo} minutos no se pierde tiempo entre turnos, pero tampoco hace falta ir
+            tan fino: tus servicios duran {d.duraciones.join(', ')} minutos y con{' '}
+            <strong>{d.sugerido}</strong> pasa exactamente lo mismo.
+          </p>
+          <p className="text-sm" style={{ margin: '0 0 6px' }}>
+            Dos cosas mejoran: el cliente ve{' '}
+            <strong>{Math.floor(dia / d.sugerido)} horarios</strong> en vez de {Math.floor(dia / intervalo)}
+            {' '}—una lista que se lee—, y se achica el riesgo de que entre turno y turno te queden
+            huecos de {intervalo} minutos donde no entra ningún servicio.
+          </p>
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => onChange(d.sugerido)}>
+            Usar {d.sugerido} minutos
+          </button>
+        </Aviso>
+      )}
+
       {d.estado === 'ok' && (
         <Aviso tipo="success">
           <strong>Tu grilla aprovecha bien tus servicios.</strong>

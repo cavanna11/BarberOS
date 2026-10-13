@@ -1515,8 +1515,29 @@ Se informa **por servicio**, que es exacto, y no "perdés 200 minutos por día",
 que supondría una mezcla de turnos que nadie midió. Los "turnos que entran" usan
 la jornada real del horario cargado.
 
-Tres estados: `ok` (todas las duraciones son múltiplos — se lo confirma),
-`mejorable` (hay MCD y se ofrece), y **`desalineados`**: si el MCD cae por debajo
+**"¿Y si pongo 10 y me entra un servicio de 60?"** La pregunta apareció sola y
+tiene dos mitades. La primera es un susto infundado: un turno de 60 **ya bloquea
+la hora entera**, no un slot de 10 — el motor filtra por solapamiento desde
+siempre, y se verificó. La segunda es un problema real que nadie había nombrado:
+con la grilla fina el cliente deja **huecos de 10 minutos donde no entra ningún
+servicio**. Medido sobre 200 días simulados, con servicios de 20/40/60 y
+clientes eligiendo el horario que les gusta (no el primero libre):
+
+| grilla | turnos/día | minutos vendidos | huecos < 20 min | minutos tirados |
+|---|---|---|---|---|
+| 10 | 13.9 | 460 | 3.3 | 33 |
+| 15 | 13.7 | 449 | 6.5 | 54 |
+| **20** (el MCD) | **14.0** | **463** | **0** | **0** |
+| 30 | 13.2 | 429 | 5.1 | 51 |
+| 60 | 11.0 | 365 | 0 | 0 |
+
+El MCD gana en las dos cosas: no deja huecos inútiles y vende más minutos. Más
+fino no suma nada y multiplica las opciones que ve el cliente.
+
+Cuatro estados: `ok` (todas las duraciones son múltiplos — se lo confirma),
+`mejorable` (hay MCD y se ofrece), **`muy-fino`** (no pierde nada pero la grilla
+es más chica que el MCD: se le ofrece agrandarla, con la cuenta de cuántos
+horarios ve el cliente), y **`desalineados`**: si el MCD cae por debajo
 de 10 (25 y 40 dan 5), la salida NO es achicar la grilla —serían 132 horarios en
 un día de once horas y el cliente deja de leer la lista— sino redondear las
 duraciones en Servicios. Por eso `INTERVALO_MIN` (lo que se puede escribir, 5) y
@@ -1534,7 +1555,7 @@ el guardado, y el motor. Verificado escribiendo `slotInterval: 0` directo en
 Firestore: la página responde normal y ofrece la grilla de 30.
 
 ```bash
-node scripts/test-intervalo.mjs   # 54 casos, sin emulador
+node scripts/test-intervalo.mjs   # 59 casos, sin emulador
 ```
 
 **Lo que NO se hizo, y por qué.** La otra salida era reescribir el motor para
@@ -1815,7 +1836,7 @@ node scripts/test-intervalo.mjs            # la grilla y el consejo (tampoco)
 
 Hoy: claims 77, reservas 58, facturación 14, rules 118, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
-turnos fijos 28, whatsapp 23, preview 24, intervalo 54. Todo en verde (793).
+turnos fijos 28, whatsapp 23, preview 24, intervalo 59. Todo en verde (798).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

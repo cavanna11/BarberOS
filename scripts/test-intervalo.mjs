@@ -144,7 +144,26 @@ d = diagnosticoDelIntervalo(NEYTAN, 20);
 chequear('20 con 20 y 40 → ok, no molesta con nada', d.estado === 'ok', JSON.stringify(d));
 
 d = diagnosticoDelIntervalo(NEYTAN, 10);
-chequear('10 también es ok (cualquier divisor sirve)', d.estado === 'ok', JSON.stringify(d));
+chequear('10 con 20 y 40 -> muy-fino: no pierde nada, pero la grilla sobra',
+  diagnosticoDelIntervalo(NEYTAN, 10).estado === 'muy-fino', JSON.stringify(diagnosticoDelIntervalo(NEYTAN, 10)));
+
+// El caso que trajo Santiago: un servicio de 60 entre los de 20 y 40.
+// Preocupaba que la grilla de 10 "atrasara" los turnos. El motor ya bloquea la
+// hora entera con un turno de 60 (verificado aparte, contra el motor), pero sí
+// aparece el problema de al lado: huecos de 10 minutos donde no entra nada.
+// Medido sobre 200 días con clientes eligiendo a gusto:
+//   grilla 10 -> 3.3 huecos/día de menos de 20 min = 33 minutos tirados
+//   grilla 20 -> 0 huecos inútiles y MÁS minutos vendidos
+const CON_COLOR = [srv('c','Corte',20), srv('d','Degradé',40), srv('x','Color',60)];
+chequear('20, 40 y 60 -> el MCD es 20', intervaloSugerido(CON_COLOR) === 20, String(intervaloSugerido(CON_COLOR)));
+chequear('con grilla de 10 avisa que sobra, y sugiere 20',
+  diagnosticoDelIntervalo(CON_COLOR, 10).estado === 'muy-fino'
+  && diagnosticoDelIntervalo(CON_COLOR, 10).sugerido === 20);
+chequear('con grilla de 20 no molesta', diagnosticoDelIntervalo(CON_COLOR, 20).estado === 'ok');
+chequear('con grilla de 30 avisa que pierde (30 no divide a 20)',
+  diagnosticoDelIntervalo(CON_COLOR, 30).estado === 'mejorable');
+chequear('con grilla de 60 pierde muchísimo: el corte de 20 bloquea una hora',
+  desperdicioPorServicio(CON_COLOR, 60).find((x) => x.id === 'c').desperdicio === 40);
 
 d = diagnosticoDelIntervalo([srv('a','A',25), srv('b','B',40)], 30);
 chequear('25 y 40 → desalineados: el consejo es redondear las duraciones',

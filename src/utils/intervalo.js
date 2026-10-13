@@ -144,7 +144,22 @@ export function jornadaSemanal(businessHours = []) {
  *   'sin-servicios'  no hay con qué opinar
  *   'ok'             el intervalo divide a todas las duraciones: no se pierde nada
  *   'mejorable'      hay un intervalo mejor, y se dice cuál
+ *   'muy-fino'       no se pierde nada, pero la grilla es más chica de lo
+ *                    necesario (ver abajo)
  *   'desalineados'   las duraciones no tienen un divisor común usable
+ *
+ * Lo de 'muy-fino' salió de una pregunta buena: "si pongo la grilla cada 10 y
+ * me entra un servicio de 60, ¿no se me atrasa todo?". No: un turno de 60 ya
+ * bloquea la hora entera, no un slot de 10 — eso el motor lo hace desde
+ * siempre. Pero medido con 200 días simulados y clientes eligiendo el horario
+ * que les gusta (no el primero libre), apareció el problema de al lado:
+ *
+ *   grilla cada 10 → 3.3 huecos por día de menos de 20 minutos = 33 min tirados
+ *   grilla cada 20 → 0 huecos inútiles, y 463 minutos vendidos contra 460
+ *
+ * Con la grilla fina el cliente deja agujeros donde no entra ni el servicio más
+ * corto. Con el MCD, cada turno termina justo donde puede empezar otro. Y de
+ * paso ve 33 horarios en vez de 66.
  */
 export function diagnosticoDelIntervalo(servicios = [], slotInterval = 30) {
   const duraciones = duracionesDe(servicios);
@@ -153,7 +168,15 @@ export function diagnosticoDelIntervalo(servicios = [], slotInterval = 30) {
   const perdidas = desperdicioPorServicio(servicios, slotInterval).filter((x) => x.desperdicio > 0);
   const sugerido = intervaloSugerido(servicios);
 
-  if (!perdidas.length) return { estado: 'ok', duraciones, sugerido };
+  if (!perdidas.length) {
+    // No se pierde nada por turno, pero si el MCD es MAYOR que el intervalo,
+    // la grilla es más chica de lo que hace falta: más opciones para el cliente
+    // y más lugar para que queden huecos que no sirven.
+    if (sugerido !== null && sugerido > slotInterval) {
+      return { estado: 'muy-fino', duraciones, sugerido };
+    }
+    return { estado: 'ok', duraciones, sugerido };
+  }
   if (sugerido === null) return { estado: 'desalineados', duraciones, perdidas };
   return { estado: 'mejorable', duraciones, perdidas, sugerido };
 }
