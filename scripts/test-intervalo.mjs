@@ -16,7 +16,8 @@
 import {
   mcd, normalizarIntervalo, duracionesDe, intervaloSugerido,
   desperdicioPorServicio, turnosQueEntran, jornadaSemanal,
-  diagnosticoDelIntervalo, INTERVALO_MIN, INTERVALO_MAX,
+  diagnosticoDelIntervalo, serviciosQueAchicanLaGrilla,
+  INTERVALO_MIN, INTERVALO_MAX,
 } from '../src/utils/intervalo.js';
 
 let pasaron = 0, fallaron = 0;
@@ -173,6 +174,44 @@ chequear('y aun así informa cuánto pierde cada uno', d.perdidas.length === 2, 
 chequear('sin servicios cargados no se opina', diagnosticoDelIntervalo([], 30).estado === 'sin-servicios');
 chequear('con solo adicionales tampoco',
   diagnosticoDelIntervalo([srv('a','Cejas',7,{adicional:true})], 30).estado === 'sin-servicios');
+
+// -- 9. Quien tira la grilla para abajo --------------------------------------
+// El caso real que lo destapo: a Neytan le recomendaba 10 y parecia un bug del
+// consejo. No lo era — el consejo estaba bien sobre datos mal cargados. Tenia
+// un "Perfilado de cejas con navaja" de 10 minutos como servicio suelto entre
+// cortes de 30 y 60, cuando en la practica se hace junto con el corte.
+console.log('\nQuién obliga a una grilla más chica de lo necesario:');
+
+const NEYTAN_REAL = [
+  srv('a', 'Corte de pelo + perfilado de cejas', 30),
+  srv('b', 'Corte + Barba + Perfilado de cejas', 50, { adicional: true }),
+  srv('c', 'Perfilado de cejas con navaja', 10),
+  srv('d', 'Corte infantil', 30),
+  srv('e', '777 SIGNATURE', 60),
+  srv('f', 'Mascarilla facial', 30),
+];
+
+chequear('con sus datos de hoy el MCD es 10, y está bien calculado',
+  intervaloSugerido(NEYTAN_REAL) === 10, String(intervaloSugerido(NEYTAN_REAL)));
+
+const culpables = serviciosQueAchicanLaGrilla(NEYTAN_REAL);
+chequear('el culpable es UNO solo', culpables.length === 1, JSON.stringify(culpables));
+chequear('y es el perfilado de cejas de 10 minutos',
+  culpables[0]?.id === 'c' && culpables[0]?.duracion === 10, JSON.stringify(culpables));
+chequear('sin él, la grilla sana sería de 30',
+  culpables[0]?.grillaSinEl === 30, String(culpables[0]?.grillaSinEl));
+chequear('el adicional de 50 min NO cuenta (no se reserva solo)',
+  !culpables.some((c) => c.id === 'b'), JSON.stringify(culpables));
+
+chequear('si todos están alineados, no hay culpables',
+  serviciosQueAchicanLaGrilla([srv('a','A',20), srv('b','B',40), srv('c','C',60)]).length === 0);
+chequear('con un solo servicio no hay a quién culpar',
+  serviciosQueAchicanLaGrilla([srv('a','A',25)]).length === 0);
+chequear('sin servicios tampoco', serviciosQueAchicanLaGrilla([]).length === 0);
+
+chequear('el diagnóstico los lleva adentro',
+  diagnosticoDelIntervalo(NEYTAN_REAL, 20).culpables?.[0]?.id === 'c',
+  JSON.stringify(diagnosticoDelIntervalo(NEYTAN_REAL, 20).culpables));
 
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron`);
 if (fallas.length) console.log('Fallaron:\n  - ' + fallas.join('\n  - '));

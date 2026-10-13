@@ -5813,3 +5813,13 @@ select.form-input {
   font-size: 0.875rem;
   white-space: nowrap;
 }
+
+/* Qué servicio está forzando una grilla más chica de lo necesario. */
+.intervalo-culpables {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--primary);
+  background: var(--surface);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  line-height: 1.5;
+}

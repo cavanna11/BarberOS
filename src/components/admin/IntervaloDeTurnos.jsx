@@ -23,6 +23,35 @@ function Aviso({ tipo, children }) {
   return <div className={`notice notice-${tipo} intervalo-aviso`}>{children}</div>;
 }
 
+/**
+ * Quién está tirando la grilla para abajo.
+ *
+ * El MCD lo decide el conjunto: basta UN servicio corto para que la grilla sana
+ * baje de 30 a 10, y el barbero no tiene cómo saber cuál fue. Caso real: un
+ * "Perfilado de cejas con navaja" de 10 minutos cargado como servicio suelto
+ * entre cortes de 30 y 60. Casi siempre es algo que en la práctica se hace
+ * JUNTO con el corte, o sea un adicional mal cargado.
+ */
+function Culpables({ culpables }) {
+  if (!culpables?.length) return null;
+  return (
+    <p className="text-sm intervalo-culpables">
+      {culpables.length === 1 ? 'El que te obliga a una grilla tan chica es ' : 'Los que te obligan a una grilla tan chica son '}
+      {culpables.map((c, i) => (
+        <span key={c.id}>
+          {i > 0 && (i === culpables.length - 1 ? ' y ' : ', ')}
+          <strong>{c.name}</strong> <span className="text-muted">({c.duracion} min)</span>
+        </span>
+      ))}
+      . Sin {culpables.length === 1 ? 'ese' : 'esos'}, tu grilla sana sería de{' '}
+      <strong>{culpables[0].grillaSinEl} minutos</strong>.{' '}
+      Si {culpables.length === 1 ? 'es algo que hacés' : 'son cosas que hacés'} junto con el corte y no
+      {culpables.length === 1 ? ' un turno aparte' : ' turnos aparte'}, marcalo como{' '}
+      <strong>adicional</strong> en Servicios y deja de contar para la grilla.
+    </p>
+  );
+}
+
 export default function IntervaloDeTurnos({ valor, servicios = [], businessHours = [], onChange }) {
   const intervalo = normalizarIntervalo(valor);
   const d = diagnosticoDelIntervalo(servicios, intervalo);
@@ -82,6 +111,7 @@ export default function IntervaloDeTurnos({ valor, servicios = [], businessHours
                 {turnosQueEntran(d.perdidas[0].duracion, intervalo, dia)}.</>
             )}
           </p>
+          <Culpables culpables={d.culpables} />
           <button type="button" className="btn btn-primary btn-sm" onClick={() => onChange(d.sugerido)}>
             Usar {d.sugerido} minutos
           </button>
@@ -108,6 +138,7 @@ export default function IntervaloDeTurnos({ valor, servicios = [], businessHours
             elegir— sino <strong>redondear las duraciones</strong> en Servicios para que todas sean
             múltiplos de un mismo número (20, 15 o 10).
           </p>
+          <Culpables culpables={d.culpables} />
         </Aviso>
       )}
 

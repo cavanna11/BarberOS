@@ -129,10 +129,14 @@ export default function SucursalesPage() {
     }
   }, [reciente, sucursales, dispatch, cargar]);
 
-  const { maxSucursales } = limitesDelNegocio(
-    sucursales.find((s) => s.id === principalId) || business
-  );
+  const cuenta = sucursales.find((s) => s.id === principalId) || business;
+  const { maxSucursales } = limitesDelNegocio(cuenta);
   const puedeAbrirMas = maxSucursales === null || ordenadas.length < maxSucursales;
+  // En un Plan Personalizado el tope se negoció una por una, así que ofrecerle
+  // "pasate al Empresarial" es incoherente: su plan YA es a medida y lo que
+  // corresponde es que nos escriba. Nombrar un plan de la escalera a alguien
+  // que no está en la escalera lo hace dudar de lo que acordó.
+  const aMedida = cuenta?.planId === 'personalizado';
 
   // El consolidado es la suma de los números de cada una.
   const porSucursal = ordenadas.map((s) => ({ sucursal: s, n: numerosDe(datos[s.id], mes) }));
@@ -189,9 +193,21 @@ export default function SucursalesPage() {
 
       {!esMultiSucursal && (
         <div className="notice notice-info">
-          Todavía tenés una sola barbería. Con el <strong>Plan Empresarial</strong> podés abrir
-          hasta cuatro, cada una con su equipo, sus servicios y su agenda, administradas desde
-          esta misma cuenta.
+          {aMedida ? (
+            <>
+              Tu plan incluye {maxSucursales === null ? 'las sucursales que necesites' :
+                `${maxSucursales} ${maxSucursales === 1 ? 'barbería' : 'barberías'}`}.
+              {' '}Si querés sumar otra —con su equipo, sus servicios y su agenda, administrada
+              desde esta misma cuenta—{' '}
+              <a href={LINK_AMPLIAR} target="_blank" rel="noreferrer">escribinos</a> y lo vemos.
+            </>
+          ) : (
+            <>
+              Todavía tenés una sola barbería. Con el <strong>Plan Empresarial</strong> podés abrir
+              hasta cuatro, cada una con su equipo, sus servicios y su agenda, administradas desde
+              esta misma cuenta.
+            </>
+          )}
         </div>
       )}
 

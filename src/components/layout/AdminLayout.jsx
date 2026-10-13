@@ -192,7 +192,14 @@ export default function AdminLayout() {
   //
   // Solo para el dueño: al barbero lo comercial no le toca, y a la plataforma
   // no le falta nada.
-  const paraSumar = isOwner && !platformOwner ? todosLosItems.filter((i) => !i.incluido) : [];
+  const paraSumar = (isOwner && !platformOwner ? todosLosItems.filter((i) => !i.incluido) : [])
+    // En un Plan Personalizado los topes se negociaron uno por uno, así que
+    // etiquetar "Plan Empresarial" es incoherente: su plan YA es a medida y lo
+    // que corresponde es que nos escriba. Nombrarle un plan de la escalera lo
+    // hace dudar de lo que acordó con nosotros.
+    .map((i) => (business?.planId === 'personalizado' && i.desde?.startsWith('Plan ')
+      ? { ...i, desde: 'Se acuerda aparte' }
+      : i));
 
   // Abierto si está parado en una de ellas: si no, abre "Mi página" desde el
   // menú y el grupo se le cierra solo, sin nada marcado como activo.

@@ -138,6 +138,42 @@ export function jornadaSemanal(businessHours = []) {
 }
 
 /**
+ * Qué servicios están forzando una grilla más chica de lo necesario.
+ *
+ * El MCD lo decide el conjunto: con servicios de 30, 30 y 60 la grilla sana es
+ * 30, pero basta UNO de 10 para que baje a 10 y el barbero termine con una
+ * lista de 66 horarios sin entender por qué.
+ *
+ * Caso real: Neytan tenía "Perfilado de cejas con navaja — 10 min" cargado como
+ * servicio suelto en vez de como adicional. Sus otros servicios duran 30 y 60,
+ * así que el consejo correcto era 30 y el sistema le decía 10 — bien calculado
+ * sobre datos mal cargados.
+ *
+ * Para cada servicio se calcula el MCD de TODOS LOS DEMÁS: si da más grande que
+ * el del conjunto, ese servicio es el que está tirando la grilla para abajo. No
+ * es una heurística, es exacto.
+ */
+export function serviciosQueAchicanLaGrilla(servicios = []) {
+  const lista = servicios.filter((x) => x && x.isActive !== false && x.adicional !== true
+    && Number.isFinite(Math.round(Number(x.durationMinutes))) && Number(x.durationMinutes) > 0);
+  if (lista.length < 2) return [];
+
+  const g = (arr) => arr.map((x) => Math.round(Number(x.durationMinutes))).reduce((a, b) => mcd(a, b));
+  const total = g(lista);
+
+  return lista
+    .map((srv, i) => {
+      const resto = lista.filter((_, j) => j !== i);
+      const sinEl = g(resto);
+      return sinEl > total
+        ? { id: srv.id, name: srv.name, duracion: Math.round(Number(srv.durationMinutes)), grillaSinEl: sinEl }
+        : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.grillaSinEl - a.grillaSinEl);
+}
+
+/**
  * El diagnóstico completo, listo para pintar.
  *
  * `estado`:
@@ -168,15 +204,17 @@ export function diagnosticoDelIntervalo(servicios = [], slotInterval = 30) {
   const perdidas = desperdicioPorServicio(servicios, slotInterval).filter((x) => x.desperdicio > 0);
   const sugerido = intervaloSugerido(servicios);
 
+  const culpables = serviciosQueAchicanLaGrilla(servicios);
+
   if (!perdidas.length) {
     // No se pierde nada por turno, pero si el MCD es MAYOR que el intervalo,
     // la grilla es más chica de lo que hace falta: más opciones para el cliente
     // y más lugar para que queden huecos que no sirven.
     if (sugerido !== null && sugerido > slotInterval) {
-      return { estado: 'muy-fino', duraciones, sugerido };
+      return { estado: 'muy-fino', duraciones, sugerido, culpables };
     }
     return { estado: 'ok', duraciones, sugerido };
   }
-  if (sugerido === null) return { estado: 'desalineados', duraciones, perdidas };
-  return { estado: 'mejorable', duraciones, perdidas, sugerido };
+  if (sugerido === null) return { estado: 'desalineados', duraciones, perdidas, culpables };
+  return { estado: 'mejorable', duraciones, perdidas, sugerido, culpables };
 }
