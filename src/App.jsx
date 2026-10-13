@@ -5,6 +5,7 @@ import { useBusiness } from './contexts/BusinessContext';
 import BusinessSync from './contexts/BusinessSync';
 import { isPlatformOwner } from './config/platform';
 import { tienePagina } from './config/pagina';
+import { paginaExclusiva } from './paginas-exclusivas';
 import Header from './components/layout/Header';
 import Footer from './components/layout/Footer';
 import { BarraSlotly } from './components/landing/Slotly';
@@ -185,7 +186,9 @@ function EntradaPublica() {
 
   if (estado === 'resolviendo') return <SessionLoading />;
   if (estado === 'cuenta') return <RutaDeCliente><BookingPage /></RutaDeCliente>;
-  if (estado === 'ok' && tienePagina(business)) {
+  // La página exclusiva se muestra aunque el plan no tenga la de presentación
+  // prendida: es un trabajo que se pagó aparte, no una función del plan.
+  if (estado === 'ok' && (tienePagina(business) || paginaExclusiva(business?.id))) {
     return <PaginaBarberia business={business} />;
   }
   return <RutaDeCliente><BookingPage /></RutaDeCliente>;

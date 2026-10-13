@@ -7,6 +7,8 @@ import { paginaEfectiva } from '../../config/pagina';
 import { useSucursalesPublicas, recordarSucursal } from '../../hooks/useSucursalesPublicas';
 import VistaPagina from '../../components/client/VistaPagina';
 import { recordarCupon, cuponRecordado } from '../../utils/cupon';
+import { paginaExclusiva } from '../../paginas-exclusivas';
+import PaginaExclusiva from '../../paginas-exclusivas/PaginaExclusiva';
 
 // ============================================================================
 // La página de presentación de la barbería
@@ -83,13 +85,40 @@ export default function PaginaBarberia({ business }) {
 
   // Al entrar a reservar se anota la sucursal: si no, el flujo de reserva
   // vuelve a preguntar "elegí tu sucursal", y acá ya la eligió.
-  const irAReservar = () => {
+  //
+  // `servicioId` es opcional: la página exclusiva deja tocar un servicio de la
+  // lista y entrar a la reserva con ese ya elegido (`?servicio=`, el mismo
+  // parámetro que usan los links de promo).
+  const irAReservar = (servicioId) => {
     if (grupoId) recordarSucursal(grupoId, businessId);
     // El cupón viaja en la URL además de en el storage: si el cliente abre la
     // reserva en otra pestaña, o el navegador le bloqueó el storage, el link
     // sigue andando. Es el mismo criterio que usa `recordarSucursal`.
-    navigate(codigoPromo ? `/${slug}/reservar?cupon=${encodeURIComponent(codigoPromo)}` : `/${slug}/reservar`);
+    const q = new URLSearchParams();
+    if (codigoPromo) q.set('cupon', codigoPromo);
+    if (typeof servicioId === 'string' && servicioId) q.set('servicio', servicioId);
+    const qs = q.toString();
+    navigate(`/${slug}/reservar${qs ? `?${qs}` : ''}`);
   };
+
+  // La página hecha a medida, si esta barbería la pagó. No espera a la
+  // configuración de "Mi página": el botón de reservar tiene que estar en
+  // pantalla apenas se abre el link, y ese documento trae la foto de portada
+  // (cientos de KB) que la página exclusiva no usa. Lo que sí lee de ahí —el
+  // "Sobre mí"— aparece cuando llega.
+  if (paginaExclusiva(businessId)) {
+    return (
+      <PaginaExclusiva
+        businessId={businessId}
+        business={business}
+        pagina={pagina}
+        servicios={services}
+        slug={slug}
+        codigoPromo={codigoPromo}
+        onReservar={irAReservar}
+      />
+    );
+  }
 
   // Hasta que la configuración llegue no se pinta: la plantilla decide el fondo
   // de la pantalla entera, y arrancar en blanco para saltar a una foto a
