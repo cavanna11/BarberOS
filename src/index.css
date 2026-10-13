@@ -5313,3 +5313,80 @@ select.form-input {
 .cuenta-sucursal-datos { display: flex; flex-direction: column; min-width: 0; }
 .cuenta-sucursal-datos strong { overflow-wrap: anywhere; }
 .cuenta-sucursal-acciones { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* ============================================================================
+   "PARA SUMAR" — las secciones que el plan de esta barbería no incluye
+   ============================================================================
+   Plegadas ocupan una fila. El dueño de un Basico tenia "Mi pagina" como un
+   item mas del menu y la abria todos los dias para que le dijera que no la
+   tiene; y "Mis sucursales" y "Membresias" no las veia nunca, que es peor,
+   porque es justo lo que se vende.
+   ============================================================================ */
+
+.admin-nav-extras {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-nav-extras-toggle {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  /* El resto lo hereda de .admin-nav-item: mismo alto y misma sangria que el
+     menu de arriba, para que se lea como una fila mas y no como un cartel. */
+}
+
+.admin-nav-extras-titulo { flex: 1; }
+
+/* Cuantas hay. Es lo que invita a abrirlo sin tener que explicar nada. */
+.admin-nav-extras-cuenta {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #ffffff;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.admin-nav-extras-flecha {
+  margin-left: 6px;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+/* Los items de adentro: sangrados y mas apagados que los que si tiene. No es
+   decoracion — es la diferencia entre "esto es tuyo" y "esto se agrega". */
+.admin-nav-item-extra {
+  padding-left: var(--space-xl);
+  opacity: 0.75;
+}
+
+.admin-nav-item-extra:hover { opacity: 1; }
+
+.admin-nav-item-extra.active { opacity: 1; }
+
+.admin-nav-extra-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.2;
+}
+
+/* De que plan es. Va en la fila y no adentro de la pantalla para que se pueda
+   comparar de un vistazo: tres lineas, tres planes. */
+.admin-nav-extra-desde {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+}

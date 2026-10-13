@@ -273,8 +273,25 @@ export function AuthProvider({ children }) {
       return { success: true, user };
     } catch (error) {
       console.error('[auth] Error de login con contraseña:', error);
+      // Las tres formas en que Firebase dice "esa combinación no entra". Cuál
+      // llega depende de si está prendida la protección de enumeración
+      // (`invalid-credential` con ella, `wrong-password` / `user-not-found`
+      // sin ella), así que las tres tienen que estar: con `wrong-password`
+      // afuera de esta lista, el mensaje caía en el genérico "No se pudo
+      // iniciar sesión", que no le dice nada a nadie.
+      //
+      // Y las tres llevan la misma coletilla, por el caso que de verdad pasa:
+      // la cuenta del dueño es SOLO de Google (la mayoría lo son) y él prueba
+      // acá porque le dijimos "entrá a tu panel". Firebase no deja distinguir
+      // "contraseña mal" de "esta cuenta no tiene contraseña" —con la
+      // protección de enumeración prendida, a propósito—, así que la salida se
+      // nombra en el mensaje en vez de mandarlo a buscar una contraseña que
+      // nunca existió.
+      const noEntra = 'El mail o la contraseña no coinciden. Si abriste tu cuenta con Google, entrá con el botón de arriba.';
       const mensajes = {
-        'auth/invalid-credential': 'El mail o la contraseña no coinciden.',
+        'auth/invalid-credential': noEntra,
+        'auth/wrong-password': noEntra,
+        'auth/user-not-found': noEntra,
         'auth/invalid-email': 'Ese mail no parece válido.',
         'auth/user-disabled': 'Esta cuenta está deshabilitada.',
         'auth/too-many-requests': 'Demasiados intentos. Esperá unos minutos.',
@@ -286,7 +303,10 @@ export function AuthProvider({ children }) {
         // real queda en el console.error de arriba.
         'auth/operation-not-allowed': 'El ingreso con contraseña todavía no está disponible. Probá con Google, o escribinos.',
       };
-      return { success: false, error: mensajes[error.code] || 'No se pudo iniciar sesión.' };
+      // El código va en el genérico a propósito: "no se pudo" sin más no le
+      // sirve a nadie para diagnosticar desde una captura. Es lo mismo que ya
+      // hace el login con Google.
+      return { success: false, error: mensajes[error.code] || `No se pudo iniciar sesión (${error.code || 'error desconocido'}).` };
     }
   };
 

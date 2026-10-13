@@ -4,7 +4,7 @@ import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-do
 import { useAuth } from '../../contexts/AuthContext';
 import { useBusiness } from '../../contexts/BusinessContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
-import { permiteSucursales } from '../../config/plans';
+import { permiteSucursales, puede, CAPACIDADES } from '../../config/plans';
 import { refrescarPush, desactivarPush, esAppInstalada, esIOS, esAndroid, escucharEnPrimerPlano } from '../../lib/push';
 import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 import AvisoPlataforma from '../admin/AvisoPlataforma';
@@ -18,19 +18,20 @@ const ownerNavItems = [
   { to: '/admin/citas',         icon: '📅', label: 'Citas' },
   // Solo para las cuentas que pueden tener más de una barbería: al que tiene
   // una sola, una sección llamada "Sucursales" no le dice nada.
-  { to: '/admin/sucursales',    icon: '🏠', label: 'Mis sucursales', soloSucursales: true },
+  { to: '/admin/sucursales',    icon: '🏠', label: 'Mis sucursales', soloSucursales: true, desde: 'Plan Empresarial' },
   { to: '/admin/profesionales', icon: '👥', label: 'Profesionales' },
   { to: '/admin/servicios',     icon: '✂️', label: 'Servicios' },
   { to: '/admin/resenas',       icon: '⭐', label: 'Reseñas' },
   { to: '/admin/admins',        icon: '🛡️', label: 'Administradores' },
-  // La página de presentación de la barbería. No se filtra por plan a
-  // propósito: el que no la tiene entra y ve qué es y desde qué plan está.
-  // Esconderla lo deja creyendo que el sistema no la tiene.
-  { to: '/admin/pagina',        icon: '🔗', label: 'Mi página' },
+  // La página de presentación de la barbería. Al que no la tiene NO se le
+  // esconde —eso lo deja creyendo que el sistema no la tiene— pero tampoco va
+  // mezclada con lo que usa todos los días: cae en "Para sumar". Entrar sigue
+  // mostrando qué es y desde qué plan está.
+  { to: '/admin/pagina',        icon: '🔗', label: 'Mi página', capacidad: CAPACIDADES.pagina, desde: 'Plan Intermedio' },
   { to: '/admin/cupones',       icon: '🎟️', label: 'Cupones' },
   // Solo en las cuentas donde la plataforma las habilitó (y para la plataforma,
   // que es la que las prende desde esa misma pantalla).
-  { to: '/admin/membresias',    icon: '🪪', label: 'Membresías', soloMembresias: true },
+  { to: '/admin/membresias',    icon: '🪪', label: 'Membresías', soloMembresias: true, desde: 'Se activa aparte' },
   { to: '/admin/configuracion', icon: '⚙️', label: 'Configuración' },
   { to: '/admin/soporte',       icon: '💬', label: 'Soporte' },
   { to: '/admin/instalar',      icon: '📲', label: 'Instalar la app' },
@@ -154,10 +155,56 @@ export default function AdminLayout() {
   // permite (así el del Plan Empresarial encuentra dónde abrir la primera).
   // La plataforma también: es por donde le agrega locales a una cuenta que ya existe.
   const muestraSucursales = (isOwner || platformOwner) && (esMultiSucursal || permiteSucursales(business));
-  const navItems = (isOwner ? ownerNavItems : adminNavItems)
-    .filter((item) => !item.soloSucursales || muestraSucursales)
-    .filter((item) => !item.soloMembresias || platformOwner
-      || (sucursales.find((s) => s.id === (business?.grupoId || businessId)) || business)?.membresiasHabilitadas === true);
+  const membresiasDeLaCuenta = (sucursales.find((s) => s.id === (business?.grupoId || businessId)) || business)
+    ?.membresiasHabilitadas === true;
+
+  /**
+   * ¿Esta sección está incluida en lo que la barbería paga hoy?
+   *
+   * Para la PLATAFORMA siempre sí: entra a administrar la cuenta y necesita
+   * llegar a todo, incluida la pantalla desde donde se habilitan las
+   * membresías. Si le escondiéramos lo no incluido, no habría por dónde
+   * prenderlo.
+   */
+  const estaIncluido = (item) => {
+    if (platformOwner) return true;
+    if (item.soloSucursales) return muestraSucursales;
+    if (item.soloMembresias) return membresiasDeLaCuenta;
+    if (item.capacidad) return puede(business, item.capacidad);
+    return true;
+  };
+
+  const todosLosItems = (isOwner ? ownerNavItems : adminNavItems).map(
+    (item) => ({ ...item, incluido: estaIncluido(item) })
+  );
+  const navItems = todosLosItems.filter((i) => i.incluido);
+
+  // "Para sumar": las secciones que su plan no incluye.
+  //
+  // Antes estaban de dos formas, las dos malas. "Mi página" aparecía como una
+  // más del menú y el dueño de un Básico la abría todos los días para que le
+  // dijera que no la tiene: ruido permanente en la barra que más se usa. Y
+  // "Mis sucursales" y "Membresías" se escondían del todo, así que nadie se
+  // enteraba de que existían — que es peor, porque es justo lo que se vende.
+  //
+  // Agrupadas y plegadas ocupan una fila, se entiende de una que son cosas
+  // para agregar, y el que tiene curiosidad entra y ve de qué se trata.
+  //
+  // Solo para el dueño: al barbero lo comercial no le toca, y a la plataforma
+  // no le falta nada.
+  const paraSumar = isOwner && !platformOwner ? todosLosItems.filter((i) => !i.incluido) : [];
+
+  // Abierto si está parado en una de ellas: si no, abre "Mi página" desde el
+  // menú y el grupo se le cierra solo, sin nada marcado como activo.
+  //
+  // El valor inicial se lee de `window.location` y no del `pathname` de
+  // react-router a propósito: ese se declara más abajo en este mismo
+  // componente, y leerlo acá arriba es un ReferenceError que deja el panel en
+  // blanco. Solo importa en el primer render, así que alcanza.
+  const [verParaSumar, setVerParaSumar] = useState(() => {
+    const ruta = typeof window !== 'undefined' ? window.location.pathname : '';
+    return paraSumar.some((i) => ruta === i.to || ruta.startsWith(i.to + '/'));
+  });
   const roleInfo = ROLE_LABELS[user?.role] || ROLE_LABELS.admin;
 
   const handleLogout = async () => {
@@ -274,6 +321,38 @@ export default function AdminLayout() {
               {item.label}
             </NavLink>
           ))}
+
+          {!debeElegirSucursal && paraSumar.length > 0 && (
+            <div className="admin-nav-extras">
+              <button
+                type="button"
+                className="admin-nav-item admin-nav-extras-toggle"
+                aria-expanded={verParaSumar}
+                onClick={() => setVerParaSumar((v) => !v)}
+              >
+                <span className="nav-icon">✨</span>
+                <span className="admin-nav-extras-titulo">Para sumar</span>
+                <span className="admin-nav-extras-cuenta">{paraSumar.length}</span>
+                <span className="admin-nav-extras-flecha" aria-hidden="true">{verParaSumar ? '▴' : '▾'}</span>
+              </button>
+
+              {verParaSumar && paraSumar.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) => `admin-nav-item admin-nav-item-extra ${isActive ? 'active' : ''}`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <span className="nav-icon">{item.icon}</span>
+                  <span className="admin-nav-extra-texto">
+                    {item.label}
+                    <span className="admin-nav-extra-desde">{item.desde}</span>
+                  </span>
+                </NavLink>
+              ))}
+            </div>
+          )}
         </nav>
 
         <div className="admin-sidebar-footer">
