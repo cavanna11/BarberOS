@@ -954,6 +954,14 @@ QR (+$X)" y ve el total con el recargo. `createAppointment` lo recalcula (recibe
 si paga todo online por Mercado Pago ni si el turno no cuesta nada. Va por TURNO, no por cada
 adicional. Casos en la suite de reservas.
 
+**Con Mercado Pago conectado** (y la seña activa), elegir tarjeta o QR = pagar AHORA el TOTAL
+por Mercado Pago, con el recargo incluido, y el turno queda pago (`tipoPago: 'total'`). Efectivo
+sigue con la seña de siempre. Con recargo configurado, el "Pago todo ahora" suelto no existe:
+pagar online es el camino de la tarjeta (si no, se salteaba el recargo). Sin Mercado Pago,
+tarjeta se paga en el local con el recargo. La preferencia de MP excluye `ticket` y `atm`
+(Rapipago, Pago Fácil, cajero): se acreditan en días y el turno se guarda 15 minutos. Casos en
+la suite de seña.
+
 ### El link de la CUENTA y los de cada sucursal (09/10/2026)
 
 Reemplaza lo de abajo: el link de una SUCURSAL (`/franlook-olivos`) entra DIRECTO a esa
@@ -1701,7 +1709,7 @@ node scripts/test-preview.mjs              # vista previa del link (tampoco)
 ```
 
 Hoy: claims 77, reservas 58, facturación 14, rules 118, alta 22, mercadopago 16,
-seña 14, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
+seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
 whatsapp 23, preview 24. Todo en verde (711).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una

@@ -560,9 +560,14 @@ export default function BookingPage() {
   // Recargo por tarjeta o QR: solo si la barbería lo cobra, si hay algo que
   // pagar y si NO paga todo online (ahí no paga nada en el local).
   const montoRecargo = Number(business?.recargoTarjeta) || 0;
-  const preguntaMetodo = montoRecargo > 0 && precioSinRecargo > 0 && comoPaga !== 'total';
+  const preguntaMetodo = montoRecargo > 0 && precioSinRecargo > 0;
   const recargoTarjeta = preguntaMetodo && metodoPago === 'tarjeta' ? montoRecargo : 0;
   const precioAPagar = precioSinRecargo + recargoTarjeta;
+  // Tarjeta o QR con Mercado Pago conectado: se paga AHORA y entero (con el
+  // recargo), y el turno queda pago. Mismo criterio que createAppointment.
+  const tarjetaOnline = recargoTarjeta > 0 && Boolean(infoSena);
+  // Con recargo, "pagar todo ahora" es el camino de la tarjeta: no hay otro.
+  const ofreceTotal = Boolean(infoSena?.permiteTotal) && !(montoRecargo > 0);
   const finalDuration = ps?.customDuration || selectedService?.durationMinutes || 30;
 
   // El cupón del link se anota y se saca de la URL. Sacarlo no es cosmética:
@@ -792,7 +797,7 @@ export default function BookingPage() {
       // con la consola abierta lo saltea. El precio sale del servicio, no de
       // este formulario.
       const res = await createAppointment({
-        pagar: infoSena && !conMembresia ? comoPaga : undefined,
+        pagar: tarjetaOnline ? 'total' : infoSena && !conMembresia ? (comoPaga === 'total' && !ofreceTotal ? 'sena' : comoPaga) : undefined,
         // Lo marcó el cliente. El servidor revalida y descuenta el uso.
         usarMembresia: conMembresia,
         businessId,
@@ -986,26 +991,41 @@ export default function BookingPage() {
         />
       )}
 
-      {/* Cómo paga en el local, cuando la barbería cobra recargo con tarjeta o
-          QR: que lo vea ANTES de confirmar, no en el mostrador. */}
+      {/* Cómo paga, cuando la barbería cobra recargo con tarjeta o QR: que lo
+          vea ANTES de confirmar, no en el mostrador. Con Mercado Pago
+          conectado, tarjeta = paga ya el total ahí y el turno queda pago. */}
       {step === 6 && preguntaMetodo && (
         <div className="card mb-md" style={{ textAlign: 'left' }}>
-          <strong>¿Cómo vas a pagar en el local?</strong>
+          <strong>¿Cómo vas a pagar?</strong>
           <label className="pago-opcion">
             <input type="radio" name="metodo" checked={metodoPago === 'efectivo'} onChange={() => setMetodoPago('efectivo')} />
-            <span><strong>Efectivo o transferencia</strong></span>
+            <span>
+              <strong>Efectivo o transferencia</strong>
+              <div className="text-sm text-secondary">En el local.</div>
+            </span>
           </label>
           <label className="pago-opcion">
             <input type="radio" name="metodo" checked={metodoPago === 'tarjeta'} onChange={() => setMetodoPago('tarjeta')} />
             <span>
               <strong>Tarjeta o QR</strong>
-              <div className="text-sm text-secondary">+ {formatPrice(montoRecargo, business.currency)} de recargo</div>
+              <div className="text-sm text-secondary">
+                {infoSena
+                  ? <>Pagás ahora el total por Mercado Pago y llegás con el turno pago. Incluye {formatPrice(montoRecargo, business.currency)} de recargo.</>
+                  : <>En el local, con {formatPrice(montoRecargo, business.currency)} de recargo.</>}
+              </div>
             </span>
           </label>
         </div>
       )}
 
-      {step === 6 && hayQueElegir && !conMembresia && (
+      {step === 6 && tarjetaOnline && (
+        <div className="notice notice-info" style={{ marginBottom: 'var(--space-md)' }}>
+          💳 Vas a pagar <strong>{formatPrice(precioAPagar, business.currency)}</strong> ahora por Mercado Pago, con
+          tarjeta o QR. No pagás nada en el local.
+        </div>
+      )}
+
+      {step === 6 && hayQueElegir && !conMembresia && !tarjetaOnline && (senaOpcional || ofreceTotal) && (
         <div className="card mb-md" style={{ textAlign: 'left' }}>
           <strong>¿Cómo querés pagar?</strong>
 
@@ -1019,7 +1039,7 @@ export default function BookingPage() {
             </span>
           </label>
 
-          {infoSena.permiteTotal && (
+          {ofreceTotal && (
             <label className="pago-opcion">
               <input type="radio" name="pago" checked={comoPaga === 'total'} onChange={() => setComoPaga('total')} />
               <span>
@@ -1045,7 +1065,7 @@ export default function BookingPage() {
         </div>
       )}
 
-      {step === 6 && infoSena && !hayQueElegir && !conMembresia && (
+      {step === 6 && infoSena && !conMembresia && !tarjetaOnline && !(senaOpcional || ofreceTotal) && (
         <div className="notice notice-info" style={{ marginBottom: 'var(--space-md)' }}>
           💳 Esta barbería pide una seña de <strong>{formatPrice(infoSena.monto, business.currency)}</strong> para
           confirmar el turno. Se paga ahora por Mercado Pago y se descuenta del total.
@@ -1099,9 +1119,11 @@ export default function BookingPage() {
               ? 'Confirmando…'
               // Con membresía, el texto de siempre: el recuadro y el total ya
               // dicen que no se paga, y uno más largo no entra en 375 px.
-              : conMembresia || !infoSena || comoPaga === 'local'
+              : tarjetaOnline
+                ? `💳 Pagar ${formatPrice(precioAPagar, business.currency)}`
+                : conMembresia || !infoSena || comoPaga === 'local'
                 ? '✅ Confirmar Reserva'
-                : comoPaga === 'total'
+                : comoPaga === 'total' && ofreceTotal
                   ? `💳 Pagar ${formatPrice(precioAPagar, business.currency)}`
                   : `💳 Pagar seña de ${formatPrice(Math.min(infoSena.monto, precioAPagar), business.currency)}`}
           </button>

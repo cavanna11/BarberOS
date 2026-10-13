@@ -949,9 +949,19 @@ exports.createAppointment = onCall(async (request) => {
   const permiteTotal = sena.permiteTotal === true;
 
   const pedido = String(request.data?.pagar || (request.data?.pagarSena === false ? 'local' : 'sena'));
+  // Tarjeta o QR en una barbería que cobra recargo: si tiene Mercado Pago, se
+  // paga AHÍ y entero (con el recargo), y el turno queda pago — no tiene
+  // sentido elegir tarjeta y después pagar en el mostrador lo mismo. Sin
+  // Mercado Pago, paga en el local con el recargo (ver abajo).
+  const montoRecargo = Number(negocio.recargoTarjeta) || 0;
+  const quiereTarjeta = metodoPago === 'tarjeta' && montoRecargo > 0;
+
   let tipoPago = null;
   if (cobraOnline) {
-    if (pedido === 'total' && permiteTotal) tipoPago = 'total';
+    if (quiereTarjeta) tipoPago = 'total';
+    // "Pago todo ahora" suelto no existe si la barbería cobra recargo: pagar
+    // online ES pagar con tarjeta, y va por el camino de arriba.
+    else if (pedido === 'total' && permiteTotal && !(montoRecargo > 0)) tipoPago = 'total';
     else if (pedido === 'local' && senaOpcional) tipoPago = null;
     else tipoPago = 'sena';
   }
@@ -1115,9 +1125,9 @@ exports.createAppointment = onCall(async (request) => {
     // configura la barbería (`recargoTarjeta`) y se suma solo si el cliente
     // eligió pagar así EN EL LOCAL. Pagando todo online por Mercado Pago no
     // corre (no paga en el local), y un turno que no cuesta nada tampoco.
-    const montoRecargo = Number(negocio.recargoTarjeta) || 0;
-    const recargoAplicado = metodoPago === 'tarjeta' && montoRecargo > 0 && tipoPagoPedido !== 'total' && cobro.precioFinal > 0
-      ? montoRecargo : 0;
+    // Con tarjeta o QR, el recargo va en el total: el que paga online por
+    // Mercado Pago lo paga ahí, y el que paga en el local, en el local.
+    const recargoAplicado = quiereTarjeta && cobro.precioFinal > 0 ? montoRecargo : 0;
     if (recargoAplicado) cobro = { ...cobro, precioFinal: cobro.precioFinal + recargoAplicado, recargoTarjeta: recargoAplicado };
     montoSena = tipoPago === 'total' ? cobro.precioFinal : Math.min(Number(sena.monto) || 0, cobro.precioFinal);
     if (!(montoSena > 0)) { tipoPago = null; montoSena = 0; }
@@ -1175,8 +1185,8 @@ exports.createAppointment = onCall(async (request) => {
       ...(membresia ? { membresia, precioLista: precio } : {}),
       ...(extras.length ? { adicionales: extras } : {}),
       // Cómo dijo que paga en el local (si la barbería distingue), y el recargo.
-      ...(montoRecargo > 0 && tipoPagoPedido !== 'total'
-        ? { metodoPago: recargoAplicado ? 'tarjeta' : 'efectivo', recargoTarjeta: recargoAplicado }
+      ...(montoRecargo > 0
+        ? { metodoPago: quiereTarjeta ? 'tarjeta' : 'efectivo', recargoTarjeta: recargoAplicado }
         : {}),
       durationMinutes: duracion,
       serviceName: servicio.name || '',

@@ -274,6 +274,9 @@ async function crearPagoDeSena({ businessId, appointmentId, monto, titulo, email
       // La seña es de ahora: un link que vive medio día no tiene sentido.
       expires: true,
       expiration_date_to: new Date(Date.now() + 30 * 60000).toISOString(),
+      // Sin efectivo en Rapipago / Pago Fácil ni cajero: el turno se guarda 15
+      // minutos y eso se acredita en días. Quedan tarjeta, dinero en cuenta y QR.
+      payment_methods: { excluded_payment_types: [{ id: 'ticket' }, { id: 'atm' }] },
       statement_descriptor: 'SENA TURNO',
     },
   });

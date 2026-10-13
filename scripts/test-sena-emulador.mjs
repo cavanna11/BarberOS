@@ -158,5 +158,36 @@ await enEspera.update({ senaExpiraEn: new Date(Date.now() + 15 * 60000) });
 chequear('y mientras está vigente, sí figura ocupado',
   (await busy()).some((o) => o.startTime === '12:00'), JSON.stringify(await busy()));
 
+console.log('\nTarjeta o QR con recargo y Mercado Pago conectado:');
+const turnosAhora = async () => (await db.collection(`businesses/${BID}/appointments`).get()).docs.map((d) => d.data());
+await escenario({ conSena: true, modo: 'obligatoria' });
+await db.doc(`businesses/${BID}`).update({ recargoTarjeta: 2000 });
+r = await reservar(await cliente('c10-s@gmail.com'), { startTime: '10:00', metodoPago: 'tarjeta' });
+creados = await turnosAhora();
+chequear('con tarjeta va a Mercado Pago a pagar el TOTAL con el recargo (12.000 + 2.000)',
+  r.error === 'UNAVAILABLE' && creados.length === 1 && creados[0].sena?.tipo === 'total' && creados[0].sena?.monto === 14000 && creados[0].metodoPago === 'tarjeta',
+  JSON.stringify({ r, sena: creados.map((a) => a.sena), m: creados.map((a) => a.metodoPago) }));
+
+await escenario({ conSena: true, modo: 'obligatoria' });
+await db.doc(`businesses/${BID}`).update({ recargoTarjeta: 2000 });
+r = await reservar(await cliente('c11-s@gmail.com'), { startTime: '11:00', metodoPago: 'efectivo' });
+creados = await turnosAhora();
+chequear('en efectivo deja la seña de siempre, sin recargo',
+  creados.length === 1 && creados[0].sena?.tipo === 'sena' && creados[0].sena?.monto === 3000 && creados[0].price === 12000,
+  JSON.stringify(creados.map((a) => ({ s: a.sena, p: a.price }))));
+
+await escenario({ conSena: true, modo: 'opcional', permiteTotal: true });
+await db.doc(`businesses/${BID}`).update({ recargoTarjeta: 2000 });
+r = await reservar(await cliente('c12-s@gmail.com'), { startTime: '12:00', pagar: 'total', metodoPago: 'efectivo' });
+creados = await turnosAhora();
+chequear('con recargo, "pago todo" sin tarjeta no saltea el recargo: cobra la seña',
+  creados.length === 1 && creados[0].sena?.tipo === 'sena',
+  JSON.stringify(creados.map((a) => a.sena)));
+
+await escenario({ conSena: false });
+await db.doc(`businesses/${BID}`).update({ recargoTarjeta: 2000 });
+r = await reservar(await cliente('c13-s@gmail.com'), { startTime: '13:00', metodoPago: 'tarjeta' });
+chequear('sin Mercado Pago: tarjeta se paga en el local, con el recargo', r.ok?.status === 'created' && r.ok?.price === 14000, JSON.stringify(r));
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);
