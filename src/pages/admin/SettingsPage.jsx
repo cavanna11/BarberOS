@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { updateBusiness } from '../../lib/repository';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
+import { useTenant } from '../../hooks/useTenantData';
+import IntervaloDeTurnos from '../../components/admin/IntervaloDeTurnos';
+import { normalizarIntervalo } from '../../utils/intervalo';
 import { getDayName } from '../../utils/dateUtils';
 import CobroSena from '../../components/admin/CobroSena';
 import { errorDeHorario } from '../../utils/horarios';
@@ -26,6 +29,8 @@ const defaultHours = [
 export default function SettingsPage() {
   const { user } = useAuth();
   const { business, businessId } = useCurrentBusiness();
+  // Los servicios, para poder decirle si su grilla le hace perder tiempo.
+  const { services } = useTenant();
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -65,7 +70,15 @@ export default function SettingsPage() {
     try {
       // Las Rules no dejan que el dueño toque su facturación ni se descongele
       // solo; el repositorio filtra esos campos antes de mandar.
-      await updateBusiness(businessId, form, { esPlataforma: user?.isPlatformOwner });
+      //
+      // El intervalo se acomoda acá también, no solo al salir del campo: se
+      // puede apretar Guardar con el campo vacío o con un 0 escrito, y ese
+      // número termina en el bucle que arma la grilla de TODOS los clientes.
+      await updateBusiness(
+        businessId,
+        { ...form, slotInterval: normalizarIntervalo(form.slotInterval) },
+        { esPlataforma: user?.isPlatformOwner }
+      );
     } catch (err) {
       console.error('[SettingsPage] No se pudo guardar:', err);
       setError('No se pudieron guardar los cambios: ' + err.message);
@@ -202,19 +215,12 @@ export default function SettingsPage() {
                     <option value="COP">COP - Peso Colombiano</option>
                   </select>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Cada cuánto se ofrece un turno</label>
-                  <select className="form-input" value={form.slotInterval} onChange={e => editar({ slotInterval: parseInt(e.target.value) })}>
-                    <option value={15}>Cada 15 minutos</option>
-                    <option value={30}>Cada 30 minutos</option>
-                    <option value={45}>Cada 45 minutos</option>
-                    <option value={60}>Cada 1 hora</option>
-                  </select>
-                  <p className="text-sm text-muted" style={{ marginTop: 6 }}>
-                    Es el paso de la grilla que ve el cliente. Con 30, ve 09:00, 09:30, 10:00…
-                    La duración de cada turno la define el servicio.
-                  </p>
-                </div>
+                <IntervaloDeTurnos
+                  valor={form.slotInterval}
+                  servicios={services}
+                  businessHours={form.businessHours}
+                  onChange={(v) => editar({ slotInterval: v })}
+                />
               </div>
               <div className="form-group">
                 <label className="form-label">Con cuánta anticipación puede cancelar el cliente</label>

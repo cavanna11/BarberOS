@@ -5758,3 +5758,58 @@ select.form-input {
 }
 .turno-fijo-fila:last-child { border-bottom: none; }
 .citas-acciones { flex-wrap: wrap; justify-content: flex-end; }
+
+/* ============================================================================
+   "CADA CUÁNTO SE OFRECE UN TURNO" — el número y el consejo
+   ============================================================================
+   Era un desplegable de cuatro opciones. Ahora el barbero escribe el suyo y el
+   panel le dice cuánto le cuesta el que tiene. Ver components/admin/
+   IntervaloDeTurnos.jsx.
+   ============================================================================ */
+
+.intervalo-campo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.intervalo-campo .form-input {
+  max-width: 110px;
+}
+
+.intervalo-unidad {
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+}
+
+.intervalo-aviso {
+  margin-top: var(--space-md);
+}
+
+/* Lo que pierde cada servicio. Es la parte que convence: el número al lado del
+   nombre del corte que el barbero hace todos los días. */
+.intervalo-perdidas {
+  list-style: none;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.intervalo-perdidas li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-md);
+  padding: 5px 0;
+  font-size: 0.9375rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.intervalo-perdidas li:last-child { border-bottom: none; }
+
+.intervalo-perdidas strong {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}

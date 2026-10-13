@@ -529,8 +529,10 @@ src/
 │   ├── admin/            Panel del negocio
 │   └── super-admin/      Panel global
 └── utils/
-    ├── availabilityEngine.js   ⚠️ NO TOCAR — anda (única excepción hecha:
-    │                              el corte del local, `corteLocal`, 21/09/2026)
+    ├── availabilityEngine.js   ⚠️ NO TOCAR — anda (dos excepciones hechas: el
+    │                              corte del local `corteLocal` 21/09/2026, y
+    │                              `normalizarIntervalo` 13/10/2026, que evita
+    │                              el bucle infinito con slotInterval en 0)
     └── statsCalculator.js      ⚠️ NO TOCAR — anda
 ```
 
@@ -1473,6 +1475,83 @@ node scripts/sembrar-membresias-emulador.mjs # escenario para mirar en el browse
 Para el browser contra el emulador: `.env.emulador.local` con
 `VITE_USE_EMULATORS=true` y `npm run dev -- --mode emulador`.
 
+### El intervalo de la grilla: el barbero lo escribe, y le decimos cuánto cuesta (13/10/2026)
+
+Era un desplegable de cuatro opciones (15, 30, 45, 60). Dos problemas, y el
+segundo es el caro.
+
+Un barbero avisó que su corte clásico sale en 20 minutos y el degradé en 40, con
+la grilla cada 30, y que "se le armaba una diferencia". Simulado con el motor de
+verdad sobre una jornada de 09:00 a 20:00 con 15 turnos mezclados:
+
+| grilla | huecos muertos | termina |
+|---|---|---|
+| 60 | 320 min | 19:20 |
+| 30 (la que tenía) | **200 min** | 19:20 |
+| 15 | 110 min | 17:50 |
+| **20** | **0 min** | **16:00** |
+
+Mismos turnos, mismo trabajo: **3 horas y 20 minutos** de diferencia por día.
+
+**El problema no es tener servicios de distinta duración. Es que 30 no divide ni
+a 20 ni a 40.** La grilla arranca en la apertura y suma de a `slotInterval`; un
+corte de 20 termina 09:20, que no es un punto de la grilla, y el siguiente
+espera hasta 09:30. Con el **máximo común divisor** de las duraciones (acá 20),
+cada turno termina justo donde puede empezar el próximo y no se pierde nada.
+
+Entonces el panel no se limita a dejar escribir el número (5 a 120, libre): le
+muestra la cuenta. `utils/intervalo.js` calcula el MCD y cuántos minutos muertos
+deja CADA servicio, y `IntervaloDeTurnos` lo pinta con el botón para aplicarlo:
+
+```
+Estás perdiendo tiempo entre turno y turno.
+  Degradé (40 min)        +20 min muertos
+  Corte clásico (20 min)  +10 min muertos
+Con la grilla cada 20 minutos no se pierde ninguno. En un día de 11 horas
+te entran 16 turnos de Degradé en vez de 10.          [Usar 20 minutos]
+```
+
+Se informa **por servicio**, que es exacto, y no "perdés 200 minutos por día",
+que supondría una mezcla de turnos que nadie midió. Los "turnos que entran" usan
+la jornada real del horario cargado.
+
+Tres estados: `ok` (todas las duraciones son múltiplos — se lo confirma),
+`mejorable` (hay MCD y se ofrece), y **`desalineados`**: si el MCD cae por debajo
+de 10 (25 y 40 dan 5), la salida NO es achicar la grilla —serían 132 horarios en
+un día de once horas y el cliente deja de leer la lista— sino redondear las
+duraciones en Servicios. Por eso `INTERVALO_MIN` (lo que se puede escribir, 5) y
+`INTERVALO_SUGERIBLE_MIN` (lo que vale la pena ofrecer, 10) son dos cosas
+distintas.
+
+**Y la excepción al "no tocar availabilityEngine.js".** El bucle de la grilla es
+`for (cursor = inicio; cursor < fin; cursor += slotInterval)`. Con el desplegable
+de cuatro opciones nunca podía llegar un 0; con un número que escribe el barbero,
+sí — y ese bucle **no termina nunca**, congelándole el navegador a cada cliente
+que abra el link de esa barbería. El motor ahora pasa el valor por
+`normalizarIntervalo()`. Es la segunda excepción hecha a ese archivo (la primera
+fue `corteLocal`), y está defendido en tres lugares: el campo al salir del foco,
+el guardado, y el motor. Verificado escribiendo `slotInterval: 0` directo en
+Firestore: la página responde normal y ofrece la grilla de 30.
+
+```bash
+node scripts/test-intervalo.mjs   # 54 casos, sin emulador
+```
+
+**Lo que NO se hizo, y por qué.** La otra salida era reescribir el motor para
+que los turnos se "peguen" al final del anterior. Deja horas irregulares (09:20,
+10:50), el barbero pierde la previsibilidad del día, y los números dicen que el
+camino simple ya llega a cero huecos. Queda para el día que aparezca una
+barbería con duraciones que no se puedan alinear.
+
+**Pendiente, acordado con Santiago:** que cada barbero tenga su propio intervalo
+y su propia duración por servicio. El modelo ya tiene `customDuration` en el
+vínculo barbero–servicio y el motor del cliente la respeta, pero está a medio
+construir: **no hay dónde cargarla** en el panel (se escribe `null` al crear el
+vínculo) y **`createAppointment` la ignora** — usa siempre `durationMinutes` del
+servicio. Si se cargara hoy a mano, la grilla del cliente usaría una duración y
+el servidor guardaría otra en `endTime`, y la agenda se desacomodaría sola. Hay
+que arreglar el servidor antes de ofrecerlo.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
@@ -1731,11 +1810,12 @@ node scripts/test-turnos-fijos-emulador.mjs # turnos fijos: serie, salteos, baja
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulador)
 node scripts/test-preview.mjs              # vista previa del link (tampoco)
+node scripts/test-intervalo.mjs            # la grilla y el consejo (tampoco)
 ```
 
 Hoy: claims 77, reservas 58, facturación 14, rules 118, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
-turnos fijos 28, whatsapp 23, preview 24. Todo en verde (739).
+turnos fijos 28, whatsapp 23, preview 24, intervalo 54. Todo en verde (793).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

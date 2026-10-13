@@ -2,6 +2,7 @@
 // Motor de Disponibilidad
 // ============================================
 import { timeToMinutes, getLocalDayOfWeek, isToday } from './dateUtils';
+import { normalizarIntervalo } from './intervalo';
 
 /**
  * Calcula los slots disponibles para un profesional+servicio en una fecha.
@@ -80,7 +81,13 @@ export function calculateAvailableSlots({
   // atiende hasta las 17:30 termina la cabeza que arrancó 17:00, no lo echa a
   // la mitad. Antes se exigía que entrara entero y el último turno del día se
   // perdía siempre (y con él, las promos de media tarde).
-  for (let cursor = scheduleStart; cursor < scheduleEnd; cursor += slotInterval) {
+  // El paso NUNCA puede ser cero: este bucle avanza sumándolo, y con 0 no
+  // termina nunca — se le cuelga el navegador a cada cliente que abra el link
+  // de esa barbería. Dejó de ser hipotético el día que el intervalo pasó de ser
+  // un desplegable de cuatro opciones a un número que escribe el barbero.
+  const paso = normalizarIntervalo(slotInterval);
+
+  for (let cursor = scheduleStart; cursor < scheduleEnd; cursor += paso) {
     const slotEnd = cursor + duration;
 
     // Verificar si toca el descanso
