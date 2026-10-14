@@ -1777,9 +1777,9 @@ La cadena, en orden:
 reparte por la bio de Instagram y por WhatsApp. Cada persona a la que le pasa no
 escribe para avisar — simplemente no reserva.
 
-**El arreglo de fondo** es servir el ayudante de Firebase desde NUESTRO dominio,
-para que no haya dos dominios y no haya aislamiento. Son tres pasos y **el orden
-importa**:
+**El arreglo de fondo** —ya aplicado y verificado en producción el 14/10/2026—
+es servir el ayudante de Firebase desde NUESTRO dominio, para que no haya dos
+dominios y no haya aislamiento. Fueron tres pasos y **el orden importa**:
 
 1. **Google Cloud Console → Credenciales → el cliente OAuth** → agregar a *URIs
    de redireccionamiento autorizados*: `https://barberos.sacia.tech/__/auth/handler`.
@@ -1788,6 +1788,30 @@ importa**:
 2. `vercel.json`: el proxy de `/__/:path*` hacia `barberos-1d60e.firebaseapp.com`.
 3. Vercel: `VITE_FIREBASE_AUTH_DOMAIN=barberos.sacia.tech` y **build nuevo**
    (Vite congela las `VITE_*` al compilar).
+
+Los tres están hechos. En Google Cloud se agregó también
+`https://barberos.sacia.tech` a *Orígenes autorizados de JavaScript*, porque
+`firebaseapp.com` ya estaba ahí y al ayudante le corresponde lo mismo. El
+cliente OAuth es el que creó Firebase —`184701087027-nqqk1c29ppm2bdufq6vraflfbm4tpgfa`—
+y vive en el proyecto `barberos-1d60e` de Google Cloud, que es el MISMO proyecto
+de Firebase aunque nadie lo haya creado ahí a mano. **No confundirlo con
+`oAuthBarberia`, que está en el proyecto "SACIA web" y no participa del login.**
+
+Cómo verificarlo sin abrir un navegador (la propagación de Google tarda de 5
+minutos a unas horas, así que esto es lo que dice si ya está):
+
+```bash
+KEY=AIzaSyA2utnIdWsuBuxBhzGis_e1quOtbB11nUQ
+U=$(curl -s -X POST "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=$KEY"   -H "Content-Type: application/json"   -d '{"providerId":"google.com","continueUri":"https://barberos.sacia.tech/__/auth/handler"}'   | python -c "import sys,json;print(json.load(sys.stdin)['authUri'])")
+curl -s -L "$U" | grep -qi redirect_uri_mismatch && echo RECHAZADO || echo ACEPTADO
+```
+
+Y que el bundle de producción quedó compilado con el dominio nuevo:
+
+```bash
+B=$(curl -s https://barberos.sacia.tech/ | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+curl -s "https://barberos.sacia.tech$B" | grep -o 'authDomain:"[^"]*"'
+```
 
 Dos trampas del `vercel.json`, las dos encontradas mirándolo:
 
