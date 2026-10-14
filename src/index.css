@@ -818,6 +818,27 @@ select.form-input {
   gap: var(--space-md);
 }
 
+/* "Cualquiera": a lo ancho y primero.
+   No es una opcion mas de la lista: es la que elige el cliente que no conoce a
+   ninguno, que es el caso mas comun de alguien que llega por primera vez desde
+   Instagram. Puesta como una tarjeta igual a las demas, se lee como "un barbero
+   llamado Cualquiera". */
+.prof-cualquiera {
+  grid-column: 1 / -1;
+  /* `display: flex` explicito: `.professional-card` no lo es, y sin esto
+     `flex-direction` no hace nada y la tarjeta queda tan alta como las
+     otras, ocupando media pantalla en el celular. */
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-md);
+  text-align: left;
+}
+
+.prof-cualquiera .avatar { flex-shrink: 0; }
+.prof-cualquiera h3 { margin: 0; }
+.prof-cualquiera .specialty { margin: 2px 0 0; }
+
 .professional-card {
   text-align: center;
   padding: var(--space-lg);

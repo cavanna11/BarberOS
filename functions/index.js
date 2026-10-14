@@ -596,6 +596,9 @@ function diaDeLaSemana(fechaISO) {
 }
 
 /** Turnos activos (hoy o después) que una cuenta puede tener en una barbería. */
+/** Lo que manda el cliente cuando le da igual quién lo atienda. */
+const PROFESIONAL_CUALQUIERA = 'cualquiera';
+
 const MAX_TURNOS_ACTIVOS = 3;
 
 // Cuánto se le guarda el horario al cliente mientras paga la seña. Quince
@@ -795,6 +798,11 @@ exports.createAppointment = onCall(async (request) => {
     metodoPago = null,
   } = request.data || {};
 
+  // "Cualquier barbero": el cliente no tiene preferencia y QUIÉN lo atiende lo
+  // decide el servidor. Es un centinela y no un professionalId vacío para que
+  // "no me importa" y "se me olvidó mandarlo" sigan siendo cosas distintas.
+  const sinPreferencia = professionalId === PROFESIONAL_CUALQUIERA;
+
   if (!businessId || !professionalId || !serviceId || !appointmentDate || !startTime) {
     throw new HttpsError('invalid-argument', 'Faltan datos del turno.');
   }
@@ -831,7 +839,7 @@ exports.createAppointment = onCall(async (request) => {
   if (!srvSnap.exists || srvSnap.data().isActive === false) {
     throw new HttpsError('not-found', 'El servicio no existe o no está disponible.');
   }
-  if (!profSnap.exists || profSnap.data().isActive === false) {
+  if (!sinPreferencia && (!profSnap.exists || profSnap.data().isActive === false)) {
     throw new HttpsError('not-found', 'El profesional no existe o no está disponible.');
   }
 
@@ -863,88 +871,115 @@ exports.createAppointment = onCall(async (request) => {
   }
   const totalExtras = extras.reduce((t, x) => t + x.price, 0);
 
-  // ¿Este profesional hace este servicio?
-  const vinculo = await db.collection(`businesses/${businessId}/professionalServices`)
-    .where('professionalId', '==', professionalId)
-    .where('serviceId', '==', serviceId)
-    .limit(1).get();
-  if (vinculo.empty) {
-    throw new HttpsError('failed-precondition', 'Ese profesional no realiza el servicio elegido.');
-  }
-
-  // ── El turno tiene que caer dentro del horario ────────────────────────────
+  // ── Quién puede tomar este turno ──────────────────────────────────────────
   const dow = diaDeLaSemana(appointmentDate);
   const inicio = timeToMinutes(startTime);
   const fin = inicio + duracion;
-
-  const horarios = await db.collection(`businesses/${businessId}/schedules`)
-    .where('professionalId', '==', professionalId)
-    .where('dayOfWeek', '==', dow)
-    .limit(1).get();
-  const horario = horarios.empty ? null : horarios.docs[0].data();
-  if (!horario || horario.isActive === false || !horario.startTime || !horario.endTime) {
-    throw new HttpsError('failed-precondition', 'El profesional no trabaja ese día.');
-  }
-
-  let desde = timeToMinutes(horario.startTime);
-  let hasta = timeToMinutes(horario.endTime);
-
-  // El horario del negocio recorta el del profesional, igual que en el motor
-  // del front.
   const diaNegocio = (negocio.businessHours || []).find((b) => b.dayOfWeek === dow);
-  if (diaNegocio) {
-    if (diaNegocio.isActive === false) {
-      throw new HttpsError('failed-precondition', 'La barbería no abre ese día.');
-    }
-    if (diaNegocio.startTime && diaNegocio.endTime) {
-      desde = Math.max(desde, timeToMinutes(diaNegocio.startTime));
-      hasta = Math.min(hasta, timeToMinutes(diaNegocio.endTime));
-    }
-  }
 
-  // Alcanza con que EMPIECE dentro del horario (del barbero y del local): el
-  // último turno puede terminar después del cierre, como pasa en el mostrador.
-  if (inicio < desde || inicio >= hasta) {
-    throw new HttpsError('failed-precondition', 'Ese horario está fuera del horario de atención.');
-  }
+  /**
+   * Por qué ESTE profesional no puede tomar ESTE turno, o null si puede.
+   *
+   * Devuelve el motivo en vez de tirarlo, para poder preguntar por varios y
+   * quedarse con los que sí. Con un profesional elegido a dedo, quien llama
+   * tira el motivo tal cual: los mensajes y su orden son los mismos de antes.
+   *
+   * NO mira si el horario está ocupado. Eso va adentro de la transacción, que
+   * es el único lugar donde la respuesta no queda vieja.
+   */
+  async function motivoNoPuede(profId) {
+    const vinculo = await db.collection(`businesses/${businessId}/professionalServices`)
+      .where('professionalId', '==', profId)
+      .where('serviceId', '==', serviceId)
+      .limit(1).get();
+    if (vinculo.empty) return 'Ese profesional no realiza el servicio elegido.';
 
-  // Promo por día y franja del servicio (utils/ventanaServicio.js en el front,
-  // misma regla acá, que es donde vale). `dias` en 0=Lunes … 6=Domingo.
-  const ventana = servicio.ventana || null;
-  if (ventana) {
-    const dow = diaDeLaSemana(appointmentDate);
-    if (Array.isArray(ventana.dias) && ventana.dias.length > 0 && !ventana.dias.includes(dow)) {
-      throw new HttpsError('failed-precondition', `${servicio.name || 'Ese servicio'} no se ofrece ese día.`);
+    const horarios = await db.collection(`businesses/${businessId}/schedules`)
+      .where('professionalId', '==', profId)
+      .where('dayOfWeek', '==', dow)
+      .limit(1).get();
+    const horario = horarios.empty ? null : horarios.docs[0].data();
+    if (!horario || horario.isActive === false || !horario.startTime || !horario.endTime) {
+      return 'El profesional no trabaja ese día.';
     }
-    if (ventana.desde && ventana.hasta) {
-      if (inicio < timeToMinutes(ventana.desde) || inicio >= timeToMinutes(ventana.hasta)) {
-        throw new HttpsError('failed-precondition', `${servicio.name || 'Ese servicio'} se ofrece solo de ${ventana.desde} a ${ventana.hasta}.`);
+
+    let desde = timeToMinutes(horario.startTime);
+    let hasta = timeToMinutes(horario.endTime);
+
+    // El horario del negocio recorta el del profesional, igual que en el motor
+    // del front.
+    if (diaNegocio) {
+      if (diaNegocio.isActive === false) return 'La barbería no abre ese día.';
+      if (diaNegocio.startTime && diaNegocio.endTime) {
+        desde = Math.max(desde, timeToMinutes(diaNegocio.startTime));
+        hasta = Math.min(hasta, timeToMinutes(diaNegocio.endTime));
       }
     }
+
+    // Alcanza con que EMPIECE dentro del horario (del barbero y del local): el
+    // último turno puede terminar después del cierre, como en el mostrador.
+    if (inicio < desde || inicio >= hasta) {
+      return 'Ese horario está fuera del horario de atención.';
+    }
+
+    // Promo por día y franja del servicio. `dias` en 0=Lunes … 6=Domingo.
+    const ventana = servicio.ventana || null;
+    if (ventana) {
+      if (Array.isArray(ventana.dias) && ventana.dias.length > 0 && !ventana.dias.includes(dow)) {
+        return `${servicio.name || 'Ese servicio'} no se ofrece ese día.`;
+      }
+      if (ventana.desde && ventana.hasta) {
+        if (inicio < timeToMinutes(ventana.desde) || inicio >= timeToMinutes(ventana.hasta)) {
+          return `${servicio.name || 'Ese servicio'} se ofrece solo de ${ventana.desde} a ${ventana.hasta}.`;
+        }
+      }
+    }
+
+    if (horario.breakStart && horario.breakEnd) {
+      const dStart = timeToMinutes(horario.breakStart), dEnd = timeToMinutes(horario.breakEnd);
+      if (inicio < dEnd && fin > dStart) return 'Ese horario cae en el descanso del profesional.';
+    }
+    // Horario cortado del local: en ese rato no se atiende, trabaje quien trabaje.
+    if (diaNegocio?.breakStart && diaNegocio?.breakEnd) {
+      const cStart = timeToMinutes(diaNegocio.breakStart), cEnd = timeToMinutes(diaNegocio.breakEnd);
+      if (inicio < cEnd && fin > cStart) {
+        return `La barbería cierra de ${diaNegocio.breakStart} a ${diaNegocio.breakEnd}.`;
+      }
+    }
+
+    // El día suelto que avisó que no viene. Va último porque es lo más
+    // específico: trabaja ese día de la semana, el local abre, no es su
+    // descanso... pero ESTE miércoles no está.
+    return await ausencias.motivoDeAusencia(db, businessId, profId, appointmentDate, inicio, fin);
   }
 
-  if (horario.breakStart && horario.breakEnd) {
-    const dStart = timeToMinutes(horario.breakStart), dEnd = timeToMinutes(horario.breakEnd);
-    if (inicio < dEnd && fin > dStart) {
-      throw new HttpsError('failed-precondition', 'Ese horario cae en el descanso del profesional.');
+  // Los que PODRÍAN tomarlo. Con un profesional elegido es él, o el error de
+  // siempre; con "cualquiera", todos los que pasan los mismos chequeos.
+  let candidatos;
+  if (sinPreferencia) {
+    const equipo = (await db.collection(`businesses/${businessId}/professionals`).get())
+      .docs.filter((d) => d.data().isActive !== false);
+    const motivos = await Promise.all(equipo.map((d) => motivoNoPuede(d.id)));
+    candidatos = equipo
+      .map((d, i) => (motivos[i] === null ? { id: d.id, name: d.data().name || '' } : null))
+      .filter(Boolean);
+    if (!candidatos.length) {
+      // El motivo más repetido explica mejor que "no hay nadie": si todos
+      // libran ese día, lo que hay que decir es eso.
+      const cuenta = {};
+      for (const m of motivos) if (m) cuenta[m] = (cuenta[m] || 0) + 1;
+      const comun = Object.entries(cuenta).sort((a, b) => b[1] - a[1])[0];
+      throw new HttpsError('failed-precondition', comun ? comun[0] : 'No hay ningún profesional disponible para ese horario.');
     }
-  }
-  // Horario cortado del local: en ese rato no se atiende, trabaje quien trabaje.
-  if (diaNegocio?.breakStart && diaNegocio?.breakEnd) {
-    const cStart = timeToMinutes(diaNegocio.breakStart), cEnd = timeToMinutes(diaNegocio.breakEnd);
-    if (inicio < cEnd && fin > cStart) {
-      throw new HttpsError('failed-precondition', `La barbería cierra de ${diaNegocio.breakStart} a ${diaNegocio.breakEnd}.`);
-    }
+    // Al azar, para que el primero de la lista no se lleve todos los turnos de
+    // los clientes que no eligen.
+    candidatos.sort(() => Math.random() - 0.5);
+  } else {
+    const motivo = await motivoNoPuede(professionalId);
+    if (motivo) throw new HttpsError('failed-precondition', motivo);
+    candidatos = [{ id: professionalId, name: profSnap.data().name || '' }];
   }
 
-  // El día suelto que el barbero avisó que no viene, o el rato que se tiene
-  // que ir. Es lo último del horario que se chequea porque es lo más específico:
-  // trabaja ese día de la semana, el local abre, no es su descanso... pero ESTE
-  // miércoles no está.
-  const ausente = await ausencias.motivoDeAusencia(db, businessId, professionalId, appointmentDate, inicio, fin);
-  if (ausente) {
-    throw new HttpsError('failed-precondition', ausente);
-  }
 
   // ── ¿Cobra seña? ──────────────────────────────────────────────────────────
   // Solo si el dueño conectó su Mercado Pago Y la activó con un monto. Si
@@ -999,7 +1034,11 @@ exports.createAppointment = onCall(async (request) => {
   // El tipo de pago que PIDIÓ el cliente. Inmutable: lo que se decide adentro
   // de la transacción puede recortarlo (un turno gratis no se cobra), y eso se
   // recalcula en cada intento.
-  const tipoPagoPedido = tipoPago;
+  const tipoPagoPedido = tipoPago;
+
+  // Quién lo atiende. Es estado MUTABLE que se decide adentro de la
+  // transacción, así que se vuelve a resolver en cada intento (ver abajo).
+  let profElegido = candidatos[0];
 
   await db.runTransaction(async (tx) => {
     // Firestore REINTENTA la transacción cuando hay contención, y el callback
@@ -1017,7 +1056,8 @@ exports.createAppointment = onCall(async (request) => {
     cobro = { precioLista: precio, descuento: 0, precioFinal: precio, cuponCodigo: null, cuponId: null };
     membresiaAplicada = null;
     tipoPago = tipoPagoPedido;
-    montoSena = 0;
+    montoSena = 0;
+    profElegido = candidatos[0];
     pideSena = tipoPago !== null;
 
     // Los turnos de este cliente en esta barbería, todos, en una sola lectura.
@@ -1053,10 +1093,31 @@ exports.createAppointment = onCall(async (request) => {
       );
     }
 
-    const delDia = await tx.get(
+    // La agenda del día de cada candidato. Con un profesional elegido es UNA
+    // consulta, igual que siempre; con "cualquiera", una por barbero — acotado
+    // por el tamaño del equipo, y adentro de la transacción, que es lo que hace
+    // que la respuesta no quede vieja entre que se mira y se escribe.
+    const agendas = await Promise.all(candidatos.map((c) => tx.get(
       agenda.where('appointmentDate', '==', appointmentDate)
-            .where('professionalId', '==', professionalId)
-    );
+            .where('professionalId', '==', c.id)
+    )));
+
+    const libre = (snap) => !snap.docs.some((d) => {
+      const a = d.data();
+      if (!reservaViva(a)) return false;
+      const aIni = timeToMinutes(a.startTime);
+      const aFin = a.endTime ? timeToMinutes(a.endTime) : aIni;
+      return inicio < aFin && fin > aIni;
+    });
+
+    const i = agendas.findIndex(libre);
+    if (i === -1) {
+      throw new HttpsError('already-exists', candidatos.length > 1
+        ? 'Ese horario se acaba de ocupar con todos los profesionales. Elegí otro.'
+        : 'Ese horario ya fue tomado. Elegí otro.');
+    }
+    profElegido = candidatos[i];
+    const delDia = agendas[i];
 
     // ── El cupón ────────────────────────────────────────────────────────────
     // Acá adentro y no antes: dos clientes peleando por el último uso leen el
@@ -1098,7 +1159,7 @@ exports.createAppointment = onCall(async (request) => {
         turnosPrevios: propios.docs.some((d) => ESTADOS_DE_CLIENTE.includes(d.get('status'))),
       });
       const r = cupones.aplicarCupon(leido.cupon, precio, {
-        ...leido.ctx, serviceId, professionalId,
+        ...leido.ctx, serviceId, professionalId: profElegido.id,
       });
 
       // Un cupón que dejó de servir NO rompe la reserva: se sigue sin él y el
@@ -1145,21 +1206,13 @@ exports.createAppointment = onCall(async (request) => {
     if (!(montoSena > 0)) { tipoPago = null; montoSena = 0; }
     pideSena = tipoPago !== null;
 
-    for (const d of delDia.docs) {
-      const a = d.data();
-      if (!reservaViva(a)) continue;
-      const aIni = timeToMinutes(a.startTime);
-      const aFin = a.endTime ? timeToMinutes(a.endTime) : aIni;
-      if (inicio < aFin && fin > aIni) {
-        throw new HttpsError('already-exists', 'Ese horario ya fue tomado. Elegí otro.');
-      }
-    }
+    // El solapamiento ya se chequeó arriba, al elegir a `profElegido`.
 
     const membresia = usoMembresia ? membresias.escribirUso(tx, usoMembresia, {
       cuentaId: negocio.grupoId || businessId,
       appointmentId: ref.id,
       sucursalId: businessId,
-      professionalId,
+      professionalId: profElegido.id,
       serviceId,
       serviceName: servicio.name || '',
       valorServicio: precio,
@@ -1173,7 +1226,8 @@ exports.createAppointment = onCall(async (request) => {
       id: ref.id,
       businessId,
       userId: request.auth.uid,
-      professionalId,
+      professionalId: profElegido.id,
+      professionalName: profElegido.name,
       serviceId,
       appointmentDate,
       startTime,
@@ -1249,7 +1303,7 @@ exports.createAppointment = onCall(async (request) => {
   // llegó al servidor, a qué negocio fue y con qué barbero. Sin nombres ni
   // teléfonos: para eso está el documento.
   logger.info('turno creado', {
-    businessId, professionalId, serviceId,
+    businessId, professionalId: profElegido.id, serviceId,
     appointmentDate, startTime, endTime: minutesToTime(fin),
     appointmentId: ref.id, uid: request.auth.uid,
   });
@@ -1285,7 +1339,14 @@ exports.createAppointment = onCall(async (request) => {
     }
   }
 
-  return { status: 'created', id: ref.id, price: cobro.precioFinal, ...cobro, membresia: membresiaAplicada, endTime: minutesToTime(fin) };
+  // `professionalId` vuelve SIEMPRE, no solo con "cualquiera": es lo que le
+  // permite a la pantalla de confirmación decir con quién le tocó, y el
+  // cliente que no eligió necesita enterarse.
+  return {
+    status: 'created', id: ref.id, price: cobro.precioFinal, ...cobro,
+    membresia: membresiaAplicada, endTime: minutesToTime(fin),
+    professionalId: profElegido.id, professionalName: profElegido.name,
+  };
 });
 
 /**

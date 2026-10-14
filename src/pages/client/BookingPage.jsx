@@ -42,6 +42,14 @@ function Stepper({ step }) {
   );
 }
 
+// Lo que se manda cuando al cliente le da igual quién lo atienda. El servidor
+// resuelve a QUIÉN adentro de su transacción: si lo eligiera esta pantalla, dos
+// personas mirando la misma grilla mandarían el mismo barbero y la segunda se
+// comería "ese horario ya fue tomado" con el otro libre al lado.
+// `functions/index.js` tiene su propia copia de este valor, como todo lo que
+// cruza esa frontera.
+export const CUALQUIERA = 'cualquiera';
+
 // ---- PROFESSIONAL SELECT ----
 function ProfessionalSelect({ professionals, selectedId, onSelect }) {
   return (
@@ -49,6 +57,18 @@ function ProfessionalSelect({ professionals, selectedId, onSelect }) {
       <h2 className="booking-step-title">Seleccioná tu profesional</h2>
       <p className="booking-step-subtitle">Elegí con quién querés atenderte</p>
       <div className="professionals-grid">
+        {/* Primero, y a lo ancho: el que no conoce a ninguno no tiene por qué
+            elegir a ciegas, y es el caso más común de un cliente nuevo. */}
+        {professionals.filter((p) => p.isActive).length > 1 && (
+          <div
+            className={`card card-selectable professional-card prof-cualquiera ${selectedId === CUALQUIERA ? 'card-selected' : ''}`}
+            onClick={() => onSelect(CUALQUIERA)}
+          >
+            <div className="avatar avatar-lg">💈</div>
+            <h3>Cualquiera</h3>
+            <p className="specialty">El primero que esté libre</p>
+          </div>
+        )}
         {professionals.filter(p => p.isActive).map((prof) => (
           <div
             key={prof.id}
@@ -74,17 +94,21 @@ function ProfessionalSelect({ professionals, selectedId, onSelect }) {
 // forma de que un día dejen de coincidir.
 
 // ---- SERVICE SELECT ----
-function ServiceSelect({ services, professionalServices, professionalId, selectedId, onSelect, currency, incluido = () => false }) {
+function ServiceSelect({ services, professionalServices, profIds = [], selectedId, onSelect, currency, incluido = () => false }) {
   const available = useMemo(() => {
-    const psIds = professionalServices
-      .filter(ps => ps.professionalId === professionalId)
-      .map(ps => ps.serviceId);
+    const psIds = new Set(
+      professionalServices.filter((ps) => profIds.includes(ps.professionalId)).map((ps) => ps.serviceId)
+    );
+    // Con más de un barbero en juego, el precio y la duración son los del
+    // SERVICIO y no los de uno en particular: es lo que va a usar el servidor
+    // igual, y mostrar el de uno sería prometer el de otro.
+    const uno = profIds.length === 1 ? profIds[0] : null;
     // Los adicionales (cejas, lavado…) no se reservan solos: van abajo, para sumar.
-    return services.filter(s => s.isActive && !s.adicional && psIds.includes(s.id)).map(s => {
-      const ps = professionalServices.find(p => p.professionalId === professionalId && p.serviceId === s.id);
+    return services.filter(s => s.isActive && !s.adicional && psIds.has(s.id)).map(s => {
+      const ps = uno ? professionalServices.find(p => p.professionalId === uno && p.serviceId === s.id) : null;
       return { ...s, finalPrice: ps?.customPrice || s.price, finalDuration: ps?.customDuration || s.durationMinutes };
     }).sort(enOrden);
-  }, [services, professionalServices, professionalId]);
+  }, [services, professionalServices, profIds]);
 
   return (
     <div>
@@ -146,7 +170,7 @@ function AdicionalesSelect({ adicionales, elegidos, onCambiar, currency }) {
 }
 
 // ---- DATE PICKER ----
-function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSchedules, businessHours, service, ausencias = [] }) {
+function DatePicker({ selectedDate, onSelect, profIds = [], schedules: allSchedules, businessHours, service, ausencias = [] }) {
   const [viewDate, setViewDate] = useState(() => {
     if (selectedDate) return new Date(selectedDate + 'T00:00:00');
     return new Date();
@@ -186,7 +210,8 @@ function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSche
             if (day === null) return <div key={`empty-${idx}`} className="calendar-day empty" />;
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const isPastDate = dateStr < today;
-            const works = professionalWorksOnDate(professionalId, dateStr, allSchedules, businessHours, ausencias)
+            // Con "Cualquiera", alcanza con que trabaje UNO.
+            const works = profIds.some((pid) => professionalWorksOnDate(pid, dateStr, allSchedules, businessHours, ausencias))
               && servicioAplicaAlDia(service, dateStr);
             const isSelected = dateStr === selectedDate;
             const isToday = dateStr === today;
@@ -540,7 +565,12 @@ export default function BookingPage() {
     );
   }, [user, date, appointments]);
 
-  const selectedProfessional = professionals.find(p => p.id === professionalId);
+  // Con "Cualquiera" todavía no hay a quién mostrar —lo elige el servidor al
+  // confirmar—, pero el resumen tiene que poder pintarse igual. Sin esto el
+  // paso 6 queda en blanco y la reserva no se puede terminar.
+  const selectedProfessional = professionalId === CUALQUIERA
+    ? { id: CUALQUIERA, name: 'Cualquiera', specialty: 'Te asignamos el primero que esté libre' }
+    : professionals.find(p => p.id === professionalId);
   const selectedService = services.find(s => s.id === serviceId);
 
   // Get customized price
@@ -637,6 +667,19 @@ export default function BookingPage() {
     if (volvio) dispatch({ type: 'NEXT_STEP' });
   }, [user, step, timeSlot, dispatch]);
 
+  // Con quién se calcula la grilla. Con "Cualquiera" son todos los que hacen
+  // ese servicio: los horarios que ve el cliente son la UNIÓN de los de todos,
+  // porque si uno está ocupado a las 10 y el otro no, las 10 están libres.
+  const idsElegibles = useMemo(() => {
+    const activos = professionals.filter((p) => p.isActive).map((p) => p.id);
+    if (professionalId !== CUALQUIERA) return professionalId ? [professionalId] : [];
+    if (!serviceId) return activos;
+    const hacen = new Set(
+      professionalServices.filter((ps) => ps.serviceId === serviceId).map((ps) => ps.professionalId)
+    );
+    return activos.filter((id) => hacen.has(id));
+  }, [professionals, professionalServices, professionalId, serviceId]);
+
   // Qué está ocupado ese día para ese profesional. No sale de `appointments`
   // del contexto: para un cliente esa lista trae SOLO sus propios turnos (las
   // Rules no le dejan ver los de los demás, y está bien), así que con ella la
@@ -646,17 +689,24 @@ export default function BookingPage() {
   // La respuesta se guarda junto con la clave que la pidió: si cambia el
   // profesional o el día, la que hay deja de valer sola, sin un setState
   // sincrónico en el efecto (que el compilador de React rechaza).
-  const claveOcupados = `${businessId}|${professionalId}|${date}`;
+  const claveOcupados = `${businessId}|${idsElegibles.join(',')}|${date}`;
   const [ocupados, setOcupados] = useState({ clave: '', lista: [] });
   useEffect(() => {
-    if (!businessId || !professionalId || !date) return;
+    if (!businessId || !idsElegibles.length || !date) return;
     let vigente = true;
-    getBusySlots({ businessId, professionalId, appointmentDate: date })
-      .then(({ ocupados }) => {
+    // Una consulta por barbero elegible. Con uno elegido es la de siempre; con
+    // "Cualquiera" son tantas como barberos hagan ese servicio, que es un
+    // puñado. Cada respuesta se marca con SU profesional: el motor necesita
+    // saber de quién es cada turno ocupado.
+    Promise.all(idsElegibles.map((pid) =>
+      getBusySlots({ businessId, professionalId: pid, appointmentDate: date })
+        .then(({ ocupados }) => ocupados.map((o) => ({
+          ...o, professionalId: pid, appointmentDate: date, status: 'confirmada',
+        })))
+    ))
+      .then((porProfesional) => {
         if (!vigente) return;
-        // Con la forma que espera availabilityEngine.
-        const lista = ocupados.map((o) => ({ ...o, professionalId, appointmentDate: date, status: 'confirmada' }));
-        setOcupados({ clave: claveOcupados, lista });
+        setOcupados({ clave: claveOcupados, lista: porProfesional.flat() });
       })
       .catch((err) => {
         console.error('[BookingPage] No se pudieron leer los horarios ocupados:', err);
@@ -665,26 +715,37 @@ export default function BookingPage() {
         if (vigente) setOcupados({ clave: claveOcupados, lista: [] });
       });
     return () => { vigente = false; };
-  }, [businessId, professionalId, date, claveOcupados]);
+  }, [businessId, idsElegibles, date, claveOcupados]);
   const cargandoOcupados = ocupados.clave !== claveOcupados;
 
   // Calculate available slots
   const availableSlots = useMemo(() => {
-    if (!professionalId || !serviceId || !date || cargandoOcupados) return [];
+    if (!idsElegibles.length || !serviceId || !date || cargandoOcupados) return [];
     const servicio = services.find((s) => s.id === serviceId);
-    return calculateAvailableSlots({
-      professionalId,
-      serviceId,
-      date,
-      schedules,
-      appointments: ocupados.lista,
-      services,
-      professionalServices,
-      slotInterval: business.slotInterval,
-      businessHours: business.businessHours,
-      ausencias,
-    }).filter((s) => servicioAplicaAlHorario(servicio, s.startTime)); // promo por franja
-  }, [professionalId, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business, ausencias]);
+    // La UNIÓN de los horarios de todos los elegibles, sin repetir. Si a las 10
+    // uno está ocupado y el otro no, las 10 se ofrecen: quién la toma lo decide
+    // el servidor al confirmar.
+    const porHora = new Map();
+    for (const pid of idsElegibles) {
+      for (const slot of calculateAvailableSlots({
+        professionalId: pid,
+        serviceId,
+        date,
+        schedules,
+        appointments: ocupados.lista,
+        services,
+        professionalServices,
+        slotInterval: business.slotInterval,
+        businessHours: business.businessHours,
+        ausencias,
+      })) {
+        if (!porHora.has(slot.startTime)) porHora.set(slot.startTime, slot);
+      }
+    }
+    return [...porHora.values()]
+      .sort((a, b) => a.startMinutes - b.startMinutes)
+      .filter((s) => servicioAplicaAlHorario(servicio, s.startTime)); // promo por franja
+  }, [idsElegibles, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business, ausencias]);
 
   // Paso cero: a qué sucursal va. Antes de elegir barbero, porque el equipo,
   // los servicios y los horarios son los de ESE local — y el link que le llegó
@@ -818,6 +879,11 @@ export default function BookingPage() {
         metodoPago: preguntaMetodo ? metodoPago : null,
       });
       const id = res.id;
+      // A QUIÉN le tocó lo decidió el servidor. Con "Cualquiera" es la primera
+      // vez que se sabe, así que sin esto la confirmación mostraría el
+      // centinela y el cliente no se enteraría nunca de con quién va.
+      if (res.professionalId) datos.professionalId = res.professionalId;
+      datos.professionalName = res.professionalName || '';
       datos.price = res.price;
       datos.endTime = res.endTime;
       datos.membresia = res.membresia || null;
@@ -929,7 +995,7 @@ export default function BookingPage() {
         <ServiceSelect
           services={services}
           professionalServices={professionalServices}
-          professionalId={professionalId}
+          profIds={idsElegibles}
           selectedId={serviceId}
           onSelect={id => { if (id !== serviceId) setExtras([]); dispatch({ type: 'SET_SERVICE', payload: id }); }}
           currency={business.currency}
@@ -951,7 +1017,7 @@ export default function BookingPage() {
         <DatePicker
           selectedDate={date}
           onSelect={d => dispatch({ type: 'SET_DATE', payload: d })}
-          professionalId={professionalId}
+          profIds={idsElegibles}
           schedules={schedules}
           businessHours={business.businessHours}
           service={selectedService}

@@ -365,5 +365,83 @@ chequear('una ausencia con horas ilegibles bloquea el día entero (falla cerrado
 
 for (const d of (await db.collection(AUS).get()).docs) await d.ref.delete();
 
+titulo('"Cualquier barbero": lo elige el SERVIDOR:');
+// Si lo eligiera el navegador, dos clientes mirando la misma grilla mandarían
+// el mismo barbero y el segundo recibiría "ya fue tomado" con el otro libre al
+// lado. Por eso la elección va adentro de la transacción.
+const PROF2 = 'prof-2';
+await db.doc(`businesses/${BID}/professionals/${PROF2}`).set({ name: 'Segundo', isActive: true });
+await db.doc(`businesses/${BID}/professionalServices/ps-2`).set({ professionalId: PROF2, serviceId: SRV });
+await db.doc(`businesses/${BID}/schedules/sch-2`).set({
+  professionalId: PROF2, dayOfWeek: DOW, startTime: '09:00', endTime: '18:00',
+  breakStart: '13:00', breakEnd: '14:00', isActive: true,
+});
+
+const FECHA_Q = '2027-05-04';   // mismo día de semana que FECHA
+const cQ1 = await usuario('q1@gmail.com');
+r = await reservar(cQ1, { ...base, professionalId: 'cualquiera', appointmentDate: FECHA_Q, startTime: '10:00' });
+chequear('reserva sin elegir barbero', r.ok?.status === 'created', JSON.stringify(r));
+chequear('el servidor devuelve a QUIÉN le tocó',
+  [PROF, PROF2].includes(r.ok?.professionalId), JSON.stringify(r.ok?.professionalId));
+chequear('y su nombre, para poder decírselo', Boolean(r.ok?.professionalName), JSON.stringify(r.ok));
+const primero = r.ok?.professionalId;
+const guardadoQ = (await db.doc(`businesses/${BID}/appointments/${r.ok.id}`).get()).data();
+chequear('el turno se guarda con el barbero elegido, no con el centinela',
+  guardadoQ.professionalId === primero, String(guardadoQ.professionalId));
+
+// El mismo horario otra vez: tiene que caer en el OTRO, no fallar.
+const cQ2 = await usuario('q2@gmail.com');
+r = await reservar(cQ2, { ...base, professionalId: 'cualquiera', appointmentDate: FECHA_Q, startTime: '10:00' });
+chequear('el segundo cliente a la misma hora entra con el OTRO barbero',
+  r.ok?.status === 'created' && r.ok?.professionalId !== primero,
+  JSON.stringify([r.ok?.professionalId, primero, r.error, r.mensaje]));
+
+// Con los dos ocupados, recién ahí se rechaza.
+const cQ3 = await usuario('q3@gmail.com');
+r = await reservar(cQ3, { ...base, professionalId: 'cualquiera', appointmentDate: FECHA_Q, startTime: '10:00' });
+chequear('con los dos ocupados, rechaza', Boolean(r.error), JSON.stringify(r));
+chequear('y lo dice en plural', String(r.mensaje || '').includes('todos los profesionales'), JSON.stringify(r.mensaje));
+
+// Si uno solo hace el servicio, "cualquiera" cae en ese.
+await db.doc(`businesses/${BID}/professionalServices/ps-2`).delete();
+const cQ4 = await usuario('q4@gmail.com');
+r = await reservar(cQ4, { ...base, professionalId: 'cualquiera', appointmentDate: '2027-05-11', startTime: '10:00' });
+chequear('si solo uno hace el servicio, le toca ese',
+  r.ok?.professionalId === PROF, JSON.stringify([r.ok?.professionalId, r.mensaje]));
+await db.doc(`businesses/${BID}/professionalServices/ps-2`).set({ professionalId: PROF2, serviceId: SRV });
+
+// Fuera de horario: el motivo tiene que ser el real, no "no hay nadie".
+const cQ5 = await usuario('q5@gmail.com');
+r = await reservar(cQ5, { ...base, professionalId: 'cualquiera', appointmentDate: '2027-05-11', startTime: '08:00' });
+chequear('fuera de horario explica el motivo de verdad',
+  String(r.mensaje || '').includes('horario de atención'), JSON.stringify(r.mensaje));
+
+// Una ausencia de uno no bloquea al otro.
+await db.doc(`businesses/${BID}/ausencias/${PROF}_2027-05-18_todo`).set({ professionalId: PROF, fecha: '2027-05-18', desde: null, hasta: null });
+const cQ6 = await usuario('q6@gmail.com');
+r = await reservar(cQ6, { ...base, professionalId: 'cualquiera', appointmentDate: '2027-05-18', startTime: '10:00' });
+chequear('si uno está ausente, le toca el otro',
+  r.ok?.professionalId === PROF2, JSON.stringify([r.ok?.professionalId, r.mensaje]));
+
+// Los dos ausentes: el motivo es la ausencia, no "no hay nadie".
+await db.doc(`businesses/${BID}/ausencias/${PROF2}_2027-05-18_todo`).set({ professionalId: PROF2, fecha: '2027-05-18', desde: null, hasta: null });
+const cQ7 = await usuario('q7@gmail.com');
+r = await reservar(cQ7, { ...base, professionalId: 'cualquiera', appointmentDate: '2027-05-18', startTime: '11:00' });
+chequear('con todos ausentes, el motivo es la ausencia',
+  String(r.mensaje || '').includes('no atiende ese día'), JSON.stringify(r.mensaje));
+for (const d of (await db.collection(`businesses/${BID}/ausencias`).get()).docs) await d.ref.delete();
+
+// Y el camino de siempre no cambió.
+const cQ8 = await usuario('q8@gmail.com');
+r = await reservar(cQ8, { ...base, professionalId: 'NO-EXISTE', appointmentDate: '2027-05-25', startTime: '10:00' });
+chequear('un profesional inexistente sigue siendo un error', Boolean(r.error), JSON.stringify(r));
+
+for (const d of (await db.collection(`businesses/${BID}/appointments`).get()).docs) {
+  if ((d.data().appointmentDate || '') >= '2027-05-01') await d.ref.delete();
+}
+await db.doc(`businesses/${BID}/professionals/${PROF2}`).delete();
+await db.doc(`businesses/${BID}/professionalServices/ps-2`).delete();
+await db.doc(`businesses/${BID}/schedules/sch-2`).delete();
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

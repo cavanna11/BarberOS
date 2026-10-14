@@ -1897,6 +1897,75 @@ y es otro tema.
 se escribe al crearlos y **nadie lo ordena en ningún lado**. Es el mismo
 componente y el mismo util; falta hacerlo.
 
+### "Cualquier barbero": lo elige el SERVIDOR (14/10/2026)
+
+El cliente que no conoce a ninguno no tiene por qué elegir a ciegas. En el paso
+1 de la reserva hay una tarjeta **Cualquiera — el primero que esté libre**, a lo
+ancho y arriba de todo. Solo aparece si hay **más de un barbero activo**: con
+uno solo sería una pregunta sin respuesta.
+
+**Y la elección NO la hace el navegador.** Esa es toda la decisión de diseño. Si
+esta pantalla eligiera y mandara un `professionalId`, dos personas mirando la
+misma grilla mandarían el mismo barbero y la segunda recibiría *"ese horario ya
+fue tomado"* **con el otro barbero libre al lado**. El browser manda el
+centinela `'cualquiera'` y `createAppointment` resuelve a quién **adentro de su
+transacción**, que es el único momento en que la respuesta no puede quedar
+vieja entre que se mira y se escribe.
+
+**Cómo quedó el servidor.** La validación por profesional (hace el servicio,
+trabaja ese día, entra en el horario, promo, descansos, ausencias) se extrajo a
+`motivoNoPuede(profId)`, que **devuelve el motivo en vez de tirarlo**:
+
+- con un profesional elegido a dedo, quien llama tira el motivo tal cual — los
+  mensajes y su orden son exactamente los de antes;
+- con "cualquiera", se pregunta por todo el equipo y quedan los que pasan.
+
+Si no queda ninguno, **se informa el motivo más repetido** y no un "no hay nadie
+disponible": si todos libran ese día, lo que hay que decir es eso.
+
+Adentro de la transacción se lee la agenda del día de cada candidato (una
+consulta por barbero, acotado por el tamaño del equipo), se toma el primero
+libre y recién ahí se escribe. El orden de los candidatos se mezcla al azar para
+que el primero de la lista no se lleve todos los turnos de los que no eligen.
+
+⚠️ **La trampa del reintento, otra vez.** Firestore reintenta el callback de la
+transacción y el barbero elegido es estado MUTABLE: se vuelve a resolver al tope
+de cada intento, al lado de `cobro`, `tipoPago` y `montoSena`. Es el mismo
+agujero que ya nos costó un turno guardado con precio de promoción sin consumir
+el cupón.
+
+La function **devuelve siempre `professionalId` y `professionalName`**, no solo
+con "cualquiera": es lo que le permite a la confirmación decir con quién le
+tocó, y el cliente que no eligió necesita enterarse. El turno se guarda con el
+barbero real, nunca con el centinela.
+
+**En el navegador**, los pasos 2 a 4 trabajan sobre la UNIÓN de los elegibles:
+
+- **servicios**: los que hace alguno. Con más de uno en juego, el precio y la
+  duración son los del SERVICIO y no los de un barbero — es lo que va a usar el
+  servidor igual, y mostrar el de uno sería prometer el de otro (hoy
+  `customPrice`/`customDuration` están siempre en null, así que no hay
+  ambigüedad; el día que se habiliten, esto ya está decidido);
+- **calendario**: el día sirve si trabaja alguno;
+- **horarios**: la unión sin repetir. Si a las 10 uno está ocupado y el otro no,
+  las 10 se ofrecen;
+- **ocupados**: una llamada a `getBusySlots` por elegible, cada respuesta marcada
+  con SU profesional — el motor necesita saber de quién es cada turno tomado.
+
+Detalle que lo rompía y no se ve en ninguna prueba: el paso 6 estaba condicionado
+a `selectedProfessional`, que con el centinela es `undefined`, así que **la
+pantalla de confirmar quedaba en blanco** y la reserva no se podía terminar. Hay
+un profesional "de mentira" para pintar el resumen hasta que el servidor elija.
+
+```bash
+node scripts/test-reservas-emulador.mjs   # 81 casos (12 nuevos de esto)
+```
+
+Los que importan: que el segundo cliente a la misma hora entre con el OTRO
+barbero (que es el punto), que con los dos ocupados recién ahí se rechace, que
+la ausencia de uno no bloquee al otro, que el motivo informado sea el real, y
+que el camino del profesional elegido a dedo no haya cambiado en nada.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
@@ -2160,10 +2229,10 @@ node scripts/test-ausencias.mjs            # el día suelto que un barbero no va
 node scripts/test-orden.mjs                # en qué orden ve el cliente la lista (tampoco)
 ```
 
-Hoy: claims 77, reservas 69, facturación 14, rules 126, alta 22, mercadopago 16,
+Hoy: claims 77, reservas 81, facturación 14, rules 126, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
 turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 51, orden 30.
-Todo en verde (935).
+Todo en verde (947).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales
