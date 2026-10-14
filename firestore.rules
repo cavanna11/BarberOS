@@ -79,7 +79,10 @@ service cloud.firestore {
     }
 
     function isBusinessStaff(bizId) {
-      return inBusiness(bizId) && claims().get('role', '') in ['owner', 'admin'];
+      // El cajero tambien es staff: registra su telefono para los avisos y abre
+      // tickets de soporte, igual que los demas. Lo que NO puede —la caja, el
+      // plan, el equipo— se decide con `isBusinessOwner`, no aca.
+      return inBusiness(bizId) && claims().get('role', '') in ['owner', 'admin', 'cajero'];
     }
 
     /**
@@ -88,6 +91,26 @@ service cloud.firestore {
      */
     function esBarbero(bizId) {
       return inBusiness(bizId) && claims().get('role', '') == 'admin';
+    }
+
+    /**
+     * El mostrador: ve y maneja la agenda ENTERA del local y cobra, pero NO ve
+     * la caja del negocio ni toca su configuracion.
+     *
+     * Es un rol propio y no un dueno recortado en la interfaz: todo lo que pide
+     * `isBusinessOwner` —facturacion, plan, equipo, servicios, el negocio
+     * mismo— le queda denegado por defecto, y lo que SI puede se le concede
+     * aca, uno por uno. Es la misma forma que tienen los moderadores de la
+     * plataforma: "tiene lo que se le dio", no "tiene todo salvo lo que se le
+     * saco".
+     */
+    function esCajero(bizId) {
+      return inBusiness(bizId) && claims().get('role', '') == 'cajero';
+    }
+
+    /** Quien atiende el mostrador del local: el dueno o la cajera. */
+    function manejaLaAgenda(bizId) {
+      return isBusinessOwner(bizId) || esCajero(bizId);
     }
 
     /** ¿Este turno es del barbero que está llamando? */
@@ -469,7 +492,7 @@ service cloud.firestore {
       match /appointments/{aptId} {
         // El dueño ve toda la agenda; el barbero solo los suyos; el cliente
         // solo los propios.
-        allow get: if isBusinessOwner(bizId)
+        allow get: if manejaLaAgenda(bizId)
                       || esEquipoPlataforma()
                       || (esBarbero(bizId) && esSuTurno())
                       || (signedIn() && resource.data.userId == request.auth.uid);
@@ -493,7 +516,7 @@ service cloud.firestore {
         // where por userId la satisface, y una query sin filtrar la viola.
         // Al barbero se le aplica el mismo criterio: su query TIENE que llevar
         // where('professionalId','==',suId). Lo hace BusinessSync.
-        allow list: if isBusinessOwner(bizId)
+        allow list: if manejaLaAgenda(bizId)
                        || esEquipoPlataforma()
                        || (esBarbero(bizId) && esSuTurno())
                        || (signedIn() && resource.data.userId == request.auth.uid);
@@ -512,13 +535,13 @@ service cloud.firestore {
         allow create: if request.resource.data.userId == request.auth.uid
                          && !('membresia' in request.resource.data)
                          && (isPlatform()
-                             || isBusinessOwner(bizId)
+                             || manejaLaAgenda(bizId)
                              || (esBarbero(bizId)
                                  && request.resource.data.professionalId == claims().get('professionalId', '')));
 
         // Cancelar: el cliente solo puede cambiar el estado a 'cancelada' de un
         // turno propio. Cambiar fecha, precio o profesional es cosa del staff.
-        allow update: if ((isBusinessOwner(bizId)
+        allow update: if ((manejaLaAgenda(bizId)
                            || isPlatform()
                            || (esBarbero(bizId) && esSuTurno()))
                           && noTocaLaMembresia())
@@ -690,14 +713,14 @@ service cloud.firestore {
         // (Antes había un segundo match para esta misma ruta, pensado como log
         // de WhatsApp, que le daba lectura a todo el staff. Dos match sobre la
         // misma ruta se suman: con cualquiera que permita, pasa. Quedó uno.)
-        allow get, list: if isBusinessOwner(bizId)
+        allow get, list: if manejaLaAgenda(bizId)
                             || esEquipoPlataforma()
                             || (esBarbero(bizId) && esSuTurno());
         // La plataforma ve estas notificaciones cuando entra al panel de una
         // barbería, así que también tiene que poder marcarlas leídas: si no,
         // "marcar todas" fallaba con permission-denied y volvían a aparecer
         // sin leer (22/09/2026). Solo toca `leidaPor`, como todos.
-        allow update: if (isBusinessOwner(bizId) || esEquipoPlataforma() || (esBarbero(bizId) && esSuTurno()))
+        allow update: if (manejaLaAgenda(bizId) || esEquipoPlataforma() || (esBarbero(bizId) && esSuTurno()))
                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leidaPor']);
         allow create, delete: if false;
       }

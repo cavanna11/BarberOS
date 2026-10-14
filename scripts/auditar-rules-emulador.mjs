@@ -203,6 +203,31 @@ await esperar('barbero NO borra la de otro',           borrar(barberoA, `busines
 await esperar('barbero borra la suya',                 borrar(barberoA, `businesses/${A}/ausencias/aus-p1`), 'permitido');
 await esperar('un cliente no marca ausencias',         crear(cliente, `businesses/${A}/ausencias`, { professionalId: 'p1', fecha: '2027-03-07', desde: null, hasta: null }), 'denegado');
 await esperar('la barberia B no toca las de A',        crear(duenoB, `businesses/${A}/ausencias`, { professionalId: 'p1', fecha: '2027-03-08', desde: null, hasta: null }), 'denegado');
+// ── El mostrador (cajero) ───────────────────────────────────────────────────
+// Ve y maneja la agenda ENTERA del local y cobra, pero NO ve la caja del
+// negocio ni toca su configuracion. Es un rol propio y no un dueno recortado en
+// la interfaz: lo que esconde el panel no es seguridad.
+const cajeroA = await usuario('cajeraa@gmail.com', { businessId: A, role: 'cajero', professionalId: null });
+
+await esperar('cajero SI lee un turno de cualquiera',   leer(cajeroA, `businesses/${A}/appointments/apt-otro`), 'permitido');
+await esperar('cajero SI lista la agenda entera',       consultar(cajeroA, `businesses/${A}`, 'appointments'), 'permitido');
+await esperar('cajero SI agenda un turno',              crear(cajeroA, `businesses/${A}/appointments`, { userId: cajeroA.uid, businessId: A, professionalId: 'p1', status: 'pendiente', type: 'manual' }), 'permitido');
+await esperar('cajero SI marca un turno (cobrar)',      editar(cajeroA, `businesses/${A}/appointments/apt-otro`, { status: 'completada' }), 'permitido');
+// Sembrada con el Admin SDK: un 404 cuenta como denegado en esta suite.
+await db.doc(`businesses/${A}/notifications/n-cajera`).set({ type: 'nuevo_turno', professionalId: 'p1', leidaPor: {} });
+await esperar('cajero SI ve la campanita',              leer(cajeroA, `businesses/${A}/notifications/n-cajera`), 'permitido');
+
+// Y lo que NO. Cada uno de estos es el motivo por el que el rol existe.
+await esperar('cajero NO ve la facturacion del negocio', leer(cajeroA, `businesses/${A}/private/billing`), 'denegado');
+await esperar('cajero NO toca el negocio',               editar(cajeroA, `businesses/${A}`, { name: 'otro' }), 'denegado');
+await esperar('cajero NO crea servicios',                crear(cajeroA, `businesses/${A}/services`, { name: 'inventado', price: 1 }), 'denegado');
+await esperar('cajero NO crea profesionales',            crear(cajeroA, `businesses/${A}/professionals`, { name: 'x' }), 'denegado');
+await esperar('cajero NO se nombra admin',               crear(cajeroA, `businesses/${A}/admins`, { email: 'x@y.com', role: 'owner' }), 'denegado');
+await esperar('cajero NO borra turnos',                  borrar(cajeroA, `businesses/${A}/appointments/apt-otro`), 'denegado');
+await esperar('cajero NO toca horarios',                 crear(cajeroA, `businesses/${A}/schedules`, { professionalId: 'p1', dayOfWeek: 1 }), 'denegado');
+await esperar('cajero NO marca ausencias',               crear(cajeroA, `businesses/${A}/ausencias`, { professionalId: 'p1', fecha: '2027-04-01', desde: null, hasta: null }), 'denegado');
+await esperar('cajero NO lee la agenda de la OTRA barberia', consultar(cajeroA, `businesses/${B}`, 'appointments'), 'denegado');
+await esperar('cajero NO lee los cobros de la plataforma',   leer(cajeroA, 'platform/cobros/items/cob-1'), 'denegado');
 await esperar('barbero borra SU horario',                borrar(barberoA, `businesses/${A}/schedules/sch-p1`), 'permitido');
 await esperar('barbero NO borra el horario de otro',     borrar(barberoA, `businesses/${A}/schedules/sch-p2`), 'denegado');
 await esperar('barbero NO cambia su horario a otro',     editar(barberoA, `businesses/${A}/schedules/sch-p1b`, { professionalId: 'p2' }), 'denegado');

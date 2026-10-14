@@ -60,6 +60,9 @@ function exigirStaff(request, businessId, professionalId = null) {
   if (c.platform === true) return { id, rol: 'plataforma' };
   const deLaCuenta = c.businessId === id || (c.businessIds || []).includes(id);
   if (deLaCuenta && c.role === 'owner') return { id, rol: 'owner' };
+  // El mostrador agenda para cualquiera: es su trabajo. Lo que no puede es
+  // ver la caja del negocio, y eso se decide en otro lado.
+  if (deLaCuenta && c.role === 'cajero') return { id, rol: 'owner' };
   if (deLaCuenta && c.role === 'admin') {
     if (professionalId && professionalId !== c.professionalId) {
       throw new HttpsError('permission-denied', 'Solo podés agendar turnos fijos en tu propia agenda.');

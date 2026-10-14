@@ -278,7 +278,10 @@ export default function BusinessSync() {
     // las Rules la rechazaban (bien, es la regla que cierra la filtración de
     // datos), y "Mis citas" quedaba vacío para todos. subscribeMyAppointments
     // existía en el repositorio y nadie la llamaba.
-    const esStaffCompleto = esPlataforma || rol === 'owner';
+    // El cajero ve la agenda ENTERA del local: es su trabajo. Lo que no ve
+    // son los números del negocio, y eso no se decide acá sino en qué
+    // pantallas puede abrir y, sobre todo, en las Rules.
+    const esStaffCompleto = esPlataforma || rol === 'owner' || rol === 'cajero';
     // Ojo con la condición: antes era `rol === 'admin' && Boolean(profId)`, y
     // un barbero sin perfil vinculado caía en `esCliente`. Se le pedían SUS
     // turnos como cliente (ninguno) y el panel quedaba vacío sin un error:

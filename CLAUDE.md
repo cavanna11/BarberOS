@@ -2000,6 +2000,72 @@ dicho en pantalla con el motivo y qué hacer**. Es la diferencia que importa.
 tenerlo. Hay que dárselo a mano desde Administradores, como rol *peluquero
 (solo sus citas)*, con el mail exacto con el que inician sesión.
 
+### El mostrador: rol "cajero" (14/10/2026)
+
+*"Aparte de peluquero, agregar cajera o cajero. Que pueda ver los turnos,
+agendar turnos, cobrar, etcétera. Sin ver las estadísticas totales que ve el
+admin."*
+
+Es un **rol propio**, con su claim, y **no un dueño recortado en la interfaz**.
+La diferencia importa: lo que esconde el panel no es seguridad, y un "dueño con
+el Dashboard oculto" seguiría pudiendo leer la facturación con la consola
+abierta. Lo que un cajero puede y no puede vive en las Rules.
+
+| | dueño | **mostrador** | peluquero |
+|---|---|---|---|
+| Ver la agenda del local | toda | **toda** | solo la suya |
+| Agendar, confirmar, marcar quién vino, cobrar | sí | **sí** | solo en la suya |
+| Turnos fijos | sí | **sí** | solo en la suya |
+| La campanita de turnos nuevos | sí | **sí** | los suyos |
+| Ingresos, histórico, Dashboard | sí | **no** | no |
+| Facturación, plan, abono | sí | **no** | no |
+| Servicios, profesionales, horarios, ausencias | sí | **no** | no |
+| Configuración del local, Administradores | sí | **no** | no |
+
+**Cómo está armado.** `esCajero(bizId)` en las Rules, y `manejaLaAgenda(bizId)`
+= dueño o cajero, que es lo que se usa en `appointments` y `notifications`.
+Todo lo demás pide `isBusinessOwner` o `canManage`, así que **le queda denegado
+por defecto**: es la misma forma que los moderadores de la plataforma, "tiene lo
+que se le dio" y no "tiene todo salvo lo que se le sacó".
+
+`isBusinessStaff` sí lo incluye, y eso le da tres cosas que corresponden:
+registrar su teléfono para los avisos, abrir tickets de soporte, y leer la
+lista de accesos. No le da escritura sobre `staffContacts`: esa regla pide que
+el `professionalId` del claim coincida con el de la ficha, y un cajero no tiene.
+
+**No necesita ficha de profesional.** Un peluquero sí —las Rules le filtran los
+turnos por ese id— y por eso `setBusinessAdmin` se la exige. El mostrador ve
+todo, así que `professionalId` queda en null a propósito.
+
+**Lo que no se movió:** el dueño puede nombrar peluqueros y cajeros de SU
+barbería, y sigue sin poder nombrar dueños. Esa línea es comercial, no técnica.
+
+**En el panel** tiene su propio menú (Citas, Soporte, Instalar la app) y su
+pantalla de inicio son las Citas. `/admin` —el Dashboard, con los ingresos del
+mes y el histórico— **se redirige a mano**: `esSeccionDelDueno` no lo alcanzaba
+porque es ruta exacta (`end: true`), así que escribir la dirección se los
+mostraba enteros.
+
+Ojo con la lista blanca: para el cajero se compara contra SU menú, no contra el
+del peluquero. Si no, le quedaban abiertas "Mi Configuración" y "Mis reseñas",
+que son de alguien que atiende, no del mostrador.
+
+```bash
+node scripts/auditar-rules-emulador.mjs   # 141 casos (15 nuevos de esto)
+node scripts/test-claims-emulador.mjs     # 83 casos (6 nuevos)
+```
+
+Los 15 de Rules son mitad y mitad a propósito: cinco de lo que SÍ puede y diez
+de lo que NO —facturación, el negocio, servicios, profesionales, horarios,
+ausencias, nombrarse admin, borrar turnos, la agenda de la otra barbería y los
+cobros de la plataforma—. Cada uno de esos diez es el motivo por el que el rol
+existe en vez de dar acceso de dueño.
+
+**Lo que NO hace, y hay que decidir si hace falta:** devolver señas
+(`devolverSena`) y aplicar membresías siguen siendo del dueño. Las dos mueven
+plata o benefician a un cliente puntual, y parecía la decisión correcta
+mientras nadie la pida.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
@@ -2263,10 +2329,10 @@ node scripts/test-ausencias.mjs            # el día suelto que un barbero no va
 node scripts/test-orden.mjs                # en qué orden ve el cliente la lista (tampoco)
 ```
 
-Hoy: claims 77, reservas 81, facturación 14, rules 126, alta 22, mercadopago 16,
+Hoy: claims 83, reservas 81, facturación 14, rules 141, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
 turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 51, orden 30.
-Todo en verde (947).
+Todo en verde (968).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

@@ -5,6 +5,9 @@ import { useTenant } from '../../hooks/useTenantData';
 import { setBusinessAdmin, revokeBusinessAdmin } from '../../lib/functions';
 
 const ROLE_ADMIN = { value: 'admin', label: '✂️ Peluquero — solo sus citas' };
+// El mostrador: la agenda entera del local, agendar y cobrar. No ve los
+// números del negocio ni su configuración.
+const ROLE_CAJERO = { value: 'cajero', label: '🧾 Mostrador — toda la agenda, sin los números' };
 const ROLE_OWNER = { value: 'owner', label: '👑 Dueño — acceso total' };
 
 const EMPTY_FORM = { email: '', role: 'admin', professionalId: '', name: '' };
@@ -23,7 +26,7 @@ export default function AdminsPage() {
   // Designar dueños es exclusivo de la plataforma: el dueño es quien paga la
   // cuenta, así que quién lo es no se delega al tenant. La Cloud Function
   // rechaza el intento; acá directamente no se ofrece la opción.
-  const roleOptions = user?.isPlatformOwner ? [ROLE_OWNER, ROLE_ADMIN] : [ROLE_ADMIN];
+  const roleOptions = user?.isPlatformOwner ? [ROLE_OWNER, ROLE_ADMIN, ROLE_CAJERO] : [ROLE_ADMIN, ROLE_CAJERO];
 
   // Solo el dueño entra acá. El corte va DESPUÉS de los hooks: si va antes,
   // React ve una cantidad distinta de hooks entre renders y explota cuando el
@@ -73,6 +76,8 @@ export default function AdminsPage() {
         email: form.email.trim().toLowerCase(),
         businessId,
         role: form.role,
+        // Solo el peluquero tiene ficha: las Rules le filtran los turnos por ese
+        // id. El mostrador ve toda la agenda, así que no le corresponde ninguna.
         professionalId: form.role === 'admin' ? form.professionalId : null,
         name: form.name.trim(),
       });
@@ -163,20 +168,20 @@ export default function AdminsPage() {
                 <tr key={admin.id}>
                   <td>
                     <div className="flex items-center gap-sm">
-                      <span style={{ fontSize: 20 }}>{admin.role === 'owner' ? '👑' : '✂️'}</span>
+                      <span style={{ fontSize: 20 }}>{admin.role === 'owner' ? '👑' : admin.role === 'cajero' ? '🧾' : '✂️'}</span>
                       <span>{admin.email}</span>
                       {isMe && <span className="badge badge-primary" style={{ fontSize: 10 }}>Vos</span>}
                     </div>
                   </td>
                   <td className="oculta-mobile">{admin.name || '—'}</td>
                   <td>
-                    <span className={`badge ${admin.role === 'owner' ? 'badge-primary' : 'badge-success'}`}>
-                      {admin.role === 'owner' ? 'Dueño' : 'Peluquero'}
+                    <span className={`badge ${admin.role === 'owner' ? 'badge-primary' : admin.role === 'cajero' ? 'badge-warning' : 'badge-success'}`}>
+                      {admin.role === 'owner' ? 'Dueño' : admin.role === 'cajero' ? 'Mostrador' : 'Peluquero'}
                     </span>
                   </td>
                   <td className="oculta-mobile">
                     {prof?.name
-                      || (admin.role === 'owner' ? '—'
+                      || (admin.role !== 'admin' ? '—'
                         : <span className="badge badge-danger">⚠️ {admin.professionalId ? 'Perfil inexistente' : 'Sin asignar'}</span>)}
                   </td>
                   <td className="text-sm text-secondary oculta-mobile">
@@ -210,6 +215,7 @@ export default function AdminsPage() {
           <li><strong>Quien no está en la lista</strong> → va al flujo normal de reserva de clientes.</li>
           <li><strong>Dueño</strong>: ve todas las citas, estadísticas globales y puede modificar todo.</li>
           <li><strong>Peluquero</strong>: solo ve las citas asignadas a su perfil de profesional.</li>
+          <li><strong>Mostrador</strong>: ve y maneja la agenda <em>entera</em> del local —agendar, confirmar, marcar quién vino y cobrar— pero no ve los ingresos ni el resto de los números del negocio, ni su configuración. Para quien atiende la caja sin cortar el pelo.</li>
         </ul>
       </div>
 

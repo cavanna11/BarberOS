@@ -171,11 +171,18 @@ exports.setBusinessAdmin = onCall(async (request) => {
   // para tantear. No exponía nada real, pero el orden correcto es este.
   const caller = assertCanManageAdmins(request, businessId);
 
-  if (!email || !businessId || !['owner', 'admin'].includes(role)) {
+  // 'cajero' es el mostrador: ve y maneja la agenda ENTERA del local y cobra,
+  // pero no ve la caja del negocio ni toca su configuración. Es un rol más, con
+  // claim propio, y no un owner recortado en la interfaz: lo que esconde el
+  // panel no es seguridad, y la diferencia entre los dos tiene que vivir en las
+  // Rules.
+  if (!email || !businessId || !['owner', 'admin', 'cajero'].includes(role)) {
     throw new HttpsError('invalid-argument', 'Faltan email, businessId o role válido.');
   }
 
-  if (caller !== 'platform' && role !== 'admin') {
+  // El dueño puede nombrar peluqueros y cajeros de SU barbería. Dueños, no:
+  // quién paga la cuenta es una decisión comercial y no se delega al tenant.
+  if (caller !== 'platform' && role === 'owner') {
     throw new HttpsError('permission-denied', 'Solo la plataforma puede designar dueños.');
   }
 

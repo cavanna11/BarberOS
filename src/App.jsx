@@ -90,7 +90,8 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false })
     return <SinAcceso />;
   }
 
-  if (adminOnly && user?.role !== 'admin' && user?.role !== 'owner' && !platformOwner) {
+  const ROLES_DEL_PANEL = ['admin', 'owner', 'cajero'];
+  if (adminOnly && !ROLES_DEL_PANEL.includes(user?.role) && !platformOwner) {
     return <SinAcceso />;
   }
 

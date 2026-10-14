@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import CampanaNotificaciones from '../admin/CampanaNotificaciones';
-import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBusiness } from '../../contexts/BusinessContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
@@ -52,9 +52,20 @@ const adminNavItems = [
   { to: '/admin/instalar', icon: '📲', label: 'Instalar la app' },
 ];
 
+// El mostrador: la agenda ENTERA del local, agendar y cobrar. Sin Dashboard,
+// porque ahí vive lo que no le corresponde: ingresos del mes, histórico y el
+// resto de los números del negocio. Su pantalla de inicio son las Citas, que es
+// donde pasa el día.
+const cajeroNavItems = [
+  { to: '/admin/citas',    icon: '📅', label: 'Citas', end: true },
+  { to: '/admin/soporte',  icon: '💬', label: 'Soporte' },
+  { to: '/admin/instalar', icon: '📲', label: 'Instalar la app' },
+];
+
 const ROLE_LABELS = {
   owner: { text: 'Dueño',  color: 'var(--primary)' },
   admin: { text: 'Peluquero', color: 'var(--success)' },
+  cajero: { text: 'Mostrador', color: 'var(--warning)' },
 };
 
 // Mismo número que la landing y el widget flotante. Si cambia, cambia en los tres.
@@ -125,6 +136,7 @@ export default function AdminLayout() {
   };
 
   const isOwner = user?.role === 'owner';
+  const esCajero = user?.role === 'cajero';
 
   // La plataforma entrando a una cuenta con varias sucursales: lo primero es
   // ELEGIR cuál administrar, y hasta entonces no se muestra ni el menú ni
@@ -174,7 +186,7 @@ export default function AdminLayout() {
     return true;
   };
 
-  const todosLosItems = (isOwner ? ownerNavItems : adminNavItems).map(
+  const todosLosItems = (isOwner ? ownerNavItems : esCajero ? cajeroNavItems : adminNavItems).map(
     (item) => ({ ...item, incluido: estaIncluido(item) })
   );
   const navItems = todosLosItems.filter((i) => i.incluido);
@@ -245,9 +257,13 @@ export default function AdminLayout() {
   // Las secciones del dueño, escritas a mano en la barra por un barbero: no se
   // muestran. Guardar no podría igual (las Rules lo frenan), pero ver la
   // configuración del local o las membresías no le corresponde.
+  // Para el cajero la lista blanca es la suya, no la del peluquero: si se
+  // comparara contra `adminNavItems` le quedarían abiertas "Mi Configuración" y
+  // "Mis reseñas", que son de alguien que atiende, no del mostrador.
+  const permitidos = esCajero ? cajeroNavItems : adminNavItems;
   const esSeccionDelDueno = (ruta) => !isOwner && !platformOwner
     && ownerNavItems.some((i) => !i.end && ruta.startsWith(i.to))
-    && !adminNavItems.some((i) => !i.end && ruta.startsWith(i.to));
+    && !permitidos.some((i) => !i.end && ruta.startsWith(i.to));
 
   // Con el menú más largo que la pantalla, la sección en la que estás puede
   // quedar fuera de vista: se trae al medio al cambiar de pantalla.
@@ -542,7 +558,14 @@ export default function AdminLayout() {
             contenido para que no empuje la barra ni el aviso de vínculo roto. */}
         <div className="admin-content">
           <AvisoPlataforma />
-          {business && debeElegirSucursal ? (
+          {/* `/admin` es el Dashboard, con ingresos del mes, histórico y el resto
+              de los números del negocio. `esSeccionDelDueno` no lo alcanza
+              porque es ruta exacta (`end: true`), así que el mostrador se
+              redirige a mano. Sin esto, escribir la dirección se los mostraba
+              enteros — y lo que esconde el menú no es seguridad. */}
+          {esCajero && pathname === '/admin' ? (
+            <Navigate to="/admin/citas" replace />
+          ) : business && debeElegirSucursal ? (
             <ElegirSucursalPanel sucursales={sucursales} grupoId={grupoCuenta} nombreCuenta={nombreCuenta} esPlataforma={platformOwner} onElegir={elegirSucursal} />
           ) : business && esSeccionDelDueno(pathname) ? (
             <div className="card empty-state" style={{ padding: 'var(--space-2xl)' }}>

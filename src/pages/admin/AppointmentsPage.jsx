@@ -79,7 +79,10 @@ export default function AppointmentsPage() {
     appointments, professionals, services, business, businessId, esMultiSucursal,
   } = useTenant();
 
-  const isOwner = user?.role === 'owner';
+  // `isOwner` acá no significa "es el dueño": significa "ve la agenda entera".
+  // El mostrador también, y es el motivo por el que existe el rol. Lo que NO
+  // ve son los números del negocio, y eso no se decide en esta pantalla.
+  const isOwner = user?.role === 'owner' || user?.role === 'cajero';
 
   // Sucursal: '' = todas, o el id de una. Elegir una puntual la vuelve la
   // activa (lo hace FiltroSucursal) y entonces los datos salen del contexto,

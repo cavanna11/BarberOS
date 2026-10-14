@@ -348,5 +348,26 @@ r = await llamar('setPlatformModerator', tPlataforma, { email: 'moderador@sacia.
 chequear('la plataforma le quita el rol', r.ok?.status === 'revoked', JSON.stringify(r));
 chequear('le quedan los claims vacios', Object.keys((await auth.getUser(uidMod)).customClaims || {}).length === 0, '');
 
+// ── El mostrador (cajero) ───────────────────────────────────────────────────
+// El dueno puede nombrarlo, no necesita ficha de profesional, y sigue sin poder
+// nombrar duenos: esa es la linea que no se mueve.
+console.log('\nEl mostrador (cajero):');
+r = await llamar('setBusinessAdmin', tDuenoB1, { email: 'cajera@gmail.com', businessId: B1, role: 'cajero' });
+chequear('el dueno nombra a una cajera', ['applied', 'pending'].includes(r.ok?.status), JSON.stringify(r));
+
+r = await llamar('setBusinessAdmin', tDuenoB1, { email: 'cajera2@gmail.com', businessId: B1, role: 'cajero', professionalId: null });
+chequear('no necesita ficha de profesional', ['applied', 'pending'].includes(r.ok?.status), JSON.stringify(r));
+
+r = await llamar('setBusinessAdmin', tDuenoB1, { email: 'otro@gmail.com', businessId: B1, role: 'dueno' });
+chequear('un rol inventado se rechaza', Boolean(r.error), JSON.stringify(r));
+
+r = await llamar('setBusinessAdmin', tDuenoB1, { email: 'otro@gmail.com', businessId: B1, role: 'owner' });
+chequear('el dueno SIGUE sin poder nombrar duenos', Boolean(r.error), JSON.stringify(r));
+
+const pendCajera = (await db.doc('pendingAdmins/cajera@gmail.com').get()).data()
+  || (await auth.getUserByEmail('cajera@gmail.com').then((u) => u.customClaims).catch(() => null));
+chequear('el claim que le queda dice cajero', pendCajera?.role === 'cajero', JSON.stringify(pendCajera));
+chequear('y sin professionalId', (pendCajera?.professionalId ?? null) === null, JSON.stringify(pendCajera));
+
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron\n`);
 process.exit(fallaron ? 1 : 0);
