@@ -218,3 +218,168 @@ export function diagnosticoDelIntervalo(servicios = [], slotInterval = 30) {
   if (sugerido === null) return { estado: 'desalineados', duraciones, perdidas, culpables };
   return { estado: 'mejorable', duraciones, perdidas, sugerido, culpables };
 }
+
+// ============================================================================
+// El intervalo automático: calculado con los turnos que de verdad salieron
+// ============================================================================
+// El MCD de las duraciones trata a todos los servicios como si salieran igual,
+// y eso es lo que lo hacía dar un consejo equivocado. Caso real: Volcado Club
+// tiene corte de 60 y barba de 30, con la grilla en 60. El MCD dice 30 y el
+// panel le ofrecía el botón para cambiarlo — pero el 90% de sus turnos son el
+// corte de 60, y la barba casi no sale.
+//
+// Simulado sobre 6000 días (jornada de 11 h, 13 pedidos, el cliente se corre
+// hasta una hora de su horario preferido antes de no reservar), barriendo
+// cuánto sale la barba:
+//
+//   sale el  5% → grilla 60 vende 32 min/día MÁS que la de 30
+//           10% → +22        (este es Volcado)
+//           15% → +11
+//           20% → empatan           ← el cruce
+//           25% → grilla 30 vende 9 min/día más
+//           40% → +34
+//           50% → +51
+//
+// **El cruce está en 1 de cada 5.** Si el servicio que no encaja en la grilla
+// sale menos que eso, los minutos que deja sueltos son menos que los que se
+// pierden fragmentando el día; si sale más, conviene bajar al MCD.
+//
+// Y con la grilla gruesa hay tiempo muerto de verdad (17 a 27 min/día en
+// Volcado: el rato que deja cada barba), solo que vende más igual. Eso se le
+// muestra, no se le esconde: la recomendación dice qué se gana Y qué se pierde.
+//
+// De ahí sale la regla, que además se puede explicar en una frase:
+//
+//   la grilla va a la duración del servicio que MÁS te piden, salvo que los que
+//   no encajan ahí sumen más de 1 de cada 5 turnos — entonces va el MCD.
+
+/** Cuántos días de turnos se miran. Tres meses: aguanta un mes flojo. */
+export const DIAS_DE_HISTORIAL = 90;
+
+/**
+ * Menos turnos que esto no son una mezcla, son una anécdota.
+ *
+ * Con 8 turnos, uno solo de barba ya pesa 12% y dos pesan 25%: la respuesta
+ * salta de un lado al otro del cruce por un turno. Debajo de este número se
+ * dice que todavía no hay con qué, y se vuelve al MCD, que no pierde nada con
+ * ninguna mezcla.
+ */
+export const TURNOS_MINIMOS = 20;
+
+/** El cruce medido: hasta acá, el servicio que no encaja no justifica bajar. */
+export const PROPORCION_TOLERADA = 0.20;
+
+function fechaMenos(dias, hoy) {
+  const d = new Date(hoy);
+  d.setDate(d.getDate() - dias);
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Cuántos turnos salieron de cada duración, en los últimos `dias`.
+ *
+ * La duración sale del servicio COMO ESTÁ HOY, no de lo que duraba el turno
+ * cuando se tomó: lo que se está decidiendo es la grilla de acá en adelante.
+ *
+ * No se cuentan los cancelados —no ocuparon lugar— ni los adicionales, que no
+ * se reservan solos. Los "no vino" SÍ cuentan: el horario estuvo tomado, que es
+ * lo único que le importa a la grilla.
+ */
+export function mezclaDeTurnos(turnos = [], servicios = [], { dias = DIAS_DE_HISTORIAL, hoy = new Date() } = {}) {
+  const desde = fechaMenos(dias, hoy);
+  const porId = new Map();
+  for (const s of servicios) {
+    if (!s || s.isActive === false || s.adicional === true) continue;
+    const dur = Math.round(Number(s.durationMinutes));
+    if (Number.isFinite(dur) && dur > 0) porId.set(s.id, { nombre: s.name, dur });
+  }
+
+  const grupos = new Map();
+  let total = 0;
+  for (const t of turnos) {
+    if (!t || t.status === 'cancelada') continue;
+    if (!t.appointmentDate || t.appointmentDate < desde) continue;
+    const srv = porId.get(t.serviceId);
+    if (!srv) continue; // servicio borrado, o pasado a adicional
+    total += 1;
+    const g = grupos.get(srv.dur) || { duracion: srv.dur, turnos: 0, nombres: new Map() };
+    g.turnos += 1;
+    g.nombres.set(srv.nombre, (g.nombres.get(srv.nombre) || 0) + 1);
+    grupos.set(srv.dur, g);
+  }
+
+  const lista = [...grupos.values()]
+    .map((g) => ({
+      duracion: g.duracion,
+      turnos: g.turnos,
+      proporcion: total ? g.turnos / total : 0,
+      // El nombre con el que el barbero lo reconoce: el más pedido de esa duración.
+      nombre: [...g.nombres.entries()].sort((a, b) => b[1] - a[1])[0][0],
+    }))
+    // Más pedido primero. A igual cantidad, el más corto: con la duda, la
+    // grilla más fina es la que no deja tiempo muerto.
+    .sort((a, b) => b.turnos - a.turnos || a.duracion - b.duracion);
+
+  return { total, desde, grupos: lista };
+}
+
+/**
+ * El intervalo que conviene según la mezcla real. Null si no alcanza para opinar.
+ *
+ * `motivo`:
+ *   'mas-pedido'    la grilla es la duración del servicio que más sale
+ *   'mcd'           los que no encajaban pesaban demasiado: va el MCD
+ *   'desalineados'  ni el MCD sirve (cae por debajo de 10): hay que redondear
+ *                   las duraciones en Servicios
+ */
+export function intervaloPorDemanda(mezcla) {
+  const grupos = mezcla?.grupos || [];
+  if (!grupos.length) return null;
+
+  const g = grupos.map((x) => x.duracion).reduce((a, b) => mcd(a, b));
+  const comun = g >= INTERVALO_SUGERIBLE_MIN && g <= INTERVALO_MAX ? g : null;
+
+  const masPedido = grupos[0];
+  const noEncajan = grupos.filter((x) => x.duracion % masPedido.duracion !== 0);
+  const pesoQueNoEncaja = noEncajan.reduce((a, x) => a + x.proporcion, 0);
+
+  if (masPedido.duracion <= INTERVALO_MAX && pesoQueNoEncaja <= PROPORCION_TOLERADA) {
+    return { intervalo: masPedido.duracion, motivo: 'mas-pedido', masPedido, noEncajan, pesoQueNoEncaja, comun };
+  }
+  if (comun === null) {
+    return { intervalo: null, motivo: 'desalineados', masPedido, noEncajan, pesoQueNoEncaja, comun };
+  }
+  return { intervalo: comun, motivo: 'mcd', masPedido, noEncajan, pesoQueNoEncaja, comun };
+}
+
+/**
+ * La recomendación completa, lista para pintar. Es lo que mira el componente.
+ *
+ * Cuando hay historial, ESTA es la única que opina: el diagnóstico por MCD
+ * (`diagnosticoDelIntervalo`) queda para la barbería que todavía no tiene
+ * turnos cargados. Si opinaran las dos a la vez se contradicen — en Volcado,
+ * una diría 60 y la otra 30 — y dos consejos opuestos en la misma pantalla no
+ * son más información, son ninguna.
+ */
+export function recomendacionAutomatica(servicios = [], turnos = [], opciones = {}) {
+  const dias = opciones.dias || DIAS_DE_HISTORIAL;
+  if (!duracionesDe(servicios).length) return { hay: false, motivo: 'sin-servicios', dias };
+
+  const mezcla = mezclaDeTurnos(turnos, servicios, opciones);
+  const r = mezcla.total >= TURNOS_MINIMOS ? intervaloPorDemanda(mezcla) : null;
+  if (!r) return { hay: false, motivo: 'sin-historial', turnos: mezcla.total, dias };
+
+  return {
+    hay: r.intervalo !== null,
+    motivo: r.motivo,
+    intervalo: r.intervalo,
+    mezcla,
+    masPedido: r.masPedido,
+    noEncajan: r.noEncajan,
+    pesoQueNoEncaja: r.pesoQueNoEncaja,
+    comun: r.comun,
+    turnos: mezcla.total,
+    dias,
+  };
+}

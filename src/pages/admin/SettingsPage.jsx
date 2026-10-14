@@ -30,7 +30,7 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const { business, businessId } = useCurrentBusiness();
   // Los servicios, para poder decirle si su grilla le hace perder tiempo.
-  const { services } = useTenant();
+  const { services, appointments } = useTenant();
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -218,6 +218,7 @@ export default function SettingsPage() {
                 <IntervaloDeTurnos
                   valor={form.slotInterval}
                   servicios={services}
+                  turnos={appointments}
                   businessHours={form.businessHours}
                   onChange={(v) => editar({ slotInterval: v })}
                 />

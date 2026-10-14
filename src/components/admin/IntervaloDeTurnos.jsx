@@ -1,26 +1,51 @@
 import {
   INTERVALO_MIN, INTERVALO_MAX, normalizarIntervalo,
-  diagnosticoDelIntervalo, turnosQueEntran, jornadaSemanal,
+  diagnosticoDelIntervalo, desperdicioPorServicio, recomendacionAutomatica,
+  DIAS_DE_HISTORIAL, TURNOS_MINIMOS,
 } from '../../utils/intervalo';
 
 // ============================================================================
-// "Cada cuánto se ofrece un turno" — el número y el consejo
+// "Cada cuánto se ofrece un turno" — el número, y de dónde sacarlo
 // ============================================================================
-// Antes era un desplegable con cuatro opciones (15, 30, 45, 60). Dos problemas:
-// el barbero no podía poner el suyo, y sobre todo nadie le decía que el número
-// que tenía puesto le estaba costando horas.
+// Tres versiones de esta pantalla, y cada una existe por algo que pasó:
 //
-// El caso que lo destapó: corte clásico 20 minutos, degradé 40, grilla cada 30.
-// Medido con el motor sobre una jornada de 09:00 a 20:00 con 15 turnos: con 30
-// se pierden 200 minutos y el día termina 19:20; con 20 se pierde CERO y el
-// mismo trabajo termina 16:00.
+// 1. Un desplegable de cuatro opciones (15, 30, 45, 60). El barbero del corte
+//    de 20 y el degradé de 40 no tenía su número.
+// 2. Un campo libre con el consejo del MCD de las duraciones. Mejor, pero el
+//    MCD trata a todos los servicios como si salieran igual — y a Volcado Club,
+//    que tiene corte de 60 (el 90% de sus turnos) y barba de 30, le ofrecía el
+//    botón para bajar la grilla a 30. Medido: le costaría ~22 minutos
+//    vendibles por día.
+// 3. Esta. El campo libre no se toca —el que ya lo configuró se queda con lo
+//    suyo— y arriba se agrega el cálculo hecho con SUS turnos, que es la única
+//    forma de saber qué servicio manda su día.
 //
-// El problema no es tener servicios de distinta duración: es que 30 no divide
-// ni a 20 ni a 40. Por eso acá no alcanza con dejar escribir el número — hay
-// que mostrar la cuenta. Un número suelto no se puede decidir bien.
+// Y una cosa más, que es la que motivó todo: el barbero no entiende qué es un
+// "intervalo", y con razón, porque ya puso cuánto dura cada servicio. Así que
+// acá no se le explica el concepto: se le muestra el resultado, "tus clientes
+// ven 09:00, 10:00, 11:00". Eso no hay que explicarlo.
 
 function Aviso({ tipo, children }) {
   return <div className={`notice notice-${tipo} intervalo-aviso`}>{children}</div>;
+}
+
+/** 1 de cada N, que es como un barbero cuenta. */
+function unoDeCada(proporcion) {
+  if (!(proporcion > 0)) return null;
+  return Math.max(2, Math.round(1 / proporcion));
+}
+
+/** Los primeros horarios que va a ver el cliente, con el horario real del local. */
+function horariosDeMuestra(businessHours = [], paso, cuantos = 4) {
+  const dia = businessHours.find((d) => d && d.isActive !== false && d.startTime);
+  const [h, m] = String(dia?.startTime || '09:00').split(':').map(Number);
+  let t = (Number.isFinite(h) ? h : 9) * 60 + (Number.isFinite(m) ? m : 0);
+  const salida = [];
+  for (let i = 0; i < cuantos; i += 1) {
+    salida.push(`${String(Math.floor(t / 60) % 24).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+    t += paso;
+  }
+  return salida;
 }
 
 /**
@@ -52,18 +77,166 @@ function Culpables({ culpables }) {
   );
 }
 
-export default function IntervaloDeTurnos({ valor, servicios = [], businessHours = [], onChange }) {
-  const intervalo = normalizarIntervalo(valor);
-  const d = diagnosticoDelIntervalo(servicios, intervalo);
+/** Cómo llega el automático a su número. Cerrado por defecto: es la letra chica. */
+function ComoLoCalcula() {
+  return (
+    <details className="intervalo-como">
+      <summary>¿Cómo lo calcula?</summary>
+      <div className="intervalo-como-cuerpo">
+        <p className="text-sm">
+          Cuenta cuántos turnos salieron de cada servicio en los últimos {DIAS_DE_HISTORIAL} días
+          y pone la grilla en la duración del <strong>servicio que más te piden</strong>. Ese es
+          la mayor parte de tu día, así que uno entra justo detrás del otro y no quedan minutos
+          sueltos en el medio.
+        </p>
+        <p className="text-sm">
+          Los que duran el doble o el triple también encajan solos: en una grilla de 30 minutos
+          entra uno de 60 sin perder nada.
+        </p>
+        <p className="text-sm">
+          Si hay un servicio que <em>no</em> encaja ahí y te sale <strong>más de 1 de cada 5
+          turnos</strong>, baja la grilla a un número que les cierre a todos. Debajo de 1 de
+          cada 5 no conviene: partir el día en pedazos más chicos para ese servicio te hace
+          perder más horarios de los que te ahorra. Ese límite está medido simulando miles de
+          días de reservas, no elegido a ojo.
+        </p>
+        <p className="text-sm text-muted">
+          Hacen falta al menos {TURNOS_MINIMOS} turnos cargados. Con menos, un turno solo cambia
+          la cuenta y no serviría de nada.
+        </p>
+      </div>
+    </details>
+  );
+}
 
-  // La jornada real del local, para decir "entran X turnos" con su horario y no
-  // con uno inventado. Si todavía no cargó horario, se cae a una semana típica.
-  const semana = jornadaSemanal(businessHours) || 3300;
-  const dia = Math.round(semana / Math.max(1, businessHours.filter((x) => x?.isActive !== false).length || 6));
+/**
+ * El panel de arriba: el número que sale de los turnos reales.
+ *
+ * Cuando esto puede opinar, es lo ÚNICO que opina. El diagnóstico por MCD queda
+ * para la barbería sin historial: si hablaran los dos a la vez se contradicen
+ * —en Volcado uno diría 60 y el otro 30— y dos consejos opuestos en la misma
+ * pantalla no son más información, son ninguna.
+ */
+function PanelAutomatico({ auto, intervalo, servicios, onChange }) {
+  if (auto.motivo === 'sin-servicios') return null;
+
+  if (!auto.hay) {
+    const faltaHistorial = auto.motivo === 'sin-historial';
+    return (
+      <div className="intervalo-auto intervalo-auto-mudo">
+        <p className="text-sm">
+          <strong>Calcularlo con tus turnos:</strong>{' '}
+          {faltaHistorial ? (
+            <>
+              todavía no se puede. Tenés {auto.turnos} turno{auto.turnos === 1 ? '' : 's'} en los
+              últimos {auto.dias} días y hacen falta {TURNOS_MINIMOS} para saber qué servicio
+              manda tu día. Cuando los tengas, acá te va a decir el número que te conviene.
+            </>
+          ) : (
+            <>
+              tus servicios duran números que no se llevan bien entre ellos, así que no hay una
+              grilla que les cierre a todos. Mirá el aviso de abajo.
+            </>
+          )}
+        </p>
+        <ComoLoCalcula />
+      </div>
+    );
+  }
+
+  const yaEsta = normalizarIntervalo(intervalo) === auto.intervalo;
+  const { masPedido, noEncajan, mezcla } = auto;
+  // Lo que cuesta la grilla recomendada, para no vendérsela como gratis.
+  // Lo que cuesta la grilla recomendada, para no vendersela como gratis. Solo
+  // los servicios que de verdad se piden: avisar por el tiempo suelto de uno
+  // que nadie reserva es ruido, y encima debilita el resto del cartel.
+  const seVenden = new Set(mezcla.grupos.map((g) => g.duracion));
+  const sueltos = desperdicioPorServicio(servicios, auto.intervalo)
+    .filter((x) => x.desperdicio > 0 && seVenden.has(x.duracion));
+
+  return (
+    <div className={`intervalo-auto ${yaEsta ? 'intervalo-auto-ok' : 'intervalo-auto-cambio'}`}>
+      <div className="intervalo-auto-titulo">
+        {yaEsta ? (
+          <strong>Ya lo tenés en el que te conviene: cada {auto.intervalo} minutos.</strong>
+        ) : (
+          <strong>Según tus turnos te conviene cada {auto.intervalo} minutos.</strong>
+        )}
+        {!yaEsta && (
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => onChange(auto.intervalo)}>
+            Usar {auto.intervalo} minutos
+          </button>
+        )}
+      </div>
+
+      <p className="text-sm intervalo-auto-cuenta">
+        De tus últimos <strong>{mezcla.total} turnos</strong>, el que más te piden es{' '}
+        <strong>{masPedido.nombre}</strong>{' '}
+        <span className="text-muted">({masPedido.duracion} min)</span>: {masPedido.turnos} de{' '}
+        {mezcla.total}.
+      </p>
+
+      {auto.motivo === 'mas-pedido' && noEncajan.length > 0 && (
+        <p className="text-sm intervalo-auto-cuenta">
+          {noEncajan.map((x, i) => (
+            <span key={x.duracion}>
+              {i > 0 && ', '}
+              <strong>{x.nombre}</strong> <span className="text-muted">({x.duracion} min)</span>
+            </span>
+          ))}
+          {' '}no entra{noEncajan.length === 1 ? '' : 'n'} redondo en esa grilla, pero sale
+          {noEncajan.length === 1 ? '' : 'n'}{' '}
+          <strong>1 de cada {unoDeCada(auto.pesoQueNoEncaja)}</strong> turnos. Por tan poco no
+          conviene partirle el día al que más sale.
+        </p>
+      )}
+
+      {auto.motivo === 'mcd' && (
+        <p className="text-sm intervalo-auto-cuenta">
+          Pero{' '}
+          {noEncajan.map((x, i) => (
+            <span key={x.duracion}>
+              {i > 0 && ' y '}
+              <strong>{x.nombre}</strong> <span className="text-muted">({x.duracion} min)</span>
+            </span>
+          ))}
+          {' '}sale{noEncajan.length === 1 ? '' : 'n'}{' '}
+          <strong>1 de cada {unoDeCada(auto.pesoQueNoEncaja)}</strong> turnos, que ya es seguido.
+          Con la grilla de {auto.intervalo} minutos entran todos sin dejar tiempo muerto.
+        </p>
+      )}
+
+      {sueltos.length > 0 && (
+        <p className="text-sm text-muted intervalo-auto-cuenta">
+          Con esta grilla, cada{' '}
+          {sueltos.map((s, i) => (
+            <span key={s.id}>
+              {i > 0 && (i === sueltos.length - 1 ? ' y cada ' : ', ')}
+              {s.name} deja {s.desperdicio} min sueltos
+            </span>
+          ))}
+          . Ya está contado: igual te conviene.
+        </p>
+      )}
+
+      <ComoLoCalcula />
+    </div>
+  );
+}
+
+export default function IntervaloDeTurnos({ valor, servicios = [], turnos = [], businessHours = [], onChange }) {
+  const intervalo = normalizarIntervalo(valor);
+  const auto = recomendacionAutomatica(servicios, turnos);
+  // Con historial manda el automático; sin él, el consejo por MCD de siempre.
+  const d = auto.hay ? { estado: 'callado' } : diagnosticoDelIntervalo(servicios, intervalo);
+
+  const muestra = horariosDeMuestra(businessHours, intervalo);
 
   return (
     <div className="form-group">
       <label className="form-label" htmlFor="slotInterval">Cada cuánto se ofrece un turno</label>
+
+      <PanelAutomatico auto={auto} intervalo={intervalo} servicios={servicios} onChange={onChange} />
 
       <div className="intervalo-campo">
         <input
@@ -83,8 +256,8 @@ export default function IntervaloDeTurnos({ valor, servicios = [], businessHours
       </div>
 
       <p className="text-sm text-muted" style={{ marginTop: 6 }}>
-        Es el paso de la grilla que ve el cliente. Con {intervalo}, ve los horarios de a {intervalo} minutos.
-        La duración de cada turno la define el servicio.
+        Tus clientes ven <strong>{muestra.join(' · ')}</strong>… La duración de cada turno la
+        sigue definiendo el servicio que elijan.
       </p>
 
       {d.estado === 'mejorable' && (
@@ -104,12 +277,6 @@ export default function IntervaloDeTurnos({ valor, servicios = [], businessHours
           </ul>
           <p className="text-sm" style={{ margin: '8px 0 10px' }}>
             Con la grilla <strong>cada {d.sugerido} minutos</strong> no se pierde ninguno.
-            {d.perdidas[0] && (
-              <> En un día de {Math.round(dia / 60)} horas te entran{' '}
-                <strong>{turnosQueEntran(d.perdidas[0].duracion, d.sugerido, dia)} turnos</strong>
-                {' '}de {d.perdidas[0].name} en vez de{' '}
-                {turnosQueEntran(d.perdidas[0].duracion, intervalo, dia)}.</>
-            )}
           </p>
           <Culpables culpables={d.culpables} />
           <button type="button" className="btn btn-primary btn-sm" onClick={() => onChange(d.sugerido)}>
@@ -148,13 +315,8 @@ export default function IntervaloDeTurnos({ valor, servicios = [], businessHours
           <p className="text-sm" style={{ margin: '6px 0' }}>
             Con {intervalo} minutos no se pierde tiempo entre turnos, pero tampoco hace falta ir
             tan fino: tus servicios duran {d.duraciones.join(', ')} minutos y con{' '}
-            <strong>{d.sugerido}</strong> pasa exactamente lo mismo.
-          </p>
-          <p className="text-sm" style={{ margin: '0 0 6px' }}>
-            Dos cosas mejoran: el cliente ve{' '}
-            <strong>{Math.floor(dia / d.sugerido)} horarios</strong> en vez de {Math.floor(dia / intervalo)}
-            {' '}—una lista que se lee—, y se achica el riesgo de que entre turno y turno te queden
-            huecos de {intervalo} minutos donde no entra ningún servicio.
+            <strong>{d.sugerido}</strong> pasa exactamente lo mismo, con una lista de horarios que
+            se lee.
           </p>
           <button type="button" className="btn btn-outline btn-sm" onClick={() => onChange(d.sugerido)}>
             Usar {d.sugerido} minutos
