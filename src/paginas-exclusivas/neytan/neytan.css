@@ -134,26 +134,39 @@
   to   { opacity: 1; transform: none; }
 }
 
+/* Abierto / cerrado. Pedido del cliente: que se note de lejos — el punto
+   titila y la palabra va en color, verde abierto y rojo cerrado. El color sale
+   de `--nx-estado`, así las dos versiones comparten las mismas animaciones. */
 .nx-estado {
+  --nx-estado: #ff3b3b;
   display: inline-flex; align-items: center; gap: 8px;
   margin: 0;
   padding: 6px 12px;
-  border: 1px solid var(--nx-linea);
+  border: 1px solid color-mix(in srgb, var(--nx-estado) 45%, transparent);
   border-radius: 999px;
+  background: color-mix(in srgb, var(--nx-estado) 8%, transparent);
   font-family: var(--nx-mono); font-size: 0.72rem; letter-spacing: 0.06em;
   color: var(--nx-suave);
-  animation: nx-sube .7s .25s both;
+  animation: nx-sube .7s .25s both, nx-aro 2s ease-in-out 1s infinite;
 }
-.nx-punto { width: 7px; height: 7px; border-radius: 50%; background: #8a8a8a; }
-.nx-estado-abierto { color: var(--nx-texto); }
-.nx-estado-abierto .nx-punto {
-  background: var(--nx-verde);
-  box-shadow: 0 0 0 0 var(--nx-verde);
-  animation: nx-late 2s infinite;
+.nx-estado-abierto { --nx-estado: var(--nx-verde); color: var(--nx-texto); }
+.nx-estado-palabra { color: var(--nx-estado); font-weight: 700; }
+.nx-punto {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--nx-estado);
+  animation: nx-titila 1.4s ease-in-out infinite, nx-late 1.4s ease-out infinite;
+}
+@keyframes nx-titila {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .25; }
 }
 @keyframes nx-late {
-  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--nx-verde) 70%, transparent); }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--nx-estado) 70%, transparent); }
   100% { box-shadow: 0 0 0 8px transparent; }
+}
+@keyframes nx-aro {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50%      { box-shadow: 0 0 14px -2px color-mix(in srgb, var(--nx-estado) 45%, transparent); }
 }
 
 .nx-promo {

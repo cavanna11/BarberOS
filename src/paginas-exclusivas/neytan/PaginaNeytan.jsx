@@ -245,7 +245,7 @@ export default function PaginaNeytan({ business, pagina, servicios = [], slug, c
           {estado && (
             <p className={`nx-estado ${estado.abierto ? 'nx-estado-abierto' : ''}`}>
               <span className="nx-punto" aria-hidden="true" />
-              {estado.abierto ? 'Abierto' : 'Cerrado'} · {estado.texto}
+              <span className="nx-estado-palabra">{estado.abierto ? 'Abierto' : 'Cerrado'}</span> · {estado.texto}
             </p>
           )}
 
