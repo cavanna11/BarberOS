@@ -13,7 +13,7 @@ import { limitesDelNegocio, puede } from '../../config/plans';
 import FotoPerfil from '../../components/admin/FotoPerfil';
 import HorarioSemanal from '../../components/admin/HorarioSemanal';
 import AusenciasDelBarbero from '../../components/admin/AusenciasDelBarbero';
-import { estadoPushDelEquipo, crearProfesional } from '../../lib/functions';
+import { estadoPushDelEquipo, crearProfesional, setBusinessAdmin } from '../../lib/functions';
 import { errorDeHorario } from '../../utils/horarios';
 import FiltroSucursal from '../../components/admin/FiltroSucursal';
 import { useDatosDeSucursales } from '../../hooks/useDatosDeSucursales';
@@ -67,8 +67,15 @@ export default function ProfessionalsPage() {
   // Modal propio y no una sección del de editar: las ausencias se guardan al
   // toque, y ahí adentro "Cancelar" parecería deshacerlas.
   const [ausenciasDe, setAusenciasDe] = useState(null);
+  // Qué pasó con el acceso al panel del barbero que se acaba de crear. Se
+  // muestra en vez de tragárselo: un barbero cargado sin acceso entra como
+  // cliente y no ve sus turnos, y nadie se entera hasta que él se queja.
+  const [avisoAcceso, setAvisoAcceso] = useState(null);
   const [editing, setEditing]         = useState(null);
   const [form, setForm]               = useState({ name: '', specialty: '', phone: '', email: '', bio: '' });
+  // Prendido por defecto: cargar un barbero y que pueda ver sus turnos es lo
+  // mismo para quien lo carga. Se puede apagar para el que no usa el sistema.
+  const [darAcceso, setDarAcceso]     = useState(true);
   const [editSchedules, setEditSchedules] = useState([]);
   const [editServices, setEditServices]   = useState([]); // serviceIds seleccionados
 
@@ -109,6 +116,8 @@ export default function ProfessionalsPage() {
   const openAdd = () => {
     if (llegoAlTope) return;
     setEditing(null);
+    setAvisoAcceso(null);
+    setDarAcceso(true);
     setForm({ name: '', specialty: '', phone: '', email: '', bio: '', avatarUrl: null });
     setEditSchedules(Array.from({ length: 7 }, (_, i) => ({
       id: generateId(), professionalId: '', dayOfWeek: i,
@@ -126,6 +135,7 @@ export default function ProfessionalsPage() {
   // ── Abrir modal EDITAR ─────────────────────────────────────────────────────
   const openEdit = (prof) => {
     setEditing(prof);
+    setAvisoAcceso(null);
     const contacto = contactos[prof.id] || {};
     setForm({ name: prof.name, specialty: prof.specialty || '', phone: contacto.phone || '', email: contacto.email || '', bio: prof.bio || '', avatarUrl: prof.avatarUrl || null });
     const profSchedules = schedules.filter(s => s.professionalId === prof.id);
@@ -181,6 +191,40 @@ export default function ProfessionalsPage() {
 
       await saveStaffContact(businessId, profId, { phone, email });
       setContactos((prev) => ({ ...prev, [profId]: { phone, email } }));
+
+      // Cargar un barbero y darle acceso al panel eran DOS pasos en dos
+      // pantallas distintas, y el segundo se olvidaba. El resultado: el barbero
+      // entra con Google, el sistema no lo reconoce, lo trata como cliente y no
+      // ve sus turnos. Pasó con todas las sucursales de Franlook a la vez.
+      //
+      // Va por `setBusinessAdmin`, la misma función de siempre, y no con una
+      // copia de su lógica acá: ahí viven los controles que impiden, por
+      // ejemplo, que esto le pise los claims a una cuenta de la plataforma.
+      //
+      // Si falla, el barbero queda creado y SIN acceso — que es el estado de
+      // hoy — pero se dice en pantalla, con el motivo y qué hacer.
+      if (!editing && darAcceso && email.trim()) {
+        try {
+          const r = await setBusinessAdmin({
+            email: email.trim(),
+            businessId,
+            role: 'admin',
+            professionalId: profId,
+            name: publico.name,
+          });
+          setAvisoAcceso({
+            ok: true,
+            texto: r?.status === 'pending'
+              ? `${email.trim()} todavía no entró nunca. El acceso queda anotado y se activa solo la primera vez que inicie sesión con Google.`
+              : `${publico.name} ya puede entrar al panel y ver sus turnos. Si tenía la sesión abierta, que la cierre y la vuelva a abrir.`,
+          });
+        } catch (e) {
+          setAvisoAcceso({
+            ok: false,
+            texto: `Se creó ${publico.name}, pero NO se le pudo dar acceso al panel: ${e.message} Podés dárselo desde Administradores.`,
+          });
+        }
+      }
 
       // Horarios y servicios asignados se reemplazan enteros: lo natural acá es
       // "estos son los que quedan", no ir agregando y borrando de a uno.
@@ -269,6 +313,15 @@ export default function ProfessionalsPage() {
               entrá a una.
             </span>
           )}
+        </div>
+      )}
+
+      {avisoAcceso && (
+        <div className={`notice notice-${avisoAcceso.ok ? 'success' : 'warn'}`} style={{ marginBottom: 'var(--space-md)' }}>
+          {avisoAcceso.texto}
+          <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => setAvisoAcceso(null)}>
+            Entendido
+          </button>
         </div>
       )}
 
@@ -431,6 +484,28 @@ export default function ProfessionalsPage() {
                     <input className="form-input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
                   </div>
                 </div>
+
+                {/* El acceso al panel sale del MISMO alta. Antes era una segunda
+                    vuelta por Administradores que se olvidaba, y el barbero
+                    terminaba entrando como cliente, sin ver sus turnos. */}
+                {!editing && (
+                  <div className="acceso-barbero">
+                    <label className="acceso-barbero-check">
+                      <input
+                        type="checkbox"
+                        checked={darAcceso}
+                        disabled={!form.email.trim()}
+                        onChange={(e) => setDarAcceso(e.target.checked)}
+                      />
+                      <span>Darle acceso al panel para ver sus turnos</span>
+                    </label>
+                    <p className="text-sm text-muted" style={{ margin: '4px 0 0 24px' }}>
+                      {form.email.trim()
+                        ? <>Va a entrar con Google usando <strong>{form.email.trim()}</strong>. Tiene que ser el mail exacto con el que inicia sesión. Ve solo sus propios turnos.</>
+                        : 'Cargá su email arriba para poder darle acceso. Sin eso, va a entrar como cliente y no va a ver sus turnos.'}
+                    </p>
+                  </div>
+                )}
 
                 {/* ─ Servicios ─ */}
                 <div>

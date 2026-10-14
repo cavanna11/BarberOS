@@ -5807,6 +5807,27 @@ select.form-input {
    Compactas a proposito: con los botones normales, cuatro acciones en la fila
    se comian 166 px de los 375 de un celular, y el nombre del servicio y el
    precio quedaban partidos en dos renglones. */
+/* El acceso al panel, en el mismo alta del barbero.
+   Destacado a proposito: es lo que se olvidaba cuando eran dos pantallas, y el
+   barbero terminaba entrando como cliente sin ver sus turnos. */
+.acceso-barbero {
+  margin-top: var(--space-md);
+  padding: 12px 14px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--primary);
+}
+
+.acceso-barbero-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.acceso-barbero-check input:disabled + span { opacity: 0.5; cursor: default; }
+
 .orden-flecha {
   padding: 4px 5px;
   min-width: 0;

@@ -1966,6 +1966,40 @@ barbero (que es el punto), que con los dos ocupados recién ahí se rechace, que
 la ausencia de uno no bloquee al otro, que el motivo informado sea el real, y
 que el camino del profesional elegido a dedo no haya cambiado en nada.
 
+### Cargar un barbero ya le da acceso a su agenda (14/10/2026)
+
+Santiago: *"a los barberos, cuando ponen continuar con Google, a todos les pone
+como cliente. No los deja ver sus turnos. Les está pasando a todos los de las
+distintas sucursales de Franlook."*
+
+No era un bug del login: **cargar un profesional y darle acceso al panel eran
+dos pasos, en dos pantallas distintas, y el segundo se olvidaba.** Mirado en
+Firestore: `businesses/{sucursal}/admins` de Franlook Florida tenía UN solo
+documento, y `pendingAdmins` estaba vacío. Las fichas existían; el permiso no.
+
+Y el síntoma es mudo: el barbero entra con Google perfecto, el sistema no
+encuentra claims, lo trata como cliente, y nadie se entera hasta que él avisa.
+
+**Ahora el alta de un profesional incluye el acceso.** En el modal, debajo del
+email, una casilla **"Darle acceso al panel para ver sus turnos"**, prendida por
+defecto y apagada (deshabilitada) si no hay email, porque sin email no hay a
+quién darle nada. Al guardar se dice qué pasó: que ya puede entrar, que quedó
+anotado para su primer login, o que NO se pudo y por qué.
+
+**Va por `setBusinessAdmin`, la función de siempre, y no con una copia de su
+lógica adentro de `crearProfesional`.** Ahí viven los controles que importan: el
+`email_verified`, el `assertTargetEnAlcance` que impide que esto le pise los
+claims a una cuenta de la plataforma, y el mecanismo de pendientes. Duplicar esa
+lógica para ahorrarse una llamada es la forma de que un día se separen.
+
+Son dos llamadas y no una transacción, así que puede fallar la segunda: el
+barbero queda creado y sin acceso, que es exactamente el estado de hoy, **pero
+dicho en pantalla con el motivo y qué hacer**. Es la diferencia que importa.
+
+**Lo que esto NO arregla:** los profesionales ya cargados sin acceso siguen sin
+tenerlo. Hay que dárselo a mano desde Administradores, como rol *peluquero
+(solo sus citas)*, con el mail exacto con el que inician sesión.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
