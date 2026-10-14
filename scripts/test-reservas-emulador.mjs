@@ -40,7 +40,10 @@ async function llamar(u, nombre, datos) {
     body: JSON.stringify({ data: datos }),
   });
   const j = await r.json().catch(() => ({}));
-  return j.error ? { error: j.error.status || j.error.message } : { ok: j.result };
+  // `mensaje` aparte del `error`: varios casos solo miran que haya error, pero
+  // el texto es lo que de verdad lee el cliente, y un rechazo que no explica
+  // por que es un misterio en pantalla.
+  return j.error ? { error: j.error.status || j.error.message, mensaje: j.error.message || '' } : { ok: j.result };
 }
 const reservar = (u, datos) => llamar(u, 'createAppointment', datos);
 
@@ -300,6 +303,67 @@ const c17 = await usuario('c17@gmail.com');
 r = await reservar(c17, { ...base, appointmentDate: '2027-03-23', startTime: '14:00', metodoPago: 'cualquiera' });
 chequear('un método inventado no suma recargo', r.ok?.price === 12000, JSON.stringify(r));
 await db.doc(`businesses/${BID}`).update({ recargoTarjeta: 0 });
+
+titulo('Ausencias: el día suelto que el barbero no va:');
+// El motor del navegador no ofrece esos horarios, pero con la consola abierta
+// se saltea: esta es la barrera de verdad. El caso que lo pidió: una sucursal
+// con dos barberos, y justo ESTE miércoles Pepito no puede — sin perder todos
+// los miércoles siguientes.
+const AUS = `businesses/${BID}/ausencias`;
+const FECHA_AUS = '2027-03-30';   // mismo día de semana que FECHA
+const FECHA_LIBRE = '2027-04-06'; // el siguiente: tiene que seguir andando
+
+// a) Día completo
+await db.doc(`${AUS}/${PROF}_${FECHA_AUS}_todo`).set({ professionalId: PROF, fecha: FECHA_AUS, desde: null, hasta: null });
+const cA1 = await usuario('aus1@gmail.com');
+r = await reservar(cA1, { ...base, appointmentDate: FECHA_AUS, startTime: '10:00' });
+chequear('con el día marcado, el servidor RECHAZA', Boolean(r.error), JSON.stringify(r));
+chequear('y dice por qué', String(r.mensaje || '').includes('no atiende ese día'), JSON.stringify(r.error));
+
+const cA2 = await usuario('aus2@gmail.com');
+r = await reservar(cA2, { ...base, appointmentDate: FECHA_LIBRE, startTime: '10:00' });
+chequear('el mismo día de la semana SIGUIENTE sigue libre (ese era el pedido)', r.ok?.status === 'created', JSON.stringify(r));
+
+// La ausencia de OTRO barbero no bloquea a este.
+await db.doc(`${AUS}/otro-prof_${FECHA_AUS}_todo`).set({ professionalId: 'otro-prof', fecha: FECHA_AUS, desde: null, hasta: null });
+await db.doc(`${AUS}/${PROF}_${FECHA_AUS}_todo`).delete();
+const cA3 = await usuario('aus3@gmail.com');
+r = await reservar(cA3, { ...base, appointmentDate: FECHA_AUS, startTime: '10:00' });
+chequear('la ausencia de otro barbero no lo bloquea', r.ok?.status === 'created', JSON.stringify(r));
+await db.doc(`${AUS}/otro-prof_${FECHA_AUS}_todo`).delete();
+
+// b) Franja: se va de 15:00 a 17:00 de ESE día
+const FECHA_FRANJA = '2027-04-13';
+await db.doc(`${AUS}/${PROF}_${FECHA_FRANJA}_1500`).set({ professionalId: PROF, fecha: FECHA_FRANJA, desde: '15:00', hasta: '17:00' });
+const cB1 = await usuario('ausb1@gmail.com');
+r = await reservar(cB1, { ...base, appointmentDate: FECHA_FRANJA, startTime: '15:30' });
+chequear('adentro de la franja, rechaza', Boolean(r.error), JSON.stringify(r));
+chequear('y nombra el horario', String(r.mensaje || '').includes('15:00'), JSON.stringify(r.error));
+
+const cB2 = await usuario('ausb2@gmail.com');
+r = await reservar(cB2, { ...base, appointmentDate: FECHA_FRANJA, startTime: '14:30' });
+chequear('un turno que TERMINA justo cuando empieza la franja, entra', r.ok?.status === 'created', JSON.stringify(r));
+
+const cB3 = await usuario('ausb3@gmail.com');
+r = await reservar(cB3, { ...base, appointmentDate: FECHA_FRANJA, startTime: '14:45' });
+chequear('uno que la pisa de costado (14:45-15:15), no', Boolean(r.error), JSON.stringify(r));
+
+const cB4 = await usuario('ausb4@gmail.com');
+r = await reservar(cB4, { ...base, appointmentDate: FECHA_FRANJA, startTime: '17:00' });
+chequear('uno que empieza justo cuando termina, entra', r.ok?.status === 'created', JSON.stringify(r));
+
+const cB5 = await usuario('ausb5@gmail.com');
+r = await reservar(cB5, { ...base, appointmentDate: FECHA_FRANJA, startTime: '10:00' });
+chequear('la mañana de ese día sigue intacta', r.ok?.status === 'created', JSON.stringify(r));
+
+// c) Falla CERRADO: una ausencia ilegible bloquea el día, no lo deja pasar.
+const FECHA_ROTA = '2027-04-20';
+await db.doc(`${AUS}/${PROF}_${FECHA_ROTA}_rota`).set({ professionalId: PROF, fecha: FECHA_ROTA, desde: 'xx', hasta: 'yy' });
+const cC1 = await usuario('ausc1@gmail.com');
+r = await reservar(cC1, { ...base, appointmentDate: FECHA_ROTA, startTime: '10:00' });
+chequear('una ausencia con horas ilegibles bloquea el día entero (falla cerrado)', Boolean(r.error), JSON.stringify(r));
+
+for (const d of (await db.collection(AUS).get()).docs) await d.ref.delete();
 
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

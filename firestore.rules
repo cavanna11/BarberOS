@@ -363,6 +363,26 @@ service cloud.firestore {
         allow write: if canManage(bizId);
       }
 
+      // El dia suelto que el barbero no va, o el rato que se tiene que ir.
+      //
+      // Lectura publica, igual que schedules: la grilla del cliente la necesita
+      // ANTES de que haya sesion, o le ofreceria horarios de alguien que no
+      // esta. Por eso aca adentro no va ningun motivo — "esta enfermo" quedaria
+      // legible para cualquiera que mire la API. Va una fecha y, si acaso, un
+      // horario: nada que no se deduzca de ver la agenda vacia.
+      //
+      // Escribe el dueno (a cualquiera de su equipo) o el barbero LA SUYA. Sin
+      // la segunda condicion, un barbero podria marcarle ausencias al companero
+      // y sacarlo de la grilla, que es la forma mas facil de quedarse con los
+      // turnos del otro.
+      match /ausencias/{ausId} {
+        allow read: if true;
+        allow create: if canManage(bizId) || esSuHorario(bizId, request.resource.data);
+        allow update: if canManage(bizId)
+                         || (esSuHorario(bizId, resource.data) && esSuHorario(bizId, request.resource.data));
+        allow delete: if canManage(bizId) || esSuHorario(bizId, resource.data);
+      }
+
       // El barbero maneja sus propios horarios (la página los reemplaza
       // enteros: borra los suyos y crea los nuevos). Los de otro, no.
       match /schedules/{schId} {

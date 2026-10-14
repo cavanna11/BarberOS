@@ -3,6 +3,7 @@
 // ============================================
 import { timeToMinutes, getLocalDayOfWeek, isToday } from './dateUtils';
 import { normalizarIntervalo } from './intervalo';
+import { bloqueosDelDia, faltaTodoElDia } from './ausencias';
 
 /**
  * Calcula los slots disponibles para un profesional+servicio en una fecha.
@@ -16,6 +17,7 @@ export function calculateAvailableSlots({
   services,
   professionalServices,
   slotInterval = 30,
+  ausencias = [],
   businessHours, // <-- Added parameter
 }) {
   const dateObj = new Date(date + 'T00:00:00');
@@ -47,6 +49,21 @@ export function calculateAvailableSlots({
   );
 
   if (!schedule || !schedule.startTime || !schedule.endTime) {
+    return [];
+  }
+
+  // 2 bis. Las ausencias de ESTE profesional en ESTA fecha.
+  //
+  // Tercera excepcion al "no tocar este archivo" (las otras: el corte del local
+  // y normalizarIntervalo). Hace falta aca porque el horario semanal dice lo que
+  // pasa TODOS los miercoles, y esto es el miercoles que no va — apagarlo en el
+  // horario apagaria todos.
+  //
+  // Encaja sin camino nuevo: una ausencia parcial es otro rato excluido, igual
+  // que el descanso del profesional y el corte del local, y se descuenta en el
+  // mismo lugar.
+  const ausente = bloqueosDelDia(ausencias, professionalId, date);
+  if (ausente.todoElDia) {
     return [];
   }
 
@@ -99,6 +116,9 @@ export function calculateAvailableSlots({
     if (corteLocal && cursor < corteLocal[1] && slotEnd > corteLocal[0]) {
       continue; // El slot cae en el corte del local
     }
+    if (ausente.intervalos.some(([desde, hasta]) => cursor < hasta && slotEnd > desde)) {
+      continue; // Ese rato el profesional avisó que no está
+    }
 
     allSlots.push({
       startTime: minutesToTime(cursor),
@@ -148,7 +168,7 @@ function minutesToTime(minutes) {
 /**
  * Verifica si un profesional trabaja en una fecha dada y si la barbería está abierta.
  */
-export function professionalWorksOnDate(professionalId, date, schedules, businessHours) {
+export function professionalWorksOnDate(professionalId, date, schedules, businessHours, ausencias = []) {
   const dateObj = new Date(date + 'T00:00:00');
   const dayOfWeek = getLocalDayOfWeek(dateObj);
 
@@ -159,6 +179,11 @@ export function professionalWorksOnDate(professionalId, date, schedules, busines
       return false; // La barbería está cerrada
     }
   }
+
+  // El dia que aviso que no viene se apaga en el calendario, y no se descubre
+  // al entrar y encontrarlo vacio. Si falta solo un rato, el dia queda
+  // habilitado: ese dia igual atiende, y los horarios los recorta el motor.
+  if (faltaTodoElDia(ausencias, professionalId, date)) return false;
 
   return schedules.some(
     (s) => s.professionalId === professionalId && s.dayOfWeek === dayOfWeek && s.isActive

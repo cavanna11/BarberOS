@@ -144,7 +144,7 @@ function AdicionalesSelect({ adicionales, elegidos, onCambiar, currency }) {
 }
 
 // ---- DATE PICKER ----
-function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSchedules, businessHours, service }) {
+function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSchedules, businessHours, service, ausencias = [] }) {
   const [viewDate, setViewDate] = useState(() => {
     if (selectedDate) return new Date(selectedDate + 'T00:00:00');
     return new Date();
@@ -184,7 +184,7 @@ function DatePicker({ selectedDate, onSelect, professionalId, schedules: allSche
             if (day === null) return <div key={`empty-${idx}`} className="calendar-day empty" />;
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const isPastDate = dateStr < today;
-            const works = professionalWorksOnDate(professionalId, dateStr, allSchedules, businessHours)
+            const works = professionalWorksOnDate(professionalId, dateStr, allSchedules, businessHours, ausencias)
               && servicioAplicaAlDia(service, dateStr);
             const isSelected = dateStr === selectedDate;
             const isToday = dateStr === today;
@@ -464,7 +464,7 @@ export default function BookingPage() {
   const [comoPaga, setComoPaga] = useState('sena');
 
   // Datos ya filtrados por el negocio del slug de la URL.
-  const { professionals, services, professionalServices, schedules, appointments, business, slug, businessId } =
+  const { professionals, services, professionalServices, schedules, appointments, ausencias, business, slug, businessId } =
     useTenant();
 
   // ¿Esta barbería es parte de una cuenta con varias sucursales? Si lo es, lo
@@ -680,8 +680,9 @@ export default function BookingPage() {
       professionalServices,
       slotInterval: business.slotInterval,
       businessHours: business.businessHours,
+      ausencias,
     }).filter((s) => servicioAplicaAlHorario(servicio, s.startTime)); // promo por franja
-  }, [professionalId, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business]);
+  }, [professionalId, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business, ausencias]);
 
   // Paso cero: a qué sucursal va. Antes de elegir barbero, porque el equipo,
   // los servicios y los horarios son los de ESE local — y el link que le llegó
@@ -952,6 +953,7 @@ export default function BookingPage() {
           schedules={schedules}
           businessHours={business.businessHours}
           service={selectedService}
+          ausencias={ausencias}
         />
       )}
 

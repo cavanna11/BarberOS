@@ -530,9 +530,10 @@ src/
 │   └── super-admin/      Panel global
 └── utils/
     ├── availabilityEngine.js   ⚠️ NO TOCAR — anda (dos excepciones hechas: el
-    │                              corte del local `corteLocal` 21/09/2026, y
+    │                              corte del local `corteLocal` 21/09/2026,
     │                              `normalizarIntervalo` 13/10/2026, que evita
-    │                              el bucle infinito con slotInterval en 0)
+    │                              el bucle infinito con slotInterval en 0, y
+    │                              las `ausencias` 13/10/2026)
     └── statsCalculator.js      ⚠️ NO TOCAR — anda
 ```
 
@@ -1573,7 +1574,7 @@ el guardado, y el motor. Verificado escribiendo `slotInterval: 0` directo en
 Firestore: la página responde normal y ofrece la grilla de 30.
 
 ```bash
-node scripts/test-intervalo.mjs   # 59 casos, sin emulador
+node scripts/test-intervalo.mjs   # 96 casos, sin emulador
 ```
 
 **Lo que NO se hizo, y por qué.** La otra salida era reescribir el motor para
@@ -1590,6 +1591,170 @@ vínculo) y **`createAppointment` la ignora** — usa siempre `durationMinutes` 
 servicio. Si se cargara hoy a mano, la grilla del cliente usaría una duración y
 el servidor guardaría otra en `endTime`, y la agenda se desacomodaría sola. Hay
 que arreglar el servidor antes de ofrecerlo.
+
+### El MCD trataba a todos los servicios como si salieran igual (13/10/2026)
+
+Lo de arriba sigue siendo cierto y sigue andando, pero le faltaba la mitad del
+problema, y la trajo Santiago mirando una cuenta real:
+
+> "Volcado tiene 30 y 60 y la grilla en 60, y vos decís que correspondía 30.
+> Pero lo más frecuente que tienen es el de 60. El de 30 es solo barba y no va
+> casi nadie: el 90% pide el de 60. **No es solamente una cuestión matemática,
+> es de qué es lo que más sale.**"
+
+Tenía razón. El MCD minimiza el tiempo muerto *por servicio*, pero los pondera a
+todos igual: con el de 60 al 90%, bajar la grilla a 30 fragmenta el día para
+atender un servicio que casi no se pide. Simulado sobre 6000 días (jornada de
+11 h, 13 pedidos, el cliente se corre hasta una hora de su horario preferido
+antes de no reservar), barriendo cuánto sale la barba:
+
+| la barba sale el | grilla 60 | grilla 30 | gana |
+|---|---|---|---|
+| 5 % | 526 min | 494 | **60** (+32 min/día) |
+| 10 % ← Volcado | 515 | 493 | **60** (+22) |
+| 15 % | 500 | 489 | **60** (+11) |
+| **20 %** | 485 | 484 | **empatan** ← el cruce |
+| 25 % | 473 | 482 | **30** (+9) |
+| 40 % | 433 | 468 | **30** (+34) |
+| 50 % | 406 | 457 | **30** (+51) |
+
+**El cruce está en 1 de cada 5**, y de ahí sale la regla, que además se puede
+decir en una frase: *la grilla va a la duración del servicio que más te piden,
+salvo que los que no encajan ahí sumen más de 1 de cada 5 turnos — entonces va
+el MCD*.
+
+Con la grilla gruesa SÍ hay tiempo muerto (17 a 27 min/día en Volcado: el rato
+que deja cada barba), solo que vende más igual. El panel lo dice en vez de
+esconderlo: *"cada Barba deja 30 min sueltos. Ya está contado: igual te
+conviene."* Un consejo que oculta su costo no se puede chequear.
+
+**Y el dato no hace falta pedirlo: ya está.** Cada turno guarda su `serviceId`,
+así que la mezcla se cuenta. Esto importa porque la pregunta original era otra:
+
+> "No me termina de convencer cómo explicar esto. En cada servicio ellos ponen
+> cuánto tarda, entonces no terminan de entender qué es el intervalo. **No sé
+> cómo explicarlo, no sé bien cómo decirles cuánto les aconsejo.**"
+
+La respuesta no es redactarlo mejor: es no tener que explicarlo. El barbero ya
+contestó cuánto dura cada servicio, y cuáles se piden más lo dicen sus turnos.
+
+**Cómo quedó la pantalla** (`IntervaloDeTurnos`):
+
+- **El campo manual no se tocó y nadie pierde su número.** Sigue siendo libre
+  (5 a 120) y es el que manda. Lo nuevo propone; el barbero decide.
+- **Arriba, el panel del automático**, con el cálculo hecho con SUS turnos:
+  *"De tus últimos 120 turnos, el que más te piden es Corte (60 min): 108 de
+  120. Barba (30 min) no entra redondo en esa grilla, pero sale 1 de cada 10.
+  Por tan poco no conviene partirle el día al que más sale."* Con el botón
+  **"Usar 60 minutos"**, o un *"Ya lo tenés en el que te conviene"* si no hay
+  nada que cambiar.
+- **Un `<details>` "¿Cómo lo calcula?"**, cerrado. El que pregunta lo abre.
+- **Debajo del campo, nunca la palabra "intervalo"**: *"Tus clientes ven 09:00 ·
+  09:30 · 10:00 · 10:30…"*, con el horario de apertura real del local. Nadie se
+  imagina una grilla; todos se imaginan una lista de horarios.
+
+**Con historial, el automático es el ÚNICO que opina.** `diagnosticoDelIntervalo`
+(el del MCD) queda para la barbería sin turnos cargados. Si hablaran los dos a
+la vez se contradicen —en Volcado uno diría 60 y el otro 30— y dos consejos
+opuestos en la misma pantalla no son más información, son ninguna.
+
+Detalles que valen:
+
+- **`TURNOS_MINIMOS = 20`.** Con 8 turnos, uno solo de barba pesa 12% y dos
+  pesan 25%: la respuesta salta de un lado al otro del cruce por un turno. Por
+  debajo de eso dice que todavía no puede y vuelve al MCD, que no pierde nada
+  con ninguna mezcla.
+- **La duración sale del servicio como está HOY**, no de lo que duraba el turno
+  cuando se tomó: lo que se decide es la grilla de acá en adelante.
+- **No cuentan los cancelados** (no ocuparon el horario) ni los adicionales (no
+  se reservan solos). **Los "no vino" SÍ**: el horario estuvo tomado, que es lo
+  único que le importa a la grilla.
+- **Empatados, gana el más corto.** Con 50/50 de 30 y 60, el desempate toma 30,
+  y entonces el de 60 encaja solo: se llega a la respuesta buena sin el MCD.
+- Solo se avisa del tiempo suelto de los servicios que **de verdad se piden**:
+  hacerlo por uno que nadie reserva es ruido y debilita el resto del cartel.
+
+**Lo que esto arregla en producción:** a Volcado Club el panel le estaba
+ofreciendo el botón para bajar la grilla a 30. Si lo tocaba, perdía ~22 minutos
+vendibles por día. El cálculo estaba bien y la conclusión mal.
+
+### Ausencias: el día suelto que un barbero no va (13/10/2026)
+
+Lo pidió el caso de una sucursal de Franlook con dos barberos: *"justo hoy
+Pepito no puede trabajar, que pueda desactivar ese miércoles puntual y no
+acordarse de activar para el próximo miércoles"*. La alternativa que la gente
+usaba era apagar el miércoles en su horario semanal — y el día que alguien se
+olvida de volver a prenderlo, pierde **todos** los miércoles.
+
+Dos formas, la segunda del mismo pedido: **día completo** y **franja** ("hoy me
+tengo que ir de 15:00 a 18:00 y después vuelvo").
+
+**El modelo**: `businesses/{id}/ausencias/{profId_fecha_franja}`, con
+`{ professionalId, fecha, desde, hasta }`. `desde`/`hasta` en null = el día
+entero.
+
+- **Un documento por DÍA, no un rango.** Para las vacaciones daban ganas de
+  guardar `{ desde, hasta }`: no se puede preguntar. Firestore **no admite
+  desigualdad sobre dos campos distintos** en la misma consulta, así que
+  `fecha <= hoy AND hasta >= hoy` no existe. Con un doc por día es una igualdad
+  y no necesita ni índice. El selector de desde/hasta escribe los días en un
+  solo lote, con tope de 366 por si alguien tipea mal el año.
+- **El id es la clave natural** (`prof-pepito_2026-10-21_1500`), mismo truco que
+  las reseñas y los usos de membresía: tocar el botón dos veces con la conexión
+  lenta no deja duplicados.
+- **Lectura pública**, igual que `schedules`: la grilla del cliente la necesita
+  antes de que haya sesión. **Por eso no lleva motivo**: "está enfermo" quedaría
+  legible para cualquiera que mire la API.
+- **Escribe el dueño, o el barbero LA SUYA** (`esSuHorario`, el mismo helper que
+  los horarios). Sin esa segunda condición, un barbero le marca ausencias al
+  compañero y se queda con sus turnos.
+
+**Dónde se hace cumplir** — si falta uno, el turno entra igual:
+
+| dónde | qué hace |
+|---|---|
+| `utils/ausencias.js` | la cuenta, pura y probada sin emulador |
+| `availabilityEngine` | **tercera excepción** al "no tocar" (las otras: `corteLocal` y `normalizarIntervalo`) |
+| `professionalWorksOnDate` | apaga el día en el calendario, solo si falta ENTERO |
+| **`createAppointment`** | la barrera de verdad: con la consola abierta se saltea todo lo demás |
+| `turnosFijos` (`motivoDelDia`) | saltea esa fecha y la serie sigue |
+| `NuevoTurnoModal` | el staff tampoco ve esos horarios |
+
+**Encaja sin camino nuevo.** Una ausencia parcial es otro rato excluido, igual
+que el descanso del profesional y el corte del local, y se descuenta en el mismo
+lugar del bucle. Una de día completo corta antes y devuelve cero horarios.
+
+**Falla CERRADO.** Un registro cuya franja no se entiende bloquea el día entero,
+no lo deja pasar. Lo destapó un caso de la suite: con `desde: 'xx'` la primera
+versión no bloqueaba nada, o sea que alguien marcaba que no venía y el cliente
+igual sacaba turno. Entre perder unos horarios y mandarle un cliente a un
+barbero que no está, se pierden los horarios.
+
+**Los turnos ya reservados NO se tocan**, y es una decisión, no una omisión. Al
+marcar la ausencia se muestra "ya tenés N turnos ese día" y los cancela el
+barbero desde Citas: a cada cliente hay que avisarle, y eso lo decide una
+persona. Marcar la ausencia saca los horarios LIBRES; los que ya reservaron
+siguen ahí.
+
+**Dónde se carga**: Mi Configuración (el barbero, la suya) y Profesionales →
+📅 en la fila (el dueño, la de cualquiera). En Profesionales va en un modal
+PROPIO y no adentro del de editar: las ausencias se guardan al toque, y ahí
+adentro "Cancelar" parecería deshacerlas.
+
+```bash
+node scripts/test-ausencias.mjs   # 51 casos, sin emulador
+```
+
+Más 13 casos nuevos en la suite de reservas (el servidor rechazando día
+completo, franja, los bordes exactos, la ausencia de otro barbero, y el fallo
+cerrado) y 8 en la de Rules.
+
+Trampa al escribir esos casos: la suite de reservas trabaja sobre un día de la
+semana fijo (`DOW`), así que una fecha de prueba que caiga en otro día falla por
+*"el profesional no trabaja ese día"* y parece un bug de las ausencias. Y
+`crear()` en la auditoría de Rules hace POST a la **colección** (id automático),
+no a una ruta de documento; para probar lectura y borrado hay que sembrar con el
+Admin SDK, porque un 404 cuenta como denegado.
 
 ## Trampas ya pagadas (no volver a descubrirlas)
 
@@ -1850,11 +2015,13 @@ node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulador)
 node scripts/test-preview.mjs              # vista previa del link (tampoco)
 node scripts/test-intervalo.mjs            # la grilla y el consejo (tampoco)
+node scripts/test-ausencias.mjs            # el día suelto que un barbero no va (tampoco)
 ```
 
-Hoy: claims 77, reservas 58, facturación 14, rules 118, alta 22, mercadopago 16,
+Hoy: claims 77, reservas 69, facturación 14, rules 126, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
-turnos fijos 28, whatsapp 23, preview 24, intervalo 59. Todo en verde (798).
+turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 51.
+Todo en verde (905).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

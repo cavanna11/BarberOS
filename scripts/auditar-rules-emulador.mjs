@@ -186,6 +186,23 @@ await esperar('nadie mete una foto de 300 KB',           editar(duenoA, `busines
 await esperar('quitar la foto (null) esta bien',         editar(duenoA, `businesses/${A}/professionals/p1`, { avatarUrl: null }), 'permitido');
 await esperar('barbero crea SU horario',                 crear(barberoA, `businesses/${A}/schedules`, { professionalId: 'p1', dayOfWeek: 1, startTime: '09:00', endTime: '18:00', isActive: true }), 'permitido');
 await esperar('barbero NO crea horario de otro',         crear(barberoA, `businesses/${A}/schedules`, { professionalId: 'p2', dayOfWeek: 1 }), 'denegado');
+// Ausencias: el dia suelto que un barbero no va. Mismo criterio que el horario
+// —cada uno la suya— porque si no, un barbero puede sacar al companero de la
+// grilla y quedarse con sus turnos. Lectura publica: la grilla del cliente las
+// necesita antes de que haya sesion.
+//
+// Las sembradas van con el Admin SDK (pasa por arriba de las Rules) porque hacen
+// falta para probar la LECTURA y el BORRADO: un 404 cuenta como denegado aca.
+await db.doc(`businesses/${A}/ausencias/aus-p1`).set({ professionalId: 'p1', fecha: '2027-03-01', desde: null, hasta: null });
+await db.doc(`businesses/${A}/ausencias/aus-p2`).set({ professionalId: 'p2', fecha: '2027-03-02', desde: null, hasta: null });
+await esperar('ausencias se leen sin sesion',          leer(null, `businesses/${A}/ausencias/aus-p1`), 'permitido');
+await esperar('barbero marca SU ausencia',             crear(barberoA, `businesses/${A}/ausencias`, { professionalId: 'p1', fecha: '2027-03-05', desde: null, hasta: null }), 'permitido');
+await esperar('barbero NO marca la de otro',           crear(barberoA, `businesses/${A}/ausencias`, { professionalId: 'p2', fecha: '2027-03-05', desde: null, hasta: null }), 'denegado');
+await esperar('el dueno marca la de cualquiera',       crear(duenoA, `businesses/${A}/ausencias`, { professionalId: 'p2', fecha: '2027-03-06', desde: null, hasta: null }), 'permitido');
+await esperar('barbero NO borra la de otro',           borrar(barberoA, `businesses/${A}/ausencias/aus-p2`), 'denegado');
+await esperar('barbero borra la suya',                 borrar(barberoA, `businesses/${A}/ausencias/aus-p1`), 'permitido');
+await esperar('un cliente no marca ausencias',         crear(cliente, `businesses/${A}/ausencias`, { professionalId: 'p1', fecha: '2027-03-07', desde: null, hasta: null }), 'denegado');
+await esperar('la barberia B no toca las de A',        crear(duenoB, `businesses/${A}/ausencias`, { professionalId: 'p1', fecha: '2027-03-08', desde: null, hasta: null }), 'denegado');
 await esperar('barbero borra SU horario',                borrar(barberoA, `businesses/${A}/schedules/sch-p1`), 'permitido');
 await esperar('barbero NO borra el horario de otro',     borrar(barberoA, `businesses/${A}/schedules/sch-p2`), 'denegado');
 await esperar('barbero NO cambia su horario a otro',     editar(barberoA, `businesses/${A}/schedules/sch-p1b`, { professionalId: 'p2' }), 'denegado');

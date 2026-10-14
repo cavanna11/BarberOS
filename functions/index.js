@@ -24,6 +24,7 @@ const logger = require('firebase-functions/logger');
 const mp = require('./mercadopago');
 const { limitesDelNegocio, capacidadesDelNegocio, camposDelPlan } = require('./planes');
 const cupones = require('./cupones');
+const ausencias = require('./ausencias');
 // Membresías: planes mensuales de la barbería a sus clientes (createAppointment
 // descuenta el uso; el resto vive allá).
 const membresias = require('./membresias');
@@ -934,6 +935,15 @@ exports.createAppointment = onCall(async (request) => {
     if (inicio < cEnd && fin > cStart) {
       throw new HttpsError('failed-precondition', `La barbería cierra de ${diaNegocio.breakStart} a ${diaNegocio.breakEnd}.`);
     }
+  }
+
+  // El día suelto que el barbero avisó que no viene, o el rato que se tiene
+  // que ir. Es lo último del horario que se chequea porque es lo más específico:
+  // trabaja ese día de la semana, el local abre, no es su descanso... pero ESTE
+  // miércoles no está.
+  const ausente = await ausencias.motivoDeAusencia(db, businessId, professionalId, appointmentDate, inicio, fin);
+  if (ausente) {
+    throw new HttpsError('failed-precondition', ausente);
   }
 
   // ── ¿Cobra seña? ──────────────────────────────────────────────────────────

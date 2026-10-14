@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import FotoPerfil from '../../components/admin/FotoPerfil';
 import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import AusenciasDelBarbero from '../../components/admin/AusenciasDelBarbero';
 import { errorDeHorario } from '../../utils/horarios';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -206,6 +207,11 @@ export default function ProfileSettingsPage() {
               Los días y las horas en que atendés. Si hacés horario cortado (mañana y tarde), cargá el corte: en ese rato no se ofrecen turnos.
             </p>
             <HorarioSemanal dias={editSchedules} onChange={setEditSchedules} />
+          </div>
+
+          <div className="card mt-lg">
+            <h3 className="mb-lg">Días que no vas a estar</h3>
+            <AusenciasDelBarbero professionalId={profId} businessId={businessId} />
           </div>
 
           <div className="flex gap-sm mt-lg justify-end">

@@ -27,7 +27,7 @@ import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVe
  */
 export default function NuevoTurnoModal({ onClose }) {
   const { user } = useAuth();
-  const { appointments, professionals, services, professionalServices, schedules, business, businessId } = useTenant();
+  const { appointments, professionals, services, professionalServices, schedules, ausencias, business, businessId } = useTenant();
 
   const esBarbero = user?.role === 'admin' && Boolean(user?.professionalId);
   const hoy = toDateString(new Date());
@@ -88,8 +88,13 @@ export default function NuevoTurnoModal({ onClose }) {
       professionalServices,
       slotInterval: business.slotInterval,
       businessHours: business.businessHours,
+      // El staff tampoco agenda encima de una ausencia: la grilla no la ofrece.
+      // Esto NO pasa por `createAppointment` (el modal escribe directo), así que
+      // acá no hay red del lado del servidor — es la misma decisión que ya se
+      // tomó para el resto del turno a mano.
+      ausencias,
     }).filter((s) => servicioAplicaAlHorario(srv, s.startTime));
-  }, [form.professionalId, form.serviceId, form.date, schedules, appointments, services, professionalServices, business]);
+  }, [form.professionalId, form.serviceId, form.date, schedules, appointments, services, professionalServices, business, ausencias]);
 
   const slot = slots.find((s) => s.startTime === form.startTime);
   const digitos = form.clientPhone.replace(/\D/g, '');

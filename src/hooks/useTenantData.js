@@ -37,6 +37,12 @@ export function useSchedules() {
   return state.schedules || [];
 }
 
+/** Los días sueltos que un barbero avisó que no va. */
+export function useAusencias() {
+  const { state } = useBusiness();
+  return state.ausencias || [];
+}
+
 /** Relación profesional↔servicio, con precio y duración propios. */
 export function useProfessionalServices() {
   const { state } = useBusiness();
@@ -74,6 +80,7 @@ export function useTenant() {
   const services = useServices();
   const appointments = useAppointments();
   const schedules = useSchedules();
+  const ausencias = useAusencias();
   const professionalServices = useProfessionalServices();
   const authorizedAdmins = useAuthorizedAdmins();
 
@@ -91,6 +98,7 @@ export function useTenant() {
       services,
       appointments,
       schedules,
+      ausencias,
       professionalServices,
       authorizedAdmins,
     }),
@@ -106,6 +114,7 @@ export function useTenant() {
       services,
       appointments,
       schedules,
+      ausencias,
       professionalServices,
       authorizedAdmins,
     ]

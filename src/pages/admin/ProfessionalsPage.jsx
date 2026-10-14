@@ -11,7 +11,8 @@ import {
 import { getDayName, generateId } from '../../utils/dateUtils';
 import { limitesDelNegocio, puede } from '../../config/plans';
 import FotoPerfil from '../../components/admin/FotoPerfil';
-import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import AusenciasDelBarbero from '../../components/admin/AusenciasDelBarbero';
 import { estadoPushDelEquipo, crearProfesional } from '../../lib/functions';
 import { errorDeHorario } from '../../utils/horarios';
 import FiltroSucursal from '../../components/admin/FiltroSucursal';
@@ -63,6 +64,9 @@ export default function ProfessionalsPage() {
 
   const [guardando, setGuardando]     = useState(false);
   const [showModal, setShowModal]     = useState(false);
+  // Modal propio y no una sección del de editar: las ausencias se guardan al
+  // toque, y ahí adentro "Cancelar" parecería deshacerlas.
+  const [ausenciasDe, setAusenciasDe] = useState(null);
   const [editing, setEditing]         = useState(null);
   const [form, setForm]               = useState({ name: '', specialty: '', phone: '', email: '', bio: '' });
   const [editSchedules, setEditSchedules] = useState([]);
@@ -337,6 +341,7 @@ export default function ProfessionalsPage() {
                         </button>
                       ) : (
                         <>
+                          <button className="btn btn-ghost btn-sm" title="Días que no viene" onClick={() => setAusenciasDe(prof)}>📅</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => openEdit(prof)}>✏️</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(prof.id)}>🗑️</button>
                         </>
@@ -364,6 +369,27 @@ export default function ProfessionalsPage() {
       </div>
 
       {/* ── Modal ── */}
+      {ausenciasDe && (
+        <div className="modal-overlay" onClick={() => setAusenciasDe(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Días que no viene {ausenciasDe.name}</h2>
+              <button className="modal-close" onClick={() => setAusenciasDe(null)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <p className="text-secondary text-sm mb-md">
+                Para el día suelto que no va a estar. Su horario semanal no se toca: la semana que
+                viene sigue trabajando igual.
+              </p>
+              <AusenciasDelBarbero professionalId={ausenciasDe.id} businessId={businessId} compacto />
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setAusenciasDe(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" style={{ maxWidth: 620 }} onClick={e => e.stopPropagation()}>

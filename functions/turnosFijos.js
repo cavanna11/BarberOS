@@ -17,7 +17,8 @@
 // cierra), ese turno se SALTEA y queda anotado en la serie: no se pisa a nadie
 // ni se mueve el horario por su cuenta.
 
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const ausenciasSrv = require('./ausencias');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const logger = require('firebase-functions/logger');
@@ -69,7 +70,7 @@ function exigirStaff(request, businessId, professionalId = null) {
 }
 
 /** Por qué no se puede ese día, o null si se puede. */
-function motivoDelDia(negocio, horarioProf, fecha, inicio, fin) {
+function motivoDelDia(negocio, horarioProf, fecha, inicio, fin, ausenciasProf = []) {
   const dow = diaDeLaSemana(fecha);
   const local = (negocio.businessHours || []).find((h) => h.dayOfWeek === dow);
   if (local && local.isActive === false) return 'el local cierra ese día';
@@ -80,6 +81,11 @@ function motivoDelDia(negocio, horarioProf, fecha, inicio, fin) {
   if (inicio < desde || inicio >= hasta) return 'fuera del horario de atención';
   for (const h of [prof, local]) {
     if (h?.breakStart && h?.breakEnd && inicio < aMinutos(h.breakEnd) && fin > aMinutos(h.breakStart)) return 'cae en el corte del mediodía';
+  }
+  // El día suelto que avisó que no viene. Se saltea esa fecha y la serie sigue:
+  // un turno fijo no se da de baja porque el barbero falte un miércoles.
+  if (ausenciasSrv.motivoEnLista(ausenciasProf.filter((x) => x.fecha === fecha), inicio, fin)) {
+    return 'el barbero avisó que ese día no está';
   }
   return null;
 }
@@ -95,6 +101,9 @@ async function generar(bizId, serieSnap, desde, hasta) {
   if (negocio.isFrozen === true) return { creados: [], saltados: [] };
   const horarioProf = (await db().collection(`businesses/${bizId}/schedules`).where('professionalId', '==', s.professionalId).get())
     .docs.map((d) => d.data());
+  // Una sola lectura para todas las fechas del bucle: consultarlas por fecha
+  // serían ocho viajes a la base para una serie semanal.
+  const ausenciasProf = await ausenciasSrv.leerDelProfesional(db(), bizId, s.professionalId);
   const inicio = aMinutos(s.startTime);
   const fin = inicio + s.durationMinutes;
   const paso = 7 * s.cadaSemanas;
@@ -104,7 +113,7 @@ async function generar(bizId, serieSnap, desde, hasta) {
   let ultima = null;
   for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, paso)) {
     ultima = fecha;
-    const motivo = motivoDelDia(negocio, horarioProf, fecha, inicio, fin);
+    const motivo = motivoDelDia(negocio, horarioProf, fecha, inicio, fin, ausenciasProf);
     if (motivo) { saltados.push({ fecha, motivo }); continue; }
 
     const ref = agenda.doc(`${serieSnap.id}_${fecha}`);
@@ -191,7 +200,8 @@ exports.crearTurnoFijo = onCall(OPCIONES, async (request) => {
   const horarioProf = (await db().collection(`businesses/${bizId}/schedules`).where('professionalId', '==', String(d.professionalId)).get())
     .docs.map((x) => x.data());
   const inicio = aMinutos(d.startTime);
-  const motivo = motivoDelDia(negocio, horarioProf, d.fecha, inicio, inicio + duracion);
+  const ausenciasDelProf = await ausenciasSrv.leerDelProfesional(db(), bizId, String(d.professionalId));
+  const motivo = motivoDelDia(negocio, horarioProf, d.fecha, inicio, inicio + duracion, ausenciasDelProf);
   if (motivo) throw new HttpsError('failed-precondition', `El primer turno no se puede: ${motivo}.`);
   const ocupado = (await db().collection(`businesses/${bizId}/appointments`)
     .where('appointmentDate', '==', d.fecha).where('professionalId', '==', String(d.professionalId)).get())

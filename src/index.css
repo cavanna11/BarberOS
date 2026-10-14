@@ -5767,6 +5767,149 @@ select.form-input {
    IntervaloDeTurnos.jsx.
    ============================================================================ */
 
+/* El panel del automatico: el numero calculado con los turnos de verdad.
+   Va ARRIBA del campo manual y no lo reemplaza. El manual sigue siendo el que
+   manda: esto propone, el barbero decide. */
+/* ============================================================================
+   Inicio sesion pero no tiene acceso a ningun panel
+   ============================================================================
+   Lo primero y mas grande es CON QUE MAIL ENTRO. Los dos casos reales que
+   motivaron esta pantalla (Neytan y Franco) se resolvian con solo verlo
+   escrito: el permiso se busca por el mail exacto, y los dos estaban entrando
+   con uno distinto del que tenian dado de alta. */
+/* ============================================================================
+   Ausencias: el dia suelto que un barbero no va
+   ============================================================================
+   Se guarda al toque, sin boton de guardar al final, asi que la lista de arriba
+   es la confirmacion: lo que marcaste esta ahi. */
+.ausencias-lista {
+  list-style: none;
+  margin: 0 0 var(--space-md);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ausencias-lista li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 8px 10px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  font-size: 0.9375rem;
+}
+
+.ausencias-form { display: flex; flex-direction: column; gap: var(--space-sm); }
+.ausencias-form .form-group { margin-bottom: 0; }
+.ausencias-form .btn { align-self: flex-start; }
+
+.ausencias-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.ausencias-franja { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); }
+
+@media (max-width: 480px) {
+  .ausencias-lista li { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .ausencias-form .btn { align-self: stretch; }
+}
+
+.sin-acceso-mail {
+  font-family: var(--font-mono);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  word-break: break-all;
+  margin: 4px 0 var(--space-lg);
+  padding: 10px 12px;
+  background: var(--surface);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.sin-acceso-pasos {
+  margin: var(--space-md) 0 var(--space-lg);
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  line-height: 1.55;
+}
+
+.sin-acceso-acciones {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* En el celular los botones van uno por renglon: son dos caminos distintos y
+   medio boton cortado al costado no se lee como una opcion. */
+@media (max-width: 480px) {
+  .sin-acceso-acciones { flex-direction: column; }
+  .sin-acceso-acciones .btn { width: 100%; }
+}
+
+.intervalo-auto {
+  margin-bottom: var(--space-md);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border-left: 3px solid var(--primary);
+}
+
+/* Ya lo tiene bien: se confirma y no se le ofrece nada. */
+.intervalo-auto-ok { border-left-color: var(--success, #2e7d32); }
+
+/* Todavia no hay turnos con que calcularlo: se explica, sin alarmar. */
+.intervalo-auto-mudo {
+  border-left-color: var(--border);
+  background: transparent;
+}
+
+.intervalo-auto-titulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.intervalo-auto-titulo .btn { flex-shrink: 0; }
+
+.intervalo-auto-cuenta {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+/* La letra chica de como llega a su numero. Cerrada por defecto: el que
+   pregunta la abre, y al que no le interesa no le ocupa la pantalla. */
+.intervalo-como { margin-top: 10px; }
+
+.intervalo-como > summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--primary-texto);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.intervalo-como-cuerpo {
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+
+.intervalo-como-cuerpo p { margin: 0 0 8px; line-height: 1.55; }
+.intervalo-como-cuerpo p:last-child { margin-bottom: 0; }
+
 .intervalo-campo {
   display: flex;
   align-items: center;

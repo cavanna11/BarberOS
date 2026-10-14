@@ -22,13 +22,16 @@ const COLECCIONES = [
   'services',
   'schedules',
   'professionalServices',
+  // El dia suelto que un barbero no va. Publica: la grilla del cliente la
+  // necesita antes de que haya sesion.
+  'ausencias',
   'appointments',
   'admins',
 ];
 
 // Lo que puede leer cualquiera sin estar logueado: lo que la página de reservas
 // necesita para armar la grilla.
-const PUBLICAS = ['professionals', 'services', 'schedules', 'professionalServices'];
+const PUBLICAS = ['professionals', 'services', 'schedules', 'professionalServices', 'ausencias'];
 
 const VACIO = { ...Object.fromEntries(COLECCIONES.map((c) => [c, []])), notifications: [] };
 

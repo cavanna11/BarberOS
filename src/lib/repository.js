@@ -41,6 +41,7 @@ import {
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
+import { idDeAusencia, normalizarAusencia } from '../utils/ausencias';
 import { db } from './firebase';
 
 // ── Helpers de rutas ───────────────────────────────────────────────────────
@@ -1034,6 +1035,46 @@ export async function activarCupon(businessId, codigo, activo) {
  * guarda su propio snapshot del descuento, así que no se pierde nada. Borrar un
  * cupón libera el código para volver a usarlo, que es para lo que sirve.
  */
+// ============================================================================
+// Ausencias: el dia suelto que un barbero no va
+// ============================================================================
+// El id lo arma `idDeAusencia` y es deterministico (profId_fecha_franja), asi
+// que `setDoc` sirve para crear y para corregir, y tocar dos veces el boton con
+// la conexion lenta no deja dos documentos iguales.
+
+/** Marca una ausencia. `desde`/`hasta` en null = el dia entero. */
+export async function guardarAusencia(businessId, ausencia) {
+  const datos = normalizarAusencia(ausencia);
+  const id = idDeAusencia(datos.professionalId, datos.fecha, datos.desde);
+  await setDoc(doc(db, 'businesses', businessId, 'ausencias', id), { id, ...datos });
+  return id;
+}
+
+/**
+ * Marca varios dias de una (vacaciones), en un solo lote.
+ *
+ * De a una serian N viajes a la red y una barra de progreso para algo que el
+ * barbero piensa como una sola accion. En lote, o entran todos o no entra
+ * ninguno: no quedan vacaciones a medio cargar.
+ */
+export async function guardarAusencias(businessId, professionalId, fechas, { desde = null, hasta = null } = {}) {
+  const lote = writeBatch(db);
+  const ids = [];
+  for (const fecha of fechas) {
+    const datos = normalizarAusencia({ professionalId, fecha, desde, hasta });
+    const id = idDeAusencia(professionalId, fecha, datos.desde);
+    ids.push(id);
+    lote.set(doc(db, 'businesses', businessId, 'ausencias', id), { id, ...datos });
+  }
+  await lote.commit();
+  return ids;
+}
+
+/** Saca una ausencia: el barbero vuelve a aparecer ese dia. */
+export async function borrarAusencia(businessId, id) {
+  await deleteDoc(doc(db, 'businesses', businessId, 'ausencias', id));
+}
+
 export async function borrarCupon(businessId, codigo) {
   await deleteDoc(cuponDoc(businessId, codigo));
 }
