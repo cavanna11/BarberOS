@@ -474,4 +474,9 @@
 @media (prefers-reduced-motion: reduce) {
   .nx *, .nx *::before, .nx *::after { animation: none !important; transition: none !important; }
   .nx-aparece { opacity: 1; transform: none; }
+  /* La excepción, pedida por el cliente: el punto de abierto/cerrado titila
+     igual. Es solo opacidad —nada se desplaza— y menos de un ciclo por
+     segundo, lejos de los 3 destellos por segundo de WCAG. Sin esto, en todo
+     teléfono con "Reducir movimiento" el aviso queda quieto. */
+  .nx .nx-estado .nx-punto { animation: nx-titila 1.4s ease-in-out infinite !important; }
 }
