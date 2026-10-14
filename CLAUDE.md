@@ -1756,6 +1756,64 @@ semana fijo (`DOW`), así que una fecha de prueba que caiga en otro día falla p
 no a una ruta de documento; para probar lectura y borrado hay que sembrar con el
 Admin SDK, porque un 404 cuenta como denegado.
 
+### El login se rompe adentro del navegador de Instagram (14/10/2026)
+
+Un cliente mandó una captura: entró a reservar, tocó "Continuar con Google" y
+terminó en una pantalla blanca de `barberos-1d60e.firebaseapp.com` que decía
+*"Unable to process request due to missing initial state. This may happen if
+browser sessionStorage is inaccessible or accidentally cleared."*
+
+La cadena, en orden:
+
+1. Está adentro del navegador de otra app (Instagram, Facebook, WhatsApp): la ✕
+   arriba a la izquierda, no la barra de Safari.
+2. Ese navegador **bloquea las ventanas emergentes**, así que `signInWithPopup`
+   no puede abrir nada y Firebase cae SOLO a su camino alternativo, redirigir.
+3. La redirección sale a `<proyecto>.firebaseapp.com`, que es **otro dominio**.
+4. iOS aísla el almacenamiento entre dominios, así que esa página no puede leer
+   el `sessionStorage` que escribió antes de salir.
+
+**Esto no es un caso raro: es el camino principal.** El link de una barbería se
+reparte por la bio de Instagram y por WhatsApp. Cada persona a la que le pasa no
+escribe para avisar — simplemente no reserva.
+
+**El arreglo de fondo** es servir el ayudante de Firebase desde NUESTRO dominio,
+para que no haya dos dominios y no haya aislamiento. Son tres pasos y **el orden
+importa**:
+
+1. **Google Cloud Console → Credenciales → el cliente OAuth** → agregar a *URIs
+   de redireccionamiento autorizados*: `https://barberos.sacia.tech/__/auth/handler`.
+   **Va PRIMERO.** Si no está, Google rechaza la redirección y se rompe el login
+   de todos.
+2. `vercel.json`: el proxy de `/__/:path*` hacia `barberos-1d60e.firebaseapp.com`.
+3. Vercel: `VITE_FIREBASE_AUTH_DOMAIN=barberos.sacia.tech` y **build nuevo**
+   (Vite congela las `VITE_*` al compilar).
+
+Dos trampas del `vercel.json`, las dos encontradas mirándolo:
+
+- El proxy tiene que ir **antes** del `"/(.*)" → "/index.html"`: Vercel evalúa
+  en orden, y con el catch-all delante `/__/auth/handler` devuelve la app.
+- **`X-Frame-Options: DENY` estaba sobre `/(.*)`** y el ayudante de Firebase se
+  carga en un iframe. `DENY` bloquea el enmarcado incluso del MISMO origen, así
+  que habría roto justo lo que se quiere arreglar. Ahora esa cabecera va sobre
+  `/((?!__/).*)` y las demás (HSTS, nosniff, Referrer-Policy, Permissions-Policy)
+  siguen sobre todo.
+
+**Y un aviso honesto:** según el propio repositorio de `firebase-js-sdk` hay
+casos de iOS dentro de estos navegadores que fallan igual con todo bien
+configurado. Por eso, además, `utils/navegadorEmbebido.js` detecta que estamos
+adentro de una app y **`LoginPage` avisa ANTES de que toque el botón**: "abrilo
+en Safari para poder entrar", con la instrucción exacta según iPhone o Android.
+Detecta solo las apps donde está comprobado que no se puede (Instagram,
+Facebook, WhatsApp, TikTok, LINE, Snapchat, X, LinkedIn y los WebView de
+Android): un falso positivo le muestra un cartel innecesario a alguien que iba a
+poder entrar igual.
+
+**Nadie llamaba a `getRedirectResult`.** La app usa solo `signInWithPopup`, así
+que del camino de redirección —el que de verdad se usa en estos navegadores— no
+se recogía ni el usuario ni el error. `onAuthStateChanged` igual termina viendo
+al usuario, pero el error se perdía entero. Ahora se llama al arrancar.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)

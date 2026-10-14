@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import {
   signInWithPopup,
+  getRedirectResult,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
@@ -173,6 +174,21 @@ export function AuthProvider({ children }) {
 
   // Firebase mantiene la sesión entre recargas. Este listener la rehidrata.
   useEffect(() => {
+    // Recoger el resultado de una vuelta por redirección.
+    //
+    // La app inicia sesión con `signInWithPopup`, pero en el navegador de
+    // adentro de otra app (Instagram, WhatsApp) las ventanas emergentes están
+    // bloqueadas y Firebase cae SOLO a redirigir. Hasta ahora nadie llamaba a
+    // esto, así que de ese camino no se recogía ni el usuario ni el error: la
+    // persona volvía a la pantalla de login como si no hubiera pasado nada.
+    //
+    // `onAuthStateChanged` igual termina viendo al usuario, así que esto no
+    // reemplaza nada: sirve para que el ERROR del camino de redirección llegue
+    // a la consola en vez de perderse.
+    getRedirectResult(auth).catch((err) => {
+      console.error('[auth] Falló la vuelta de la redirección de Google:', err?.code || err);
+    });
+
     return onAuthStateChanged(auth, async (fbUser) => {
       // Las sesiones de desarrollo (loginBypass) no son de Firebase: no las pisa.
       if (!fbUser) {

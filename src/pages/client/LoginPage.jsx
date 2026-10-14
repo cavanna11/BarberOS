@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPlatformOwner, PLATFORM_OWNERS } from '../../config/platform';
+import { navegadorEmbebido, comoAbrirlo } from '../../utils/navegadorEmbebido';
 
 export default function LoginPage() {
   const [error, setError] = useState('');
@@ -20,6 +21,8 @@ export default function LoginPage() {
   // a loguearse, después lo devolvemos ahí en vez de tirarlo a la raíz.
   // '/' y '/login' no sirven como destino: volver ahí es justo lo que dejaba
   // al barbero curioso sin entender qué pasó.
+  // Se calcula una sola vez: el user agent no cambia mientras la página vive.
+  const embebido = useMemo(() => navegadorEmbebido(), []);
   const origen = location.state?.from;
   const from = origen && origen !== '/' && origen !== '/login' ? origen : null;
   // "Reservar turno" solo si venía del link de una barbería. Si venía del
@@ -100,6 +103,24 @@ export default function LoginPage() {
             ? 'Tu turno todavía NO está reservado: entrá con Google y lo confirmás en un toque.'
             : 'Entrá a tu panel, o al link de tu barbería para reservar'}
         </p>
+
+        {/* El navegador de adentro de otra app (Instagram, WhatsApp, Facebook)
+            bloquea las ventanas emergentes. Firebase cae solo a redirigir, la
+            redirección sale a otro dominio, iOS aísla el almacenamiento entre
+            dominios, y la persona termina en una pantalla blanca de Firebase
+            que dice "missing initial state". Avisarle ANTES de que toque el
+            botón es más barato que dejarla estrellarse contra un error que no
+            explica nada — y el link de una barbería se reparte justo por ahí:
+            la bio de Instagram y WhatsApp son el camino principal. */}
+        {embebido && (
+          <div className="notice notice-warn" style={{ marginBottom: 'var(--space-md)' }}>
+            <strong>Abrilo en tu navegador para poder entrar.</strong>
+            <p className="text-sm" style={{ margin: '6px 0 0' }}>
+              Estás viendo esto dentro de {typeof embebido === 'string' ? embebido : 'otra aplicación'},
+              y ahí Google no deja iniciar sesión. {comoAbrirlo()}
+            </p>
+          </div>
+        )}
 
         {error && (
           <div
