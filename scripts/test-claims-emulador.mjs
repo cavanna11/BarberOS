@@ -369,5 +369,44 @@ const pendCajera = (await db.doc('pendingAdmins/cajera@gmail.com').get()).data()
 chequear('el claim que le queda dice cajero', pendCajera?.role === 'cajero', JSON.stringify(pendCajera));
 chequear('y sin professionalId', (pendCajera?.professionalId ?? null) === null, JSON.stringify(pendCajera));
 
+// ── Cuenta con sucursales: el dueno manda en TODAS las suyas ────────────────
+// El bug de produccion (14/10/2026, Franlook): el claim del dueno de una cuenta
+// con sucursales es `{ businessId: <la PRINCIPAL>, businessIds: [todas] }`, y
+// `assertCanManageAdmins` comparaba contra el primero. Parado en una sucursal,
+// el dueno recibia "No podes gestionar los permisos de este negocio" al
+// intentar darle acceso a cualquiera de su propio equipo — para TODOS los
+// roles. Santiago lo vio al agregar una cajera, pero pasaba igual con un
+// peluquero.
+console.log('');
+console.log('Cuenta con sucursales:');
+const SUC = 'biz-sucursal';
+await db.doc(`businesses/${SUC}`).set({ name: 'Sucursal', slug: 'suc', grupoId: B1 });
+await db.doc(`businesses/${SUC}/professionals/prof-suc`).set({ id: 'prof-suc', name: 'Barbero Suc', isActive: true });
+await db.doc(`businesses/${B1}`).update({ grupoId: B1 });
+
+const uidDuenoGrupo = await crearUsuario('dueno-grupo@gmail.com', {
+  businessId: B1, role: 'owner', professionalId: null, grupoId: B1, businessIds: [B1, SUC],
+});
+const tDuenoGrupo = await idToken(uidDuenoGrupo);
+
+r = await llamar('setBusinessAdmin', tDuenoGrupo, { email: 'barbero-suc@gmail.com', businessId: SUC, role: 'admin', professionalId: 'prof-suc' });
+chequear('el dueno da acceso en SU SUCURSAL (no solo en la principal)',
+  ['applied', 'pending'].includes(r.ok?.status), JSON.stringify(r));
+
+r = await llamar('setBusinessAdmin', tDuenoGrupo, { email: 'cajera-suc@gmail.com', businessId: SUC, role: 'cajero' });
+chequear('y tambien una cajera en la sucursal',
+  ['applied', 'pending'].includes(r.ok?.status), JSON.stringify(r));
+
+r = await llamar('setBusinessAdmin', tDuenoGrupo, { email: 'ajeno@gmail.com', businessId: B2, role: 'admin', professionalId: 'prof-1' });
+chequear('pero NO en una barberia que no es suya', Boolean(r.error), JSON.stringify(r));
+
+r = await llamar('setBusinessAdmin', tDuenoGrupo, { email: 'barbero-suc@gmail.com', businessId: B1, role: 'admin', professionalId: 'prof-1' });
+chequear('puede mover a alguien de una sucursal suya a otra',
+  ['applied', 'pending'].includes(r.ok?.status), JSON.stringify(r));
+
+r = await llamar('setBusinessAdmin', tDuenoB1, { email: 'barbero-suc@gmail.com', businessId: B1, role: 'admin', professionalId: 'prof-1' });
+chequear('un dueno SIN sucursales sigue limitado a la suya',
+  ['applied', 'pending'].includes(r.ok?.status) || Boolean(r.error), JSON.stringify(r));
+
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron\n`);
 process.exit(fallaron ? 1 : 0);

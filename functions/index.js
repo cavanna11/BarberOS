@@ -52,18 +52,33 @@ setGlobalOptions({ region: 'southamerica-east1', maxInstances: 10 });
  * para que quien llama sepa hasta dónde puede llegar.
  *
  * - La plataforma puede todo: designar dueños, mover gente entre negocios.
- * - El dueño de una barbería puede gestionar SOLO su propio negocio y SOLO el
- *   rol `admin` (barbero). No puede designar otros dueños: el dueño es quien
- *   paga la cuenta, así que quién lo es es una decisión comercial de la
- *   plataforma y no se delega al tenant.
+ * - El dueño de una barbería puede gestionar SOLO sus propios negocios, y no
+ *   puede designar otros dueños: el dueño es quien paga la cuenta, así que
+ *   quién lo es es una decisión comercial de la plataforma y no se delega al
+ *   tenant.
+ *
+ * ⚠️ Mira `businessIds`, no `businessId` a secas. En una cuenta con sucursales
+ * el claim del dueño es `{ businessId: <la PRINCIPAL>, businessIds: [todas] }`,
+ * así que comparando contra el primero, el dueño parado en una sucursal recibía
+ * "No podés gestionar los permisos de este negocio" al intentar darle acceso a
+ * cualquiera de su propio equipo — para TODOS los roles, no solo el nuevo. Es
+ * la misma forma que ya usaban las Rules (`inBusiness` acepta las dos) y
+ * `crearProfesional`; a esta función nunca se le actualizó. Encontrado en
+ * producción el 14/10/2026 con las tres sucursales de Franlook.
  */
+function sucursalesDelToken(token) {
+  return Array.isArray(token.businessIds) && token.businessIds.length
+    ? token.businessIds
+    : [token.businessId];
+}
+
 function assertCanManageAdmins(request, businessId) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
   }
   const token = request.auth.token;
   if (token.platform === true) return 'platform';
-  if (token.role === 'owner' && token.businessId === businessId) return 'owner';
+  if (token.role === 'owner' && sucursalesDelToken(token).includes(businessId)) return 'owner';
   throw new HttpsError('permission-denied', 'No podés gestionar los permisos de este negocio.');
 }
 
@@ -80,7 +95,7 @@ function assertCanManageAdmins(request, businessId) {
  * `targetClaims` son los claims que el destinatario tiene HOY (vacío si nunca
  * entró, que es un caso legítimo y se deja pasar).
  */
-function assertTargetEnAlcance(caller, targetClaims, businessId) {
+function assertTargetEnAlcance(caller, targetClaims, businessId, propias = [businessId]) {
   if (caller === 'platform') return;
   if (targetClaims?.platform === true) {
     throw new HttpsError('permission-denied', 'No podés modificar a la plataforma.');
@@ -88,7 +103,11 @@ function assertTargetEnAlcance(caller, targetClaims, businessId) {
   if (targetClaims?.role === 'owner') {
     throw new HttpsError('permission-denied', 'Solo la plataforma puede modificar a un dueño.');
   }
-  if (targetClaims?.businessId && targetClaims.businessId !== businessId) {
+  // "Otro negocio" es otra CUENTA, no otra sucursal de la misma. Mover a un
+  // barbero de Florida a Olivos es algo que el dueño de las dos puede hacer, y
+  // comparando contra un solo id le quedaba prohibido dentro de su propia
+  // cuenta.
+  if (targetClaims?.businessId && !propias.includes(targetClaims.businessId)) {
     throw new HttpsError('permission-denied', 'Esa cuenta pertenece a otro negocio.');
   }
 }
@@ -203,7 +222,7 @@ exports.setBusinessAdmin = onCall(async (request) => {
     if (err.code !== 'auth/user-not-found') throw err;
   }
 
-  assertTargetEnAlcance(caller, targetUser?.customClaims, businessId);
+  assertTargetEnAlcance(caller, targetUser?.customClaims, businessId, sucursalesDelToken(request.auth.token));
 
   // Misma razón que en applyPendingClaims: una cuenta que existe pero no tiene
   // el mail verificado puede ser de cualquiera que se registró por la API
@@ -286,7 +305,7 @@ exports.revokeBusinessAdmin = onCall(async (request) => {
     if (err.code !== 'auth/user-not-found') throw err;
   }
 
-  assertTargetEnAlcance(caller, targetUser?.customClaims, businessId);
+  assertTargetEnAlcance(caller, targetUser?.customClaims, businessId, sucursalesDelToken(request.auth.token));
 
   await db.doc(`businesses/${businessId}/admins/${normalizedEmail}`).delete();
   await db.doc(`pendingAdmins/${normalizedEmail}`).delete().catch(() => {});

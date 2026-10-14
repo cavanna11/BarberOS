@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPlatformOwner, PLATFORM_OWNERS } from '../../config/platform';
+import { entraAlPanel } from '../../config/roles';
 import { navegadorEmbebido, comoAbrirlo } from '../../utils/navegadorEmbebido';
 
 export default function LoginPage() {
@@ -33,7 +34,7 @@ export default function LoginPage() {
   const redirectAfterLogin = (user) => {
     if (user.isPlatformTeam || isPlatformOwner(user.email)) {
       navigate('/super-admin');
-    } else if (user.role === 'owner' || user.role === 'admin') {
+    } else if (entraAlPanel(user)) {
       navigate('/admin');
     } else if (from) {
       // Venía del link de una barbería: se lo devuelve ahí a terminar de reservar.

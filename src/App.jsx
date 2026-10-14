@@ -4,6 +4,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useBusiness } from './contexts/BusinessContext';
 import BusinessSync from './contexts/BusinessSync';
 import { isPlatformOwner } from './config/platform';
+import { entraAlPanel } from './config/roles';
 import { tienePagina } from './config/pagina';
 import { paginaExclusiva } from './paginas-exclusivas';
 import Header from './components/layout/Header';
@@ -84,14 +85,13 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false })
   if (superAdminOnly && !platformTeam) {
     // El staff que escribe /super-admin a mano va a SU panel, que es el que le
     // corresponde; no es un problema de acceso que haya que explicarle.
-    if (user?.role === 'owner' || user?.role === 'admin') {
+    if (entraAlPanel(user)) {
       return <Navigate to="/admin" replace />;
     }
     return <SinAcceso />;
   }
 
-  const ROLES_DEL_PANEL = ['admin', 'owner', 'cajero'];
-  if (adminOnly && !ROLES_DEL_PANEL.includes(user?.role) && !platformOwner) {
+  if (adminOnly && !entraAlPanel(user) && !platformOwner) {
     return <SinAcceso />;
   }
 
@@ -223,7 +223,7 @@ function PublicOnlyRoute({ children }) {
     if (user?.isPlatformTeam || isPlatformOwner(user?.email)) {
       return <Navigate to="/super-admin" replace />;
     }
-    if (user?.role === 'owner' || user?.role === 'admin') {
+    if (entraAlPanel(user)) {
       return <Navigate to="/admin" replace />;
     }
   }
@@ -246,7 +246,7 @@ function EntryRoute() {
   if (isAuthenticated && (user?.isPlatformTeam || isPlatformOwner(user?.email))) {
     return <Navigate to="/super-admin" replace />;
   }
-  if (isAuthenticated && (user?.role === 'owner' || user?.role === 'admin')) {
+  if (isAuthenticated && entraAlPanel(user)) {
     return <Navigate to="/admin" replace />;
   }
   return <LandingPage />;
