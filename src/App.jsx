@@ -25,6 +25,7 @@ import SuperAdminLayout from './components/layout/SuperAdminLayout';
 import LoginPage from './pages/client/LoginPage';
 import NoBusinessPage from './pages/client/NoBusinessPage';
 import CuentaSinBarberia from './pages/client/CuentaSinBarberia';
+import SinAcceso from './pages/client/SinAcceso';
 
 const LandingPage      = lazy(() => import('./pages/LandingPage'));
 const BookingPage      = lazy(() => import('./pages/client/BookingPage'));
@@ -75,12 +76,22 @@ function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false })
   const platformOwner = user?.isPlatformOwner || isPlatformOwner(user?.email);
   const platformTeam = user?.isPlatformTeam || platformOwner;
 
+  // Ojo con el destino: hasta el 13/10/2026 los dos casos hacian
+  // `<Navigate to="/" />`, y en la raiz un usuario sin rol ve la LANDING DE
+  // VENTA. El barbero iniciaba sesion bien y aparecia en la pagina publica de
+  // BarberOS, sin cartel ni error: imposible de entender y de explicar. Pasa
+  // con cualquiera a quien le falte el permiso o que entre con otro mail.
   if (superAdminOnly && !platformTeam) {
-    return <Navigate to="/" replace />;
+    // El staff que escribe /super-admin a mano va a SU panel, que es el que le
+    // corresponde; no es un problema de acceso que haya que explicarle.
+    if (user?.role === 'owner' || user?.role === 'admin') {
+      return <Navigate to="/admin" replace />;
+    }
+    return <SinAcceso />;
   }
 
   if (adminOnly && user?.role !== 'admin' && user?.role !== 'owner' && !platformOwner) {
-    return <Navigate to="/" replace />;
+    return <SinAcceso />;
   }
 
   return children;
