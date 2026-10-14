@@ -1035,6 +1035,23 @@ export async function activarCupon(businessId, codigo, activo) {
  * guarda su propio snapshot del descuento, así que no se pierde nada. Borrar un
  * cupón libera el código para volver a usarlo, que es para lo que sirve.
  */
+/**
+ * Reordena una subcoleccion: escribe el `displayOrder` nuevo de varios docs.
+ *
+ * En un LOTE, no de a uno. Mover un elemento renumera toda la lista (ver
+ * `utils/orden.js`: los servicios viejos no tienen el campo y las numeraciones
+ * quedan con huecos al borrar), y de a una escritura la lista se reacomodaria
+ * a saltos en pantalla mientras llegan los snapshots.
+ */
+export async function guardarOrden(businessId, coleccion, cambios = []) {
+  if (!cambios.length) return;
+  const lote = writeBatch(db);
+  for (const { id, displayOrder } of cambios) {
+    lote.update(doc(db, 'businesses', businessId, coleccion, id), { displayOrder });
+  }
+  await lote.commit();
+}
+
 // ============================================================================
 // Ausencias: el dia suelto que un barbero no va
 // ============================================================================

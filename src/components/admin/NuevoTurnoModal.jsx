@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { ordenados } from '../../utils/orden';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { createAppointment, updateAppointment } from '../../lib/repository';
@@ -66,7 +67,7 @@ export default function NuevoTurnoModal({ onClose }) {
     const ids = new Set(
       professionalServices.filter((ps) => ps.professionalId === form.professionalId).map((ps) => ps.serviceId)
     );
-    return services.filter((s) => s.isActive !== false && ids.has(s.id));
+    return ordenados(services.filter((s) => s.isActive !== false && ids.has(s.id)));
   }, [services, professionalServices, form.professionalId]);
 
   const servicio = services.find((s) => s.id === form.serviceId);

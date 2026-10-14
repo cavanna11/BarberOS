@@ -5,7 +5,9 @@ import {
   updateInSubcollection,
   removeFromSubcollection,
   replaceMatching,
+  guardarOrden,
 } from '../../lib/repository';
+import { ordenados, mover, puedeMover } from '../../utils/orden';
 import { formatPrice } from '../../utils/dateUtils';
 import { NOMBRES_DIAS_CORTOS, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
 import FiltroSucursal from '../../components/admin/FiltroSucursal';
@@ -21,9 +23,25 @@ export default function ServicesPage() {
   // promos distintas—, y editarlo desde la vista unificada escribiría en la
   // sucursal equivocada.
   const [sucFiltro, setSucFiltro] = useState('');
-  const verTodas = esMultiSucursal && !sucFiltro;
+  const verTodas = esMultiSucursal && !sucFiltro;
+
+  // Renumera TODA la lista, no solo los dos que se cruzan: los servicios
+  // viejos no tienen `displayOrder` y las numeraciones quedan con huecos al
+  // borrar. Ver `utils/orden.js`.
+  const reordenar = async (id, direccion) => {
+    const cambios = mover(services, id, direccion);
+    if (!cambios.length) return;
+    try {
+      await guardarOrden(businessId, 'services', cambios);
+    } catch (e) {
+      console.error('[servicios] No se pudo reordenar:', e);
+    }
+  };
   const deSucursales = useDatosDeSucursales(['services'], { activo: verTodas });
-  const listaServicios = verTodas ? deSucursales.juntar('services') : services;
+  // El orden que decidió la barbería, no el que devuelve Firestore. En "Todas"
+  // se mezclan servicios de varias sucursales y reordenar no tendría sentido:
+  // el `displayOrder` es de cada local.
+  const listaServicios = ordenados(verTodas ? deSucursales.juntar('services') : services);
   const [guardando, setGuardando] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -137,6 +155,13 @@ export default function ServicesPage() {
         </div>
       )}
 
+      {!verTodas && listaServicios.length > 1 && (
+        <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-sm)' }}>
+          Con ▲ y ▼ cambiás en qué orden los ve el cliente al reservar. El primero de la
+          lista es el que más se elige.
+        </p>
+      )}
+
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="data-table">
           <thead>
@@ -184,6 +209,21 @@ export default function ServicesPage() {
                         </button>
                       ) : (
                         <>
+                          {/* Subir y bajar, no arrastrar: este panel se usa en el
+                              celular, y "mantener apretado para arrastrar" pelea
+                              contra "deslizar para scrollear". Un toque, una cosa. */}
+                          <button
+                            className="btn btn-ghost btn-sm orden-flecha"
+                            title="Mostrarlo antes"
+                            disabled={!puedeMover(services, srv.id).arriba}
+                            onClick={() => reordenar(srv.id, 'arriba')}
+                          >▲</button>
+                          <button
+                            className="btn btn-ghost btn-sm orden-flecha"
+                            title="Mostrarlo después"
+                            disabled={!puedeMover(services, srv.id).abajo}
+                            onClick={() => reordenar(srv.id, 'abajo')}
+                          >▼</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => openEdit(srv)}>✏️</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(srv.id)}>🗑️</button>
                         </>

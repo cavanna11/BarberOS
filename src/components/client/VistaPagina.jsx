@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ordenados } from '../../utils/orden';
 import { Link } from 'react-router-dom';
 import { getPlantilla } from '../../config/pagina';
 import { formatPrice } from '../../utils/dateUtils';
@@ -298,7 +299,8 @@ export default function VistaPagina({
   const maps = linkMaps(business);
   const wa = linkWhatsApp(business);
   const ig = linkInstagram(business);
-  const activos = servicios.filter((s) => s.isActive !== false);
+  // En el orden que la barbería decidió en Servicios, igual que en la reserva.
+  const activos = ordenados(servicios.filter((s) => s.isActive !== false));
 
   if (plantilla.id === 'landing') {
     return (

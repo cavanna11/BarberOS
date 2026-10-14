@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { enOrden } from '../../utils/orden';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBooking } from '../../contexts/BookingContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -68,8 +69,9 @@ function ProfessionalSelect({ professionals, selectedId, onSelect }) {
 
 // El orden en que la barbería cargó sus servicios (`displayOrder`), y si no
 // tiene, por nombre: es el de su lista de precios, no el alfabético.
-const enOrden = (a, b) => (a.displayOrder ?? 999) - (b.displayOrder ?? 999)
-  || String(a.name).localeCompare(String(b.name));
+// El comparador vive en utils/orden.js: lo comparten esta pantalla, la página
+// de presentación y el modal del staff. Tres copias del mismo criterio es la
+// forma de que un día dejen de coincidir.
 
 // ---- SERVICE SELECT ----
 function ServiceSelect({ services, professionalServices, professionalId, selectedId, onSelect, currency, incluido = () => false }) {

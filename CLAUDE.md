@@ -1838,6 +1838,65 @@ que del camino de redirección —el que de verdad se usa en estos navegadores�
 se recogía ni el usuario ni el error. `onAuthStateChanged` igual termina viendo
 al usuario, pero el error se perdía entero. Ahora se llama al arrancar.
 
+### En qué orden ve el cliente los servicios (14/10/2026)
+
+*"Si agregaron tres tipos de corte distintos, quieren modificar cuál aparece en
+qué orden cuando el cliente lo va a elegir."* Es un pedido de venta, no de
+prolijidad: el primero de la lista es el que más se elige, y hasta ahora el
+orden lo decidía el azar de en qué orden los habían cargado.
+
+**Estaba a medio construir, como pasó con `customDuration`.** El campo
+`displayOrder` ya existía y se escribía al crear un servicio
+(`services.length + 1`), pero no había dónde cambiarlo y de las cuatro
+pantallas que muestran servicios **solo la grilla de reserva lo miraba**:
+
+| dónde | antes | ahora |
+|---|---|---|
+| Reserva (paso 2) | sí | sí |
+| Página de presentación | **no** | sí |
+| "Agendar turno" del staff | **no** | sí |
+| Servicios (el panel) | **no** | sí, y es donde se cambia |
+
+`utils/orden.js` es ahora el único lugar donde vive el criterio — antes el
+comparador estaba escrito a mano adentro de `BookingPage`. Tres copias del mismo
+criterio es la forma de que un día dejen de coincidir.
+
+**Flechas ▲▼, no arrastrar.** Arrastrar queda mejor en una demo y peor en la
+mano: este panel se usa en el celular, la lista scrollea, y "mantener apretado
+para arrastrar" pelea contra "deslizar para bajar". Una flecha es un toque, hace
+una sola cosa y se deshace con la de al lado. Cero dependencias.
+
+**Se renumera TODA la lista, no solo los dos que se cruzan.** Es el detalle que
+hace que ande con los datos reales y no con los ideales: los servicios viejos no
+tienen `displayOrder`, y los que lo tienen quedan con huecos al borrar (sacar el
+segundo de tres deja 1 y 3) o repetidos. Si solo se intercambiaran dos valores,
+mover algo en una lista sin numerar **no haría nada visible** y parecería que el
+botón está roto. `mover()` devuelve solo las escrituras que hacen falta y
+`guardarOrden()` las manda en un LOTE: de a una, la lista se reacomodaría a
+saltos mientras llegan los snapshots.
+
+En "Todas" (cuentas con sucursales) las flechas no aparecen: ahí se mezclan
+servicios de varios locales y el `displayOrder` es de cada uno.
+
+```bash
+node scripts/test-orden.mjs   # 30 casos, sin emulador
+```
+
+Los casos que importan no son los ideales: lista sin numerar, numeración con
+huecos (1,3,7), todos con el mismo número, un solo elemento, y que las flechas
+de los extremos se apaguen.
+
+**Medido en el celular, porque el panel se usa ahí**: con los botones normales,
+cuatro acciones en la fila se comían 166 px de los 375 de un iPhone y el botón
+de borrar se iba de pantalla. La clase `.orden-flecha` los baja a 138 px.
+Verificado que la fila no desborda y que el alto de la fila es **idéntico** con
+y sin flechas — lo del precio partido en dos renglones a 375 px ya estaba antes
+y es otro tema.
+
+**Los profesionales tienen el mismo campo y el mismo agujero**: `displayOrder`
+se escribe al crearlos y **nadie lo ordena en ningún lado**. Es el mismo
+componente y el mismo util; falta hacerlo.
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
@@ -2098,12 +2157,13 @@ node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulado
 node scripts/test-preview.mjs              # vista previa del link (tampoco)
 node scripts/test-intervalo.mjs            # la grilla y el consejo (tampoco)
 node scripts/test-ausencias.mjs            # el día suelto que un barbero no va (tampoco)
+node scripts/test-orden.mjs                # en qué orden ve el cliente la lista (tampoco)
 ```
 
 Hoy: claims 77, reservas 69, facturación 14, rules 126, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
-turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 51.
-Todo en verde (905).
+turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 51, orden 30.
+Todo en verde (935).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

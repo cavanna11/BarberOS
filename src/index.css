@@ -5782,6 +5782,19 @@ select.form-input {
    ============================================================================
    Se guarda al toque, sin boton de guardar al final, asi que la lista de arriba
    es la confirmacion: lo que marcaste esta ahi. */
+/* Las flechas de orden en las tablas de gestion.
+   Compactas a proposito: con los botones normales, cuatro acciones en la fila
+   se comian 166 px de los 375 de un celular, y el nombre del servicio y el
+   precio quedaban partidos en dos renglones. */
+.orden-flecha {
+  padding: 4px 5px;
+  min-width: 0;
+  line-height: 1;
+  font-size: 0.8125rem;
+}
+
+.orden-flecha:disabled { opacity: 0.25; }
+
 .ausencias-lista {
   list-style: none;
   margin: 0 0 var(--space-md);
