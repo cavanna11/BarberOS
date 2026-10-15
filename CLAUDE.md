@@ -2040,11 +2040,15 @@ todo, así que `professionalId` queda en null a propósito.
 **Lo que no se movió:** el dueño puede nombrar peluqueros y cajeros de SU
 barbería, y sigue sin poder nombrar dueños. Esa línea es comercial, no técnica.
 
-**En el panel** tiene su propio menú (Citas, Soporte, Instalar la app) y su
-pantalla de inicio son las Citas. `/admin` —el Dashboard, con los ingresos del
-mes y el histórico— **se redirige a mano**: `esSeccionDelDueno` no lo alcanzaba
-porque es ruta exacta (`end: true`), así que escribir la dirección se los
-mostraba enteros.
+**En el panel** tiene su propio menú: **Hoy · Citas · Soporte · Instalar la
+app**. "Hoy" es la MISMA vista del Dashboard que ve el peluquero —la agenda del
+día, sin una sola mención de plata— pero con todos los barberos en vez de uno:
+`isOwner` sigue decidiendo si se ven los números, y `veTodo` (dueño o cajero)
+qué turnos se muestran. "Servicio sin turno" no le aparece, porque agenda para
+uno mismo; para eso tiene "Agendar turno", que deja elegir el barbero.
+
+Primero se lo redirigía de `/admin` a `/admin/citas`, y era pasarse: lo dejaba
+sin la pantalla que más mira un mostrador.
 
 Ojo con la lista blanca: para el cajero se compara contra SU menú, no contra el
 del peluquero. Si no, le quedaban abiertas "Mi Configuración" y "Mis reseñas",
@@ -2382,7 +2386,8 @@ los componentes.
 
 | Archivo | Confiabilidad |
 |---|---|
-| `CLAUDE.md` (este) | ✅ al día |
+| `CLAUDE.md` (este) | ✅ al día — QUÉ es el sistema y por qué |
+| `otra-ia.md` | ✅ al día — CÓMO se trabaja acá. Para una IA que recién abre el proyecto |
 | `FIREBASE_SETUP.md` | ✅ guía de migración, sirve de referencia |
 | `ROADMAPdesde2352026.md` | ⚠️ actualizado, pero el histórico de sprints tiene ruido |
 | `PROJECT_CONTEXT.md` | ❌ **desactualizado**, describe el diseño original de un solo negocio |
