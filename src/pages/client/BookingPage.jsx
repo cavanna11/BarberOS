@@ -169,6 +169,43 @@ function AdicionalesSelect({ adicionales, elegidos, onCambiar, currency }) {
   );
 }
 
+// ---- ACOMPAÑANTE ----
+// "Vengo con alguien" (un padre con el hijo): un solo turno que atiende a dos,
+// uno atrás del otro. Se elige el servicio de la otra persona; suma su tiempo
+// y su precio. No ocupa un segundo cupo del tope de turnos del cliente.
+function AcompananteSelect({ opciones, elegido, onElegir, currency }) {
+  if (opciones.length === 0) return null;
+  const abierto = Boolean(elegido);
+  return (
+    <div className="adicionales-reserva">
+      <label className="adicional-opcion" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          type="checkbox"
+          checked={abierto}
+          onChange={() => onElegir(abierto ? null : opciones[0].id)}
+        />
+        <span className="adicional-nombre"><strong>👨‍👦 Vengo con alguien</strong></span>
+      </label>
+      {abierto && (
+        <>
+          <p className="text-sm text-secondary" style={{ marginTop: 8 }}>
+            ¿Qué se hace la otra persona? Los atienden seguidos, en el mismo turno.
+          </p>
+          <div className="adicionales-lista">
+            {opciones.map((o) => (
+              <label key={o.id} className={`adicional-opcion ${elegido === o.id ? 'activa' : ''}`}>
+                <input type="radio" name="acompanante" checked={elegido === o.id} onChange={() => onElegir(o.id)} />
+                <span className="adicional-nombre">{o.name} · {o.durationMinutes} min</span>
+                <span className="adicional-precio">+ {formatPrice(o.price, currency)}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---- DATE PICKER ----
 function DatePicker({ selectedDate, onSelect, profIds = [], schedules: allSchedules, businessHours, service, ausencias = [] }) {
   const [viewDate, setViewDate] = useState(() => {
@@ -371,7 +408,7 @@ function PersonalInfoStep({ user, phone, onPhoneChange }) {
 }
 
 // ---- SUMMARY ----
-function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [], recargoTarjeta = 0 }) {
+function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [], acompanante = null, recargoTarjeta = 0 }) {
   return (
     <div>
       <h2 className="booking-step-title">Confirmar tu reserva</h2>
@@ -396,6 +433,12 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
                 <span className="summary-value">{adicionales.map((a) => a.name).join(', ')}</span>
               </div>
             )}
+            {acompanante && (
+              <div className="summary-row">
+                <span className="summary-label">👨‍👦 Viene con alguien</span>
+                <span className="summary-value">{acompanante.name} · + {formatPrice(acompanante.price, currency)}</span>
+              </div>
+            )}
             {recargoTarjeta > 0 && (
               <div className="summary-row">
                 <span className="summary-label">💳 Tarjeta o QR</span>
@@ -412,7 +455,7 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
             </div>
             <div className="summary-row">
               <span className="summary-label">⏱ Duración</span>
-              <span className="summary-value">{service.finalDuration || service.durationMinutes} min</span>
+              <span className="summary-value">{(service.finalDuration || service.durationMinutes) + (acompanante ? acompanante.durationMinutes : 0)} min</span>
             </div>
             <div className="summary-row">
               <span className="summary-label">💰 Total</span>
@@ -505,6 +548,10 @@ export default function BookingPage() {
   // Los adicionales que sumó al servicio (ids). Se vacían si cambia de servicio
   // en el paso 2 (ver abajo), no a mitad del flujo.
   const [extras, setExtras] = useState([]);
+  // El servicio de quien viene con él. Se guarda junto con el profesional con
+  // el que se eligió: si cambia de barbero, deja de valer solo (puede que el
+  // nuevo no haga ese servicio), sin un setState dentro de un efecto.
+  const [acompEstado, setAcompEstado] = useState({ profesional: null, id: null });
   // Cómo paga en el local, si la barbería cobra recargo por tarjeta o QR.
   const [metodoPago, setMetodoPago] = useState('efectivo');
 
@@ -586,9 +633,17 @@ export default function BookingPage() {
   const adicionalesDisponibles = services.filter((s) => s.adicional && s.isActive !== false).sort(enOrden);
   const adicionalesElegidos = adicionalesDisponibles.filter((s) => extras.includes(s.id));
   const totalAdicionales = adicionalesElegidos.reduce((t, s) => t + (Number(s.price) || 0), 0);
+  const acompId = acompEstado.profesional === professionalId ? acompEstado.id : null;
+  const acompServicio = acompId
+    ? services.find((s) => s.id === acompId && s.isActive !== false && !s.adicional) || null
+    : null;
+  const acompDuracion = acompServicio ? Number(acompServicio.durationMinutes) || 0 : 0;
+  // El servicio de la otra persona se paga siempre, igual que los adicionales:
+  // la membresía y el cupón son del titular y cubren SU servicio.
+  const totalAcompanante = acompServicio ? Number(acompServicio.price) || 0 : 0;
   // Los adicionales se pagan siempre: la membresía cubre el servicio y el cupón
   // descuenta el servicio, no los extras (igual que en el servidor).
-  const precioSinRecargo = (conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice) + totalAdicionales;
+  const precioSinRecargo = (conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice) + totalAdicionales + totalAcompanante;
   // Recargo por tarjeta o QR: solo si la barbería lo cobra, si hay algo que
   // pagar y si NO paga todo online (ahí no paga nada en el local).
   const montoRecargo = Number(business?.recargoTarjeta) || 0;
@@ -670,7 +725,7 @@ export default function BookingPage() {
   // Con quién se calcula la grilla. Con "Cualquiera" son todos los que hacen
   // ese servicio: los horarios que ve el cliente son la UNIÓN de los de todos,
   // porque si uno está ocupado a las 10 y el otro no, las 10 están libres.
-  const idsElegibles = useMemo(() => {
+  const idsBase = useMemo(() => {
     const activos = professionals.filter((p) => p.isActive).map((p) => p.id);
     if (professionalId !== CUALQUIERA) return professionalId ? [professionalId] : [];
     if (!serviceId) return activos;
@@ -679,6 +734,26 @@ export default function BookingPage() {
     );
     return activos.filter((id) => hacen.has(id));
   }, [professionals, professionalServices, professionalId, serviceId]);
+
+  // Con acompañante, solo sirven los que hacen LOS DOS servicios.
+  const idsElegibles = useMemo(() => {
+    if (!acompId) return idsBase;
+    const hacen = new Set(
+      professionalServices.filter((ps) => ps.serviceId === acompId).map((ps) => ps.professionalId)
+    );
+    return idsBase.filter((id) => hacen.has(id));
+  }, [idsBase, professionalServices, acompId]);
+
+  // Qué puede elegir para la otra persona: los servicios que hace alguno de
+  // los barberos en juego.
+  const acompOpciones = useMemo(() => {
+    const hacen = new Set(
+      professionalServices.filter((ps) => idsBase.includes(ps.professionalId)).map((ps) => ps.serviceId)
+    );
+    return services
+      .filter((s) => s.isActive !== false && !s.adicional && hacen.has(s.id))
+      .sort(enOrden);
+  }, [services, professionalServices, idsBase]);
 
   // Qué está ocupado ese día para ese profesional. No sale de `appointments`
   // del contexto: para un cliente esa lista trae SOLO sus propios turnos (las
@@ -722,6 +797,17 @@ export default function BookingPage() {
   const availableSlots = useMemo(() => {
     if (!idsElegibles.length || !serviceId || !date || cargandoOcupados) return [];
     const servicio = services.find((s) => s.id === serviceId);
+    // Con acompañante el turno dura los dos servicios seguidos. El motor toma
+    // la duración del servicio, así que se le pasa una copia con el total en
+    // vez de tocarlo.
+    const serviciosMotor = acompDuracion
+      ? services.map((s) => (s.id === serviceId ? { ...s, durationMinutes: (Number(s.durationMinutes) || 0) + acompDuracion } : s))
+      : services;
+    const vinculosMotor = acompDuracion
+      ? professionalServices.map((ps) => (ps.serviceId === serviceId && ps.customDuration
+        ? { ...ps, customDuration: Number(ps.customDuration) + acompDuracion }
+        : ps))
+      : professionalServices;
     // La UNIÓN de los horarios de todos los elegibles, sin repetir. Si a las 10
     // uno está ocupado y el otro no, las 10 se ofrecen: quién la toma lo decide
     // el servidor al confirmar.
@@ -733,8 +819,8 @@ export default function BookingPage() {
         date,
         schedules,
         appointments: ocupados.lista,
-        services,
-        professionalServices,
+        services: serviciosMotor,
+        professionalServices: vinculosMotor,
         slotInterval: business.slotInterval,
         businessHours: business.businessHours,
         ausencias,
@@ -745,7 +831,7 @@ export default function BookingPage() {
     return [...porHora.values()]
       .sort((a, b) => a.startMinutes - b.startMinutes)
       .filter((s) => servicioAplicaAlHorario(servicio, s.startTime)); // promo por franja
-  }, [idsElegibles, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business, ausencias]);
+  }, [idsElegibles, serviceId, date, schedules, ocupados, cargandoOcupados, services, professionalServices, business, ausencias, acompDuracion]);
 
   // Paso cero: a qué sucursal va. Antes de elegir barbero, porque el equipo,
   // los servicios y los horarios son los de ESE local — y el link que le llegó
@@ -876,6 +962,7 @@ export default function BookingPage() {
         // del documento del servicio; lo que se mostró acá es una vista previa.
         cuponCodigo: conMembresia ? null : cupon?.codigo || null,
         adicionales: adicionalesElegidos.map((s) => s.id),
+        acompanante: acompServicio ? { serviceId: acompServicio.id } : null,
         metodoPago: preguntaMetodo ? metodoPago : null,
       });
       const id = res.id;
@@ -888,6 +975,9 @@ export default function BookingPage() {
       datos.endTime = res.endTime;
       datos.membresia = res.membresia || null;
       datos.adicionales = adicionalesElegidos.map((s) => ({ id: s.id, name: s.name, price: s.price }));
+      datos.acompanante = acompServicio
+        ? { serviceId: acompServicio.id, name: acompServicio.name, price: acompServicio.price, durationMinutes: acompDuracion }
+        : null;
       datos.recargoTarjeta = recargoTarjeta;
       datos.metodoPago = preguntaMetodo ? metodoPago : null;
 
@@ -1009,6 +1099,16 @@ export default function BookingPage() {
           adicionales={adicionalesDisponibles}
           elegidos={extras}
           onCambiar={setExtras}
+          currency={business.currency}
+        />
+      )}
+
+      {/* "Vengo con alguien": se elige el servicio de la otra persona. */}
+      {step === 2 && serviceId && (
+        <AcompananteSelect
+          opciones={acompOpciones}
+          elegido={acompId}
+          onElegir={(id) => setAcompEstado({ profesional: professionalId, id })}
           currency={business.currency}
         />
       )}
@@ -1152,6 +1252,7 @@ export default function BookingPage() {
           precioLista={cupon && !conMembresia ? finalPrice : null}
           conMembresia={conMembresia}
           adicionales={adicionalesElegidos}
+          acompanante={acompServicio ? { name: acompServicio.name, price: acompServicio.price, durationMinutes: acompDuracion } : null}
           recargoTarjeta={recargoTarjeta}
           currency={business.currency}
           clientName={user.name}

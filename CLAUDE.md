@@ -938,6 +938,23 @@ en el doc de la primera) y una ficha por sucursal con su link, teléfono, WhatsA
 la primera es el documento que se crea, las demás salen por `crearSucursal`. Y `crearSucursal`
 ya no hereda teléfono ni WhatsApp de la principal (las tres quedaban con el mismo número).
 
+### "Vengo con alguien": un turno que atiende a dos (15/10/2026)
+
+El padre que viene con el hijo no podía reservar los dos (un turno por día y por
+cuenta). Ahora, en el paso 2, "Vengo con alguien" pide el servicio de la otra
+persona. `createAppointment` recibe `acompanante: { serviceId }`, lo revalida
+(existe, activo, no es un adicional, el barbero lo hace, su promo rige a la hora
+que le toca a él) y **suma su duración y su precio**: es UN turno con `endTime`
+de los dos seguidos, `durationMinutes` total y `acompanante: { serviceId, name,
+price, durationMinutes }`. No gasta un segundo cupo del tope. El precio se paga
+siempre (la membresía y el cupón son del titular). Con "Cualquiera" solo sirven
+los barberos que hacen los DOS servicios.
+
+El motor de horarios NO se tocó: el front le pasa una copia del servicio con la
+duración total. **Orden de despliegue: Functions primero, front después**: un
+front nuevo contra un servidor viejo ignora el campo y guarda el turno sin
+acompañante, en silencio. Casos en la suite de reservas.
+
 ### Adicionales: se suman al servicio, no son un turno (13/10/2026)
 
 Cejas, lavado, café, mascarilla: un servicio con `adicional: true` (se marca en Servicios) no

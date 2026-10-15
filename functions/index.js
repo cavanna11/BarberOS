@@ -819,6 +819,11 @@ exports.createAppointment = onCall(async (request) => {
     // son un turno aparte. Del cliente llegan SOLO los ids; el precio sale de
     // cada documento.
     adicionales = [],
+    // "Viene con alguien" (un padre con el hijo): `{ serviceId }` del servicio
+    // de la OTRA persona. Es un solo turno —un cupo del tope y un solo
+    // cobro— pero atiende a dos, así que suma el tiempo y el precio de ese
+    // servicio. Del cliente llega solo el id.
+    acompanante = null,
     // Cómo dice que va a pagar en el local: 'efectivo' (o transferencia) o
     // 'tarjeta' (o QR). Solo importa si la barbería cobra recargo por tarjeta.
     metodoPago = null,
@@ -897,10 +902,30 @@ exports.createAppointment = onCall(async (request) => {
   }
   const totalExtras = extras.reduce((t, x) => t + x.price, 0);
 
+  // El servicio de la otra persona, revalidado: existe, está activo y es un
+  // servicio de verdad (un adicional no se reserva solo). Duración y precio
+  // salen de SU documento, nunca del cliente.
+  let acomp = null;
+  const acompId = acompanante && typeof acompanante === 'object' ? String(acompanante.serviceId || '') : '';
+  if (acompId) {
+    const s = await db.doc(`businesses/${businessId}/services/${acompId}`).get();
+    const d = s.exists ? s.data() : null;
+    if (!d || d.isActive === false || d.adicional === true) {
+      throw new HttpsError('failed-precondition', 'El servicio de tu acompañante ya no está disponible. Volvé a elegirlo.');
+    }
+    const dur = Number(d.durationMinutes);
+    if (!Number.isFinite(dur) || dur <= 0) {
+      throw new HttpsError('failed-precondition', 'El servicio de tu acompañante no tiene una duración válida.');
+    }
+    acomp = { serviceId: s.id, name: d.name || '', price: Number(d.price) || 0, durationMinutes: dur, ventana: d.ventana || null };
+  }
+
   // ── Quién puede tomar este turno ──────────────────────────────────────────
   const dow = diaDeLaSemana(appointmentDate);
   const inicio = timeToMinutes(startTime);
-  const fin = inicio + duracion;
+  // Con acompañante el turno es un bloque seguido: primero uno, después el otro.
+  const duracionTotal = duracion + (acomp ? acomp.durationMinutes : 0);
+  const fin = inicio + duracionTotal;
   const diaNegocio = (negocio.businessHours || []).find((b) => b.dayOfWeek === dow);
 
   /**
@@ -919,6 +944,13 @@ exports.createAppointment = onCall(async (request) => {
       .where('serviceId', '==', serviceId)
       .limit(1).get();
     if (vinculo.empty) return 'Ese profesional no realiza el servicio elegido.';
+    if (acomp) {
+      const vinculoAcomp = await db.collection(`businesses/${businessId}/professionalServices`)
+        .where('professionalId', '==', profId)
+        .where('serviceId', '==', acomp.serviceId)
+        .limit(1).get();
+      if (vinculoAcomp.empty) return `Ese profesional no realiza ${acomp.name || 'el servicio de tu acompañante'}.`;
+    }
 
     const horarios = await db.collection(`businesses/${businessId}/schedules`)
       .where('professionalId', '==', profId)
@@ -958,6 +990,18 @@ exports.createAppointment = onCall(async (request) => {
         if (inicio < timeToMinutes(ventana.desde) || inicio >= timeToMinutes(ventana.hasta)) {
           return `${servicio.name || 'Ese servicio'} se ofrece solo de ${ventana.desde} a ${ventana.hasta}.`;
         }
+      }
+    }
+
+    // La promo del servicio del acompañante rige a la hora en que le toca a él.
+    if (acomp?.ventana) {
+      const v = acomp.ventana;
+      const iniAcomp = inicio + duracion;
+      if (Array.isArray(v.dias) && v.dias.length > 0 && !v.dias.includes(dow)) {
+        return `${acomp.name || 'El servicio de tu acompañante'} no se ofrece ese día.`;
+      }
+      if (v.desde && v.hasta && (iniAcomp < timeToMinutes(v.desde) || iniAcomp >= timeToMinutes(v.hasta))) {
+        return `${acomp.name || 'El servicio de tu acompañante'} se ofrece solo de ${v.desde} a ${v.hasta}.`;
       }
     }
 
@@ -1060,8 +1104,8 @@ exports.createAppointment = onCall(async (request) => {
   // El tipo de pago que PIDIÓ el cliente. Inmutable: lo que se decide adentro
   // de la transacción puede recortarlo (un turno gratis no se cobra), y eso se
   // recalcula en cada intento.
-  const tipoPagoPedido = tipoPago;
-
+  const tipoPagoPedido = tipoPago;
+
   // Quién lo atiende. Es estado MUTABLE que se decide adentro de la
   // transacción, así que se vuelve a resolver en cada intento (ver abajo).
   let profElegido = candidatos[0];
@@ -1082,7 +1126,7 @@ exports.createAppointment = onCall(async (request) => {
     cobro = { precioLista: precio, descuento: 0, precioFinal: precio, cuponCodigo: null, cuponId: null };
     membresiaAplicada = null;
     tipoPago = tipoPagoPedido;
-    montoSena = 0;
+    montoSena = 0;
     profElegido = candidatos[0];
     pideSena = tipoPago !== null;
 
@@ -1220,6 +1264,9 @@ exports.createAppointment = onCall(async (request) => {
     // Los adicionales se pagan siempre (la membresía cubre el servicio, no los
     // extras) y el cupón no los toca: descuenta el servicio.
     if (totalExtras > 0) cobro = { ...cobro, precioFinal: cobro.precioFinal + totalExtras, adicionalesTotal: totalExtras };
+    // Lo mismo con el servicio del acompañante: se paga siempre. La membresía
+    // y el cupón son del titular y cubren SU servicio, no el de otra persona.
+    if (acomp && acomp.price > 0) cobro = { ...cobro, precioFinal: cobro.precioFinal + acomp.price, acompananteTotal: acomp.price };
     // Recargo por pagar con tarjeta o QR ("$2.000 más por servicio"): lo
     // configura la barbería (`recargoTarjeta`) y se suma solo si el cliente
     // eligió pagar así EN EL LOCAL. Pagando todo online por Mercado Pago no
@@ -1276,11 +1323,13 @@ exports.createAppointment = onCall(async (request) => {
       // rechazan cualquier escritura del browser que toque este campo.
       ...(membresia ? { membresia, precioLista: precio } : {}),
       ...(extras.length ? { adicionales: extras } : {}),
+      ...(acomp ? { acompanante: { serviceId: acomp.serviceId, name: acomp.name, price: acomp.price, durationMinutes: acomp.durationMinutes } } : {}),
       // Cómo dijo que paga en el local (si la barbería distingue), y el recargo.
       ...(montoRecargo > 0
         ? { metodoPago: quiereTarjeta ? 'tarjeta' : 'efectivo', recargoTarjeta: recargoAplicado }
         : {}),
-      durationMinutes: duracion,
+      // El largo REAL del turno (con acompañante, los dos servicios seguidos).
+      durationMinutes: duracionTotal,
       serviceName: servicio.name || '',
       clientName: String(clientName).slice(0, 120),
       clientPhone: String(clientPhone).slice(0, 40),

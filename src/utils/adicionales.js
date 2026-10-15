@@ -10,5 +10,8 @@ export function textoMetodoPago(turno) {
 /** ' + Cejas, Lavado' para pegar al nombre del servicio; '' si no tiene. */
 export function textoAdicionales(turno) {
   const lista = Array.isArray(turno?.adicionales) ? turno.adicionales : [];
-  return lista.length ? ` + ${lista.map((a) => a.name).join(', ')}` : '';
+  const extras = lista.length ? ` + ${lista.map((a) => a.name).join(', ')}` : '';
+  // "Viene con alguien": el turno atiende a dos, uno atrás del otro.
+  const acomp = turno?.acompanante?.name ? ` · 👨‍👦 con otro: ${turno.acompanante.name}` : '';
+  return extras + acomp;
 }

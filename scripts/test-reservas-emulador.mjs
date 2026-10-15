@@ -286,6 +286,35 @@ chequear('un servicio común no se puede colar como adicional', r.error === 'FAI
 r = await reservar(c13, { ...base, appointmentDate: '2027-03-16', startTime: '11:00', adicionales: ['no-existe'] });
 chequear('un adicional que no existe se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 
+titulo('Viene con alguien (un turno que atiende a dos, uno atrás del otro):');
+const DIA_AC = '2027-04-20';   // mismo día de semana que FECHA
+await db.doc(`businesses/${BID}/services/srv-nino`).set({ name: 'Corte niño', price: 8000, durationMinutes: 20, isActive: true });
+await db.doc(`businesses/${BID}/professionalServices/ps-nino`).set({ professionalId: PROF, serviceId: 'srv-nino' });
+const ca1 = await usuario('ca1@gmail.com');
+r = await reservar(ca1, { ...base, appointmentDate: DIA_AC, startTime: '10:00', acompanante: { serviceId: 'srv-nino' } });
+chequear('corte + corte niño: el precio suma el del acompañante', r.ok?.price === 20000, JSON.stringify(r));
+chequear('y el turno dura los dos servicios seguidos (30 + 20)', r.ok?.endTime === '10:50', JSON.stringify(r));
+const tAc = r.ok?.id ? (await db.doc(`businesses/${BID}/appointments/${r.ok.id}`).get()).data() : null;
+chequear('el turno guarda el servicio del acompañante y la duración total',
+  tAc?.acompanante?.serviceId === 'srv-nino' && tAc?.acompanante?.price === 8000 && tAc?.durationMinutes === 50,
+  JSON.stringify({ a: tAc?.acompanante, d: tAc?.durationMinutes }));
+const ca2 = await usuario('ca2@gmail.com');
+r = await reservar(ca2, { ...base, appointmentDate: DIA_AC, startTime: '10:30' });
+chequear('el bloque entero queda ocupado: a las 10:30 ya no se puede', r.error === 'ALREADY_EXISTS', JSON.stringify(r));
+r = await reservar(ca2, { ...base, appointmentDate: DIA_AC, startTime: '10:50' });
+chequear('y a las 10:50, justo cuando termina, sí', r.ok?.status === 'created', JSON.stringify(r));
+r = await reservar(ca2, { ...base, appointmentDate: DIA_AC, startTime: '11:30', acompanante: { serviceId: 'srv-nino' } });
+chequear('el padre con el hijo no gasta un segundo cupo: sigue valiendo un turno por día', r.error === 'ALREADY_EXISTS', JSON.stringify(r));
+const ca3 = await usuario('ca3@gmail.com');
+r = await reservar(ca3, { ...base, appointmentDate: DIA_AC, startTime: '14:00', acompanante: { serviceId: 'no-existe' } });
+chequear('un servicio de acompañante que no existe se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(ca3, { ...base, appointmentDate: DIA_AC, startTime: '14:00', acompanante: { serviceId: 'srv-cejas' } });
+chequear('un adicional no vale como acompañante', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(ca3, { ...base, appointmentDate: DIA_AC, startTime: '14:00', acompanante: { serviceId: SRV_HUERFANO } });
+chequear('un servicio que el barbero no hace se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(ca3, { ...base, appointmentDate: DIA_AC, startTime: '17:45', acompanante: { serviceId: 'srv-nino' } });
+chequear('arranca dentro del horario aunque el bloque termine después del cierre', r.ok?.status === 'created' && r.ok?.endTime === '18:35', JSON.stringify(r));
+
 titulo('Recargo por pagar con tarjeta o QR:');
 const c14 = await usuario('c14@gmail.com');
 r = await reservar(c14, { ...base, appointmentDate: '2027-03-23', startTime: '10:00', metodoPago: 'tarjeta' });
