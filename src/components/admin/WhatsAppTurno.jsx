@@ -16,6 +16,7 @@ export default function WhatsAppTurno({ turno, business, servicio = null, compac
   const mensajes = mensajesDelTurno(turno, {
     nombreNegocio: business?.name || '',
     nombreServicio: servicio?.name || '',
+    businessId: business?.id || '',
   });
 
   const recordatorio = linkWhatsApp(turno?.clientPhone, mensajes.recordatorio);

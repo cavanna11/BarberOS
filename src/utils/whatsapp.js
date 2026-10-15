@@ -106,7 +106,7 @@ function diaCorto(fechaISO) {
  * servicio. Si falta algo, la frase se acomoda sola en vez de quedar con un
  * hueco ("a las undefined").
  */
-export function mensajesDelTurno(turno, { nombreNegocio = '', nombreServicio = '' } = {}) {
+export function mensajesDelTurno(turno, { nombreNegocio = '', nombreServicio = '', businessId = '' } = {}) {
   const cliente = nombreDePila(turno?.clientName);
   const hola = cliente ? `Hola ${cliente}` : 'Hola';
   const donde = nombreNegocio ? ` en ${nombreNegocio}` : '';
@@ -114,7 +114,7 @@ export function mensajesDelTurno(turno, { nombreNegocio = '', nombreServicio = '
   const hora = turno?.startTime || '';
   const servicio = nombreServicio ? ` (${nombreServicio})` : '';
 
-  return {
+  const base = {
     recordatorio:
       `${hola}! Te recordamos tu turno${donde}` +
       (dia ? ` el ${dia}` : '') +
@@ -131,4 +131,42 @@ export function mensajesDelTurno(turno, { nombreNegocio = '', nombreServicio = '
       (hora ? ` a las ${hora}` : '') +
       `. Si no podés venir, avisanos con tiempo así se lo damos a otra persona. ¡Gracias!`,
   };
+
+  // Neytan Barber 777 escribe en primera persona (es un solo barbero) y pidió
+  // su propio texto. Solo pisa el recordatorio; el resto queda igual.
+  if (businessId === ID_NEYTAN) {
+    return { ...base, recordatorio: recordatorioNeytan(turno) };
+  }
+  return base;
+}
+
+/** Misma barbería que registra `paginas-exclusivas/index.js`. */
+const ID_NEYTAN = 'UgRVepKBCLf84xkgVgSX';
+
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+/** '2026-10-20' → 'martes 20/10'. Sin huecos si la fecha no sirve. */
+function diaConNombre(fechaISO) {
+  const corto = diaCorto(fechaISO);
+  if (!corto) return '';
+  const [a, m, d] = fechaISO.split('-').map(Number);
+  // Mediodía UTC: evita que el huso horario corra el día.
+  const nombre = DIAS_SEMANA[new Date(Date.UTC(a, m - 1, d, 12)).getUTCDay()];
+  return `${nombre} ${corto}`;
+}
+
+function recordatorioNeytan(turno) {
+  const cliente = nombreDePila(turno?.clientName);
+  const dia = diaConNombre(turno?.appointmentDate);
+  const hora = turno?.startTime || '';
+  const cuando = [dia && `📅 ${dia}`, hora && `🕒 ${hora}`].filter(Boolean).join(' | ');
+
+  return (
+    `¡Hola${cliente ? ` ${cliente}` : ''}! 👋 ¿Cómo estás?\n\n` +
+    `💈 Te recuerdo que tenés un turno reservado en Neytan Barber 777.\n\n` +
+    (cuando ? `${cuando}\n\n` : '') +
+    `Te pido que seas puntual. Si no podés asistir, por favor cancelá tu turno desde la página web ` +
+    `para que pueda organizar mejor la agenda y darle ese horario a otro cliente.\n\n` +
+    `¡Gracias por tu tiempo y por confiar en mi trabajo! ✂️`
+  );
 }
