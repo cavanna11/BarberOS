@@ -99,7 +99,10 @@ export default function NuevoTurnoModal({ onClose }) {
 
   const slot = slots.find((s) => s.startTime === form.startTime);
   const digitos = form.clientPhone.replace(/\D/g, '');
-  const telefonoOk = digitos.length === 0 || (digitos.length >= 10 && digitos.length <= 13);
+  // Obligatorio: sin teléfono no hay recordatorio de WhatsApp posible. Vacío no
+  // se marca en rojo (todavía no escribió), pero tampoco deja guardar.
+  const telefonoOk = digitos.length >= 10 && digitos.length <= 13;
+  const telefonoVacio = digitos.length === 0;
   const listo = Boolean(slot) && form.clientName.trim().length > 0 && telefonoOk && !guardando;
 
   const guardar = async () => {
@@ -261,18 +264,18 @@ export default function NuevoTurnoModal({ onClose }) {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Teléfono (opcional)</label>
+            <label className="form-label">Teléfono</label>
             <input
               className="form-input"
               type="tel"
               value={form.clientPhone}
               onChange={set('clientPhone')}
               placeholder="11 1234-5678"
-              style={!telefonoOk ? { borderColor: 'var(--danger)' } : undefined}
+              style={!telefonoOk && !telefonoVacio ? { borderColor: 'var(--danger)' } : undefined}
             />
-            {!telefonoOk && (
+            {!telefonoOk && !telefonoVacio && (
               <p className="text-sm" style={{ color: 'var(--danger)', marginTop: 6 }}>
-                Tiene que tener entre 10 y 13 dígitos, o dejalo vacío.
+                Tiene que tener entre 10 y 13 dígitos.
               </p>
             )}
           </div>
