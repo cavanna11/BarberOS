@@ -194,7 +194,7 @@ function DatePicker({ selectedDate, onSelect, profIds = [], schedules: allSchedu
     <div>
       <h2 className="booking-step-title">Elegí una fecha</h2>
       <p className="booking-step-subtitle">
-        {tieneVentana(service) ? `${service.name}: ${describirVentana(service).toLowerCase()}` : 'Seleccioná el día de tu cita'}
+        {tieneVentana(service) ? `${service.name}: ${describirVentana(service).toLowerCase()}` : 'Seleccioná el día de tu turno'}
       </p>
       <div className="calendar">
         <div className="calendar-header">

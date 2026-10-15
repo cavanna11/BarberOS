@@ -170,7 +170,7 @@ export default function AusenciasDelBarbero({ professionalId, businessId, compac
             <strong>Ya tenés {turnosEseDia.length} turno{turnosEseDia.length === 1 ? '' : 's'} ese día.</strong>
             <p className="text-sm" style={{ margin: '6px 0 0' }}>
               No se cancelan solos: marcar la ausencia saca los horarios LIBRES de la grilla, pero
-              los que ya reservaron siguen ahí. Avisales y cancelalos desde <strong>Citas</strong>.
+              los que ya reservaron siguen ahí. Avisales y cancelalos desde <strong>Turnos</strong>.
             </p>
           </div>
         )}

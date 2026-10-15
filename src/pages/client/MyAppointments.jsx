@@ -69,7 +69,7 @@ export default function MyAppointments() {
       <div className="my-appointments">
         <div className="empty-state">
           <div className="empty-state-icon">🔒</div>
-          <p>Necesitás iniciar sesión para ver tus citas</p>
+          <p>Necesitás iniciar sesión para ver tus turnos</p>
           <Link to="/login" state={{ from: location.pathname }} className="btn btn-primary mt-lg">
             Iniciar Sesión
           </Link>
@@ -93,7 +93,7 @@ export default function MyAppointments() {
   const displayed = tab === 'upcoming' ? upcoming : past;
 
   const handleCancel = (id) => {
-    if (window.confirm('¿Estás seguro de que querés cancelar esta cita?')) {
+    if (window.confirm('¿Estás seguro de que querés cancelar este turno?')) {
       cancelAppointment(businessId, id, '', 'client').catch((err) => {
         console.error('[MyAppointments] No se pudo cancelar:', err);
         alert('No se pudo cancelar el turno: ' + err.message);
@@ -103,7 +103,7 @@ export default function MyAppointments() {
 
   return (
     <div className="my-appointments">
-      <h1>Mis Citas</h1>
+      <h1>Mis Turnos</h1>
       <MiMembresia membresia={membresia.membresia} usos={membresia.usos} />
       <div className="tabs mt-md">
         <button className={`tab ${tab === 'upcoming' ? 'active' : ''}`} onClick={() => setTab('upcoming')}>
@@ -117,8 +117,8 @@ export default function MyAppointments() {
       {displayed.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">{tab === 'upcoming' ? '📅' : '📋'}</div>
-          <p>{tab === 'upcoming' ? 'No tenés citas próximas' : 'No tenés citas pasadas'}</p>
-          {tab === 'upcoming' && <Link to={`/${slug}/reservar`} className="btn btn-primary mt-lg">Reservar una cita</Link>}
+          <p>{tab === 'upcoming' ? 'No tenés turnos próximos' : 'No tenés turnos pasados'}</p>
+          {tab === 'upcoming' && <Link to={`/${slug}/reservar`} className="btn btn-primary mt-lg">Reservar un turno</Link>}
         </div>
       ) : (
         displayed.map(apt => {

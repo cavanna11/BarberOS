@@ -282,7 +282,7 @@ export default function ResenasPage() {
             <p>
               {hayFiltros
                 ? 'No hay reseñas con estos filtros.'
-                : 'Todavía no hay reseñas. Aparecen cuando marcás un turno como atendido y el cliente lo valora desde "Mis citas".'}
+                : 'Todavía no hay reseñas. Aparecen cuando marcás un turno como atendido y el cliente lo valora desde "Mis turnos".'}
             </p>
           </div>
         )}

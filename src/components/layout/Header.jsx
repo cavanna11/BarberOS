@@ -45,7 +45,7 @@ export default function Header() {
           <>
             {slug && (
               <Link to={`${home}/mis-citas`} className="btn btn-ghost btn-sm">
-                📅 Mis Citas
+                📅 Mis Turnos
               </Link>
             )}
             <button onClick={logout} className="btn btn-ghost btn-sm">

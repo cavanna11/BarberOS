@@ -208,7 +208,7 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
   };
 
   const handleCancel = (apt) => {
-    if (window.confirm('¿Cancelar esta cita?')) {
+    if (window.confirm('¿Cancelar este turno?')) {
       cancelAppointment(negocioDe(apt), apt.id).catch((err) => {
         console.error('[AppointmentsPage] No se pudo cancelar:', err);
         alert('No se pudo cancelar el turno: ' + err.message);
@@ -264,7 +264,7 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
   return (
     <div>
       <div className="admin-page-header">
-        <h1>{isOwner ? 'Citas' : 'Mis Citas'}</h1>
+        <h1>{isOwner ? 'Turnos' : 'Mis Turnos'}</h1>
         <div className="flex items-center gap-md citas-acciones">
           <span className="badge badge-neutral">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''}</span>
           {/* Los clientes de siempre: mismo día y horario, cada N semanas. */}
@@ -392,7 +392,7 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
           <div className="empty-state">
             {vinculo.esBarbero && !vinculo.vinculado
               ? <p>⚠️ {textoVinculo(vinculo.motivo)} Pedile al dueño que te vincule desde Administradores.</p>
-              : <p>No se encontraron citas con estos filtros</p>}
+              : <p>No se encontraron turnos con estos filtros</p>}
           </div>
         )}
       </div>
@@ -473,7 +473,7 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
           <div className="empty-state">
             {vinculo.esBarbero && !vinculo.vinculado
               ? <p>⚠️ {textoVinculo(vinculo.motivo)} Pedile al dueño que te vincule desde Administradores.</p>
-              : <p>No se encontraron citas con estos filtros</p>}
+              : <p>No se encontraron turnos con estos filtros</p>}
           </div>
         )}
       </div>

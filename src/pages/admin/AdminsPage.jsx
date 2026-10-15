@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { setBusinessAdmin, revokeBusinessAdmin } from '../../lib/functions';
 
-const ROLE_ADMIN = { value: 'admin', label: '✂️ Peluquero — solo sus citas' };
+const ROLE_ADMIN = { value: 'admin', label: '✂️ Peluquero — solo sus turnos' };
 // El mostrador: la agenda entera del local, agendar y cobrar. No ve los
 // números del negocio ni su configuración.
 const ROLE_CAJERO = { value: 'cajero', label: '🧾 Mostrador — toda la agenda, sin los números' };
@@ -213,8 +213,8 @@ export default function AdminsPage() {
           <li><strong>Si ya usó BarberOS alguna vez</strong> → el acceso queda activo enseguida, pero tiene que cerrar sesión y volver a entrar para que le tome.</li>
           <li><strong>Si nunca entró</strong> → el permiso queda anotado y se activa solo, la primera vez que inicie sesión.</li>
           <li><strong>Quien no está en la lista</strong> → va al flujo normal de reserva de clientes.</li>
-          <li><strong>Dueño</strong>: ve todas las citas, estadísticas globales y puede modificar todo.</li>
-          <li><strong>Peluquero</strong>: solo ve las citas asignadas a su perfil de profesional.</li>
+          <li><strong>Dueño</strong>: ve todos los turnos, estadísticas globales y puede modificar todo.</li>
+          <li><strong>Peluquero</strong>: solo ve los turnos asignados a su perfil de profesional.</li>
           <li><strong>Mostrador</strong>: ve y maneja la agenda <em>entera</em> del local —agendar, confirmar, marcar quién vino y cobrar— pero no ve los ingresos ni el resto de los números del negocio, ni su configuración. Para quien atiende la caja sin cortar el pelo.</li>
         </ul>
       </div>
@@ -293,7 +293,7 @@ export default function AdminsPage() {
                     ))}
                   </select>
                   <p className="text-xs text-muted" style={{ marginTop: 4 }}>
-                    El peluquero solo verá las citas asignadas a este perfil.
+                    El peluquero solo verá los turnos asignados a este perfil.
                   </p>
                 </div>
               )}

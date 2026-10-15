@@ -290,7 +290,7 @@ export default function NuevoTurnoModal({ onClose }) {
             {Number(form.cadaSemanas) > 0 && (
               <p className="text-sm text-muted" style={{ marginTop: 6 }}>
                 Se agendan solos, siempre el mismo día y horario. Si una semana ese horario ya está
-                tomado o no trabajás, esa se saltea. Se da de baja desde Citas → Turnos fijos.
+                tomado o no trabajás, esa se saltea. Se da de baja desde Turnos → Turnos fijos.
               </p>
             )}
           </div>

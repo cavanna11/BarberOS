@@ -15,7 +15,7 @@ import { sucursalElegidaEnPanel, elegirSucursalEnPanel, olvidarSucursalEnPanel }
 const ownerNavItems = [
   { to: '/admin',               icon: '📊', label: 'Dashboard',        end: true },
   // Citas va segundo a propósito: es la pantalla que más se abre en el día.
-  { to: '/admin/citas',         icon: '📅', label: 'Citas' },
+  { to: '/admin/citas',         icon: '📅', label: 'Turnos' },
   // Solo para las cuentas que pueden tener más de una barbería: al que tiene
   // una sola, una sección llamada "Sucursales" no le dice nada.
   { to: '/admin/sucursales',    icon: '🏠', label: 'Mis sucursales', soloSucursales: true, desde: 'Plan Empresarial' },
@@ -43,7 +43,7 @@ const adminNavItems = [
   // La lista del día, con confirmar / vino / no vino / cancelar y "Agendar
   // turno". Es la que más se abre; la agenda como calendario vive abajo del
   // dashboard, que para eso alcanza.
-  { to: '/admin/citas',   icon: '📅', label: 'Citas' },
+  { to: '/admin/citas',   icon: '📅', label: 'Turnos' },
   // El barbero ve las reseñas de SUS turnos: las Rules le filtran por su
   // perfil, así que no puede ver las de los demás ni pidiéndolas.
   { to: '/admin/resenas', icon: '⭐', label: 'Mis reseñas' },
@@ -60,7 +60,7 @@ const cajeroNavItems = [
   // La agenda del día, sin los números del negocio: es la misma vista que ve el
   // peluquero, pero con TODOS los barberos en vez de con uno solo.
   { to: '/admin',          icon: '🏠', label: 'Hoy', end: true },
-  { to: '/admin/citas',    icon: '📅', label: 'Citas' },
+  { to: '/admin/citas',    icon: '📅', label: 'Turnos' },
   { to: '/admin/soporte',  icon: '💬', label: 'Soporte' },
   { to: '/admin/instalar', icon: '📲', label: 'Instalar la app' },
 ];

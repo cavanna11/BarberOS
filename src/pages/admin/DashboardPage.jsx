@@ -423,7 +423,7 @@ export default function DashboardPage() {
             <div key={p.id} className="revenue-bar-item">
               <div className="revenue-bar-header">
                 <span>{p.name}</span>
-                <span className="text-secondary">{formatPrice(p.total, business.currency)} ({p.count} citas)</span>
+                <span className="text-secondary">{formatPrice(p.total, business.currency)} ({p.count} turnos)</span>
               </div>
               <div className="revenue-bar-track">
                 <div className="revenue-bar-fill" style={{ width: `${(p.total / maxRevProf) * 100}%` }} />
