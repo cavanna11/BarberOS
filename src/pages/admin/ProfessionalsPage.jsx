@@ -11,7 +11,7 @@ import {
 import { getDayName, generateId } from '../../utils/dateUtils';
 import { limitesDelNegocio, puede } from '../../config/plans';
 import FotoPerfil from '../../components/admin/FotoPerfil';
-import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import HorarioSemanal from '../../components/admin/HorarioSemanal';
 import AusenciasDelBarbero from '../../components/admin/AusenciasDelBarbero';
 import { estadoPushDelEquipo, crearProfesional, setBusinessAdmin } from '../../lib/functions';
 import { errorDeHorario } from '../../utils/horarios';
@@ -424,7 +424,7 @@ export default function ProfessionalsPage() {
       {/* ── Modal ── */}
       {ausenciasDe && (
         <div className="modal-overlay" onClick={() => setAusenciasDe(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Días que no viene {ausenciasDe.name}</h2>
               <button className="modal-close" onClick={() => setAusenciasDe(null)}>&times;</button>
