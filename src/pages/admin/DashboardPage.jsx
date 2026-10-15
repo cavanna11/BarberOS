@@ -102,14 +102,19 @@ export default function DashboardPage() {
   const [showWalkinModal, setShowWalkinModal] = useState(false);
   const [agendando, setAgendando] = useState(false);
 
+  // `isOwner` decide si se ven los NÚMEROS del negocio, así que queda tal cual:
+  // es lo único que el mostrador no tiene que ver.
   const isOwner = user?.role === 'owner';
+  const esCajero = user?.role === 'cajero';
+  // Pero la agenda del día la ve entera, igual que el dueño: es su trabajo.
+  const veTodo = isOwner || esCajero;
   // Local, no toISOString(): eso es UTC, y a partir de las 21:00 en Argentina
   // ya es "mañana" — el walk-in se registraba en el día equivocado.
   const today   = toDateString(new Date());
 
   // Owner ve todas las citas; peluquero solo las suyas. Sin perfil vinculado
   // no hay turnos que mostrar: el aviso de arriba dice por qué.
-  const visibleAppointments = isOwner
+  const visibleAppointments = veTodo
     ? appointments
     : user?.professionalId
       ? appointments.filter(a => a.professionalId === user.professionalId)
@@ -184,9 +189,11 @@ export default function DashboardPage() {
             <button className="btn btn-outline" onClick={() => setAgendando(true)}>
               📅 Agendar turno
             </button>
-            <button className="btn btn-primary" onClick={() => setShowWalkinModal(true)}>
-              ✂️ Servicio sin turno
-            </button>
+            {!esCajero && (
+              <button className="btn btn-primary" onClick={() => setShowWalkinModal(true)}>
+                ✂️ Servicio sin turno
+              </button>
+            )}
           </div>
         </div>
 
@@ -199,7 +206,7 @@ export default function DashboardPage() {
             professionals={professionals}
             services={services}
             business={business}
-            professionalId={user.professionalId}
+            professionalId={esCajero ? null : user.professionalId}
             onCambiarEstado={cambiarEstado}
           />
         </div>

@@ -184,7 +184,9 @@ export default function InstalarPage() {
         businessId,
         uid: user.id,
         professionalId: user.professionalId || null,
-        role: user.role === 'owner' ? 'owner' : 'admin',
+        // El mostrador recibe los avisos del local, como el dueño: un 'admin'
+        // sin professionalId no recibiría ninguno.
+        role: user.role === 'owner' || user.role === 'cajero' ? 'owner' : 'admin',
       });
       setEstado(r.estado);
     } catch (err) {

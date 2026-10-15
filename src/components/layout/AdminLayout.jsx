@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import CampanaNotificaciones from '../admin/CampanaNotificaciones';
-import { NavLink, Outlet, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBusiness } from '../../contexts/BusinessContext';
 import { useCurrentBusiness } from '../../hooks/useCurrentBusiness';
@@ -57,7 +57,10 @@ const adminNavItems = [
 // resto de los números del negocio. Su pantalla de inicio son las Citas, que es
 // donde pasa el día.
 const cajeroNavItems = [
-  { to: '/admin/citas',    icon: '📅', label: 'Citas', end: true },
+  // La agenda del día, sin los números del negocio: es la misma vista que ve el
+  // peluquero, pero con TODOS los barberos en vez de con uno solo.
+  { to: '/admin',          icon: '🏠', label: 'Hoy', end: true },
+  { to: '/admin/citas',    icon: '📅', label: 'Citas' },
   { to: '/admin/soporte',  icon: '💬', label: 'Soporte' },
   { to: '/admin/instalar', icon: '📲', label: 'Instalar la app' },
 ];
@@ -558,14 +561,7 @@ export default function AdminLayout() {
             contenido para que no empuje la barra ni el aviso de vínculo roto. */}
         <div className="admin-content">
           <AvisoPlataforma />
-          {/* `/admin` es el Dashboard, con ingresos del mes, histórico y el resto
-              de los números del negocio. `esSeccionDelDueno` no lo alcanza
-              porque es ruta exacta (`end: true`), así que el mostrador se
-              redirige a mano. Sin esto, escribir la dirección se los mostraba
-              enteros — y lo que esconde el menú no es seguridad. */}
-          {esCajero && pathname === '/admin' ? (
-            <Navigate to="/admin/citas" replace />
-          ) : business && debeElegirSucursal ? (
+          {business && debeElegirSucursal ? (
             <ElegirSucursalPanel sucursales={sucursales} grupoId={grupoCuenta} nombreCuenta={nombreCuenta} esPlataforma={platformOwner} onElegir={elegirSucursal} />
           ) : business && esSeccionDelDueno(pathname) ? (
             <div className="card empty-state" style={{ padding: 'var(--space-2xl)' }}>
