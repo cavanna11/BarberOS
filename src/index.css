@@ -5857,6 +5857,19 @@ select.form-input {
   font-size: 0.9375rem;
 }
 
+/* Elegir entre "no voy" y "ese dia hago otro horario". Dos botones y no un
+   desplegable: son dos caminos distintos y el que entra tiene que VER que
+   existe el segundo — el pedido que lo trajo empezaba con "no hay una opcion
+   para poner eso". */
+.ausencias-modos {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+}
+
+.ausencias-modos .btn { flex: 1 1 auto; }
+
 .ausencias-form { display: flex; flex-direction: column; gap: var(--space-sm); }
 .ausencias-form .form-group { margin-bottom: 0; }
 .ausencias-form .btn { align-self: flex-start; }

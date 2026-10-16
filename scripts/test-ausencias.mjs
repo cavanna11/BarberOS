@@ -13,6 +13,8 @@
 import {
   idDeAusencia, esFecha, errorDeAusencia, normalizarAusencia,
   bloqueosDelDia, chocaConAusencia, faltaTodoElDia, fechasEntre, proximas,
+  idDeHorarioEspecial, errorDeHorarioEspecial, normalizarHorarioEspecial,
+  esHorarioEspecial, ventanaDelDia, DIA_COMPLETO,
 } from '../src/utils/ausencias.js';
 
 let pasaron = 0, fallaron = 0;
@@ -154,6 +156,132 @@ chequear('ordenadas por fecha y hora',
   === JSON.stringify(['2026-10-21 10:00', '2026-10-21 16:00', '2026-10-28 todo']),
   JSON.stringify(p.map((x) => `${x.fecha} ${x.desde || 'todo'}`)));
 chequear('sin argumentos no revienta', proximas(undefined, PEPITO, '2026-10-13').length === 0);
+
+// ============================================================================
+// El horario especial de un día suelto (16/10/2026)
+// ============================================================================
+// "Mañana tengo un barbero que solo por la mañana va a trabajar de 10 a 1 de la
+// tarde, el resto de los días normal." Se guarda el rato que SÍ trabaja y
+// `bloqueosDelDia` devuelve los ratos de AFUERA, que es lo que el motor ya sabe
+// descontar.
+//
+// Lo que estos casos protegen, en orden de gravedad:
+//   1. que el código VIEJO no lea el horario al revés (de ahí los null),
+//   2. que una ausencia de día completo le gane al horario especial,
+//   3. que un horario que no se entiende bloquee el día en vez de abrirlo.
+const he = (professionalId, fecha, trabajaDesde, trabajaHasta) =>
+  ({ professionalId, fecha, desde: null, hasta: null, trabajaDesde, trabajaHasta });
+
+console.log('\nEl id del horario especial:');
+chequear('lleva su propio sufijo',
+  idDeHorarioEspecial(PEPITO, MIERCOLES) === 'prof-pepito_2026-10-21_horario',
+  idDeHorarioEspecial(PEPITO, MIERCOLES));
+chequear('NO pisa la ausencia de día completo del mismo día',
+  idDeHorarioEspecial(PEPITO, MIERCOLES) !== idDeAusencia(PEPITO, MIERCOLES));
+chequear('cargarlo dos veces da el mismo id (un horario por día)',
+  idDeHorarioEspecial(PEPITO, MIERCOLES) === idDeHorarioEspecial(PEPITO, MIERCOLES));
+
+console.log('\nQué cuenta como horario especial:');
+chequear('con las dos horas, sí', esHorarioEspecial(he(PEPITO, MIERCOLES, '10:00', '13:00')));
+chequear('una ausencia de día completo, no', !esHorarioEspecial(au(PEPITO, MIERCOLES)));
+chequear('una franja de ausencia, no', !esHorarioEspecial(au(PEPITO, MIERCOLES, '15:00', '18:00')));
+chequear('a medio escribir SÍ cuenta como horario (y falla cerrado después)',
+  esHorarioEspecial({ professionalId: PEPITO, fecha: MIERCOLES, trabajaDesde: '10:00' }));
+chequear('basura no revienta', !esHorarioEspecial(null) && !esHorarioEspecial({}));
+
+console.log('\nValidación:');
+chequear('sin fecha', errorDeHorarioEspecial({ trabajaDesde: '10:00', trabajaHasta: '13:00' }) !== null);
+chequear('bien', errorDeHorarioEspecial({ fecha: MIERCOLES, trabajaDesde: '10:00', trabajaHasta: '13:00' }) === null);
+chequear('sin la hora de fin: NO vale (media franja es media olvidada)',
+  errorDeHorarioEspecial({ fecha: MIERCOLES, trabajaDesde: '10:00' }) !== null);
+chequear('sin la de inicio tampoco',
+  errorDeHorarioEspecial({ fecha: MIERCOLES, trabajaHasta: '13:00' }) !== null);
+chequear('fin antes que inicio',
+  errorDeHorarioEspecial({ fecha: MIERCOLES, trabajaDesde: '13:00', trabajaHasta: '10:00' }) !== null);
+chequear('fin IGUAL al inicio (un día de cero minutos no es un horario)',
+  errorDeHorarioEspecial({ fecha: MIERCOLES, trabajaDesde: '10:00', trabajaHasta: '10:00' }) !== null);
+chequear('hora inventada',
+  errorDeHorarioEspecial({ fecha: MIERCOLES, trabajaDesde: '25:00', trabajaHasta: '26:00' }) !== null);
+
+console.log('\nNormalizar:');
+const NORM = normalizarHorarioEspecial({ professionalId: PEPITO, fecha: MIERCOLES, trabajaDesde: '10:00', trabajaHasta: '13:00' });
+chequear('desde/hasta quedan en NULL — es lo que hace que el código viejo falle cerrado',
+  NORM.desde === null && NORM.hasta === null, JSON.stringify(NORM));
+chequear('guarda el rato que sí trabaja',
+  NORM.trabajaDesde === '10:00' && NORM.trabajaHasta === '13:00');
+chequear('una hora inválida deja los DOS campos en null (y entonces bloquea el día)',
+  (() => {
+    const n = normalizarHorarioEspecial({ professionalId: PEPITO, fecha: MIERCOLES, trabajaDesde: 'xx', trabajaHasta: '13:00' });
+    return n.trabajaDesde === null && n.trabajaHasta === null;
+  })());
+
+console.log('\nLo que se bloquea (el caso del pedido: trabaja 10 a 13):');
+const SOLO_MANANA = [he(PEPITO, MIERCOLES, '10:00', '13:00')];
+const bm = bloqueosDelDia(SOLO_MANANA, PEPITO, MIERCOLES);
+chequear('el día NO queda bloqueado entero', bm.todoElDia === false);
+chequear('se bloquea antes de las 10 y después de las 13',
+  JSON.stringify(bm.intervalos) === JSON.stringify([[0, min('10:00')], [min('13:00'), DIA_COMPLETO]]),
+  JSON.stringify(bm.intervalos));
+chequear('un turno de 10:00 a 10:30 entra',
+  !chocaConAusencia(SOLO_MANANA, PEPITO, MIERCOLES, min('10:00'), min('10:30')));
+chequear('uno de 09:30 a 10:00 NO entra',
+  chocaConAusencia(SOLO_MANANA, PEPITO, MIERCOLES, min('09:30'), min('10:00')));
+chequear('uno de 12:30 a 13:00 entra justo',
+  !chocaConAusencia(SOLO_MANANA, PEPITO, MIERCOLES, min('12:30'), min('13:00')));
+chequear('uno que TERMINA pasadas las 13 no entra: a esa hora se va',
+  chocaConAusencia(SOLO_MANANA, PEPITO, MIERCOLES, min('12:45'), min('13:15')));
+chequear('uno de la tarde no entra',
+  chocaConAusencia(SOLO_MANANA, PEPITO, MIERCOLES, min('17:00'), min('17:30')));
+chequear('el calendario NO apaga el día (ese día igual atiende)',
+  faltaTodoElDia(SOLO_MANANA, PEPITO, MIERCOLES) === false);
+chequear('no toca los demás días',
+  bloqueosDelDia(SOLO_MANANA, PEPITO, OTRO_MIERCOLES).intervalos.length === 0);
+chequear('no toca al otro barbero',
+  bloqueosDelDia(SOLO_MANANA, JULIAN, MIERCOLES).intervalos.length === 0);
+
+console.log('\nCon un horario que arranca a medianoche:');
+chequear('desde 00:00 no agrega un intervalo vacío adelante',
+  JSON.stringify(bloqueosDelDia([he(PEPITO, MIERCOLES, '00:00', '13:00')], PEPITO, MIERCOLES).intervalos)
+  === JSON.stringify([[min('13:00'), DIA_COMPLETO]]));
+chequear('y sigue sin bloquear el día entero',
+  bloqueosDelDia([he(PEPITO, MIERCOLES, '00:00', '13:00')], PEPITO, MIERCOLES).todoElDia === false);
+
+console.log('\nHorario especial + ausencia el mismo día:');
+const MIXTO = [he(PEPITO, MIERCOLES, '10:00', '13:00'), au(PEPITO, MIERCOLES, '11:00', '11:30')];
+chequear('el rato de la ausencia se descuenta adentro del horario',
+  chocaConAusencia(MIXTO, PEPITO, MIERCOLES, min('11:00'), min('11:30')));
+chequear('y lo de alrededor sigue entrando',
+  !chocaConAusencia(MIXTO, PEPITO, MIERCOLES, min('10:00'), min('10:30')));
+chequear('la ausencia de DÍA COMPLETO le gana al horario especial',
+  bloqueosDelDia([he(PEPITO, MIERCOLES, '10:00', '13:00'), au(PEPITO, MIERCOLES)], PEPITO, MIERCOLES).todoElDia === true);
+chequear('y el calendario apaga el día',
+  faltaTodoElDia([he(PEPITO, MIERCOLES, '10:00', '13:00'), au(PEPITO, MIERCOLES)], PEPITO, MIERCOLES) === true);
+
+console.log('\nFalla CERRADO:');
+chequear('horario con una hora ilegible bloquea el día entero',
+  bloqueosDelDia([he(PEPITO, MIERCOLES, 'xx', '13:00')], PEPITO, MIERCOLES).todoElDia === true);
+chequear('horario a medio escribir también',
+  bloqueosDelDia([{ professionalId: PEPITO, fecha: MIERCOLES, trabajaDesde: '10:00' }], PEPITO, MIERCOLES).todoElDia === true);
+chequear('horario al revés (13 a 10) también',
+  bloqueosDelDia([he(PEPITO, MIERCOLES, '13:00', '10:00')], PEPITO, MIERCOLES).todoElDia === true);
+chequear('y entonces ningún turno entra',
+  chocaConAusencia([he(PEPITO, MIERCOLES, 'xx', 'yy')], PEPITO, MIERCOLES, min('10:00'), min('10:30')));
+
+console.log('\nLa ventana del día, para el calendario y los avisos:');
+chequear('la devuelve',
+  JSON.stringify(ventanaDelDia(SOLO_MANANA, PEPITO, MIERCOLES)) === '{"desde":"10:00","hasta":"13:00"}',
+  JSON.stringify(ventanaDelDia(SOLO_MANANA, PEPITO, MIERCOLES)));
+chequear('sin horario especial, null', ventanaDelDia([au(PEPITO, MIERCOLES)], PEPITO, MIERCOLES) === null);
+chequear('otro día, null', ventanaDelDia(SOLO_MANANA, PEPITO, OTRO_MIERCOLES) === null);
+chequear('otro barbero, null', ventanaDelDia(SOLO_MANANA, JULIAN, MIERCOLES) === null);
+chequear('una ventana ilegible es null (no una ventana inventada)',
+  ventanaDelDia([he(PEPITO, MIERCOLES, 'xx', '13:00')], PEPITO, MIERCOLES) === null);
+chequear('sin argumentos no revienta', ventanaDelDia(undefined, PEPITO, MIERCOLES) === null);
+
+console.log('\nEn la lista del panel:');
+const CON_HORARIO = proximas([he(PEPITO, MIERCOLES, '10:00', '13:00'), au(PEPITO, OTRO_MIERCOLES)], PEPITO, '2026-10-13');
+chequear('aparece junto a las ausencias', CON_HORARIO.length === 2);
+chequear('ordenado por fecha', CON_HORARIO[0].fecha === MIERCOLES);
 
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron`);
 if (fallas.length) console.log('Fallaron:\n  - ' + fallas.join('\n  - '));

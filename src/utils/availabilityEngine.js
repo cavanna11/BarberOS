@@ -3,7 +3,7 @@
 // ============================================
 import { timeToMinutes, getLocalDayOfWeek, isToday } from './dateUtils';
 import { normalizarIntervalo } from './intervalo';
-import { bloqueosDelDia, faltaTodoElDia } from './ausencias';
+import { bloqueosDelDia, faltaTodoElDia, ventanaDelDia } from './ausencias';
 
 /**
  * Calcula los slots disponibles para un profesional+servicio en una fecha.
@@ -185,7 +185,22 @@ export function professionalWorksOnDate(professionalId, date, schedules, busines
   // habilitado: ese dia igual atiende, y los horarios los recorta el motor.
   if (faltaTodoElDia(ausencias, professionalId, date)) return false;
 
-  return schedules.some(
+  const trabaja = schedules.find(
     (s) => s.professionalId === professionalId && s.dayOfWeek === dayOfWeek && s.isActive
   );
+  if (!trabaja) return false;
+
+  // El horario especial de ese dia solo RECORTA el semanal. Si lo que escribio
+  // cae afuera —puso 10 a 13 en un dia que atiende de 14 a 20— no queda ni un
+  // horario, y un dia prendido sin un solo turno es el peor sintoma: el cliente
+  // entra, lo encuentra vacio y no sabe por que. Se apaga, como el dia que no
+  // viene. El panel ademas lo avisa al guardar.
+  const ventana = ventanaDelDia(ausencias, professionalId, date);
+  if (ventana && trabaja.startTime && trabaja.endTime) {
+    const desde = Math.max(timeToMinutes(ventana.desde), timeToMinutes(trabaja.startTime));
+    const hasta = Math.min(timeToMinutes(ventana.hasta), timeToMinutes(trabaja.endTime));
+    if (desde >= hasta) return false;
+  }
+
+  return true;
 }

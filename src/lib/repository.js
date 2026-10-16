@@ -41,7 +41,12 @@ import {
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
-import { idDeAusencia, normalizarAusencia } from '../utils/ausencias';
+import {
+  idDeAusencia,
+  normalizarAusencia,
+  idDeHorarioEspecial,
+  normalizarHorarioEspecial,
+} from '../utils/ausencias';
 import { db } from './firebase';
 
 // ── Helpers de rutas ───────────────────────────────────────────────────────
@@ -1085,6 +1090,21 @@ export async function guardarAusencias(businessId, professionalId, fechas, { des
   }
   await lote.commit();
   return ids;
+}
+
+/**
+ * "Ese dia trabajo de 10 a 13." Uno por profesional y por fecha.
+ *
+ * Vive en la misma coleccion que las ausencias porque es lo mismo dicho al
+ * reves, y asi lo hacen cumplir los seis lugares que ya miran las ausencias
+ * sin aprender un caso nuevo. El id lleva otro sufijo (`_horario`), de modo
+ * que cargarlo no pisa en silencio el dia que el barbero marco que no venia.
+ */
+export async function guardarHorarioEspecial(businessId, horario) {
+  const datos = normalizarHorarioEspecial(horario);
+  const id = idDeHorarioEspecial(datos.professionalId, datos.fecha);
+  await setDoc(doc(db, 'businesses', businessId, 'ausencias', id), { id, ...datos });
+  return id;
 }
 
 /** Saca una ausencia: el barbero vuelve a aparecer ese dia. */

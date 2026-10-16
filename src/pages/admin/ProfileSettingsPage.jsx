@@ -210,7 +210,7 @@ export default function ProfileSettingsPage() {
           </div>
 
           <div className="card mt-lg">
-            <h3 className="mb-lg">Días que no vas a estar</h3>
+            <h3 className="mb-lg">Un día suelto distinto</h3>
             <AusenciasDelBarbero professionalId={profId} businessId={businessId} />
           </div>
 

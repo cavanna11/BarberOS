@@ -1759,7 +1759,7 @@ PROPIO y no adentro del de editar: las ausencias se guardan al toque, y ahí
 adentro "Cancelar" parecería deshacerlas.
 
 ```bash
-node scripts/test-ausencias.mjs   # 51 casos, sin emulador
+node scripts/test-ausencias.mjs   # 97 casos, sin emulador
 ```
 
 Más 13 casos nuevos en la suite de reservas (el servidor rechazando día
@@ -1772,6 +1772,88 @@ semana fijo (`DOW`), así que una fecha de prueba que caiga en otro día falla p
 `crear()` en la auditoría de Rules hace POST a la **colección** (id automático),
 no a una ruta de documento; para probar lectura y borrado hay que sembrar con el
 Admin SDK, porque un 404 cuenta como denegado.
+
+### "Mañana trabajo de 10 a 13": el horario especial de un día (16/10/2026)
+
+Santiago: *"Mañana tengo un barbero que solo por la mañana va a trabajar de 10
+a 1 de la tarde. Después todo el resto de los días, incluido el próximo sábado,
+va a trabajar normal como siempre. Y no hay una opción para poner eso: está la
+opción para poner en qué momento no vas a estar, pero no para poner tal día
+hago este horario."*
+
+Tenía razón, y el agujero era exactamente ese. Con las ausencias se podía
+expresar —cargando que falta de 09:00 a 10:00 **y** de 13:00 a 20:00— pero eso
+es pedirle al barbero que traduzca lo que quiere, y que lo traduzca contra su
+propio horario semanal. Dos registros donde él piensa un horario. Y si el
+horario semanal cambia, la traducción queda vieja sin que nadie se entere.
+
+**Se guarda el rato que SÍ trabaja**, en la misma colección `ausencias`:
+
+```
+{ professionalId, fecha, desde: null, hasta: null,
+  trabajaDesde: '10:00', trabajaHasta: '13:00' }
+```
+
+y `bloqueosDelDia` devuelve los ratos de **afuera** (`[0, 10:00)` y
+`[13:00, 24:00)`). Esa es toda la decisión de diseño: es una ausencia dicha al
+revés, así que la calculan y la hacen cumplir **los seis lugares que ya miraban
+las ausencias, sin que ninguno aprenda un caso nuevo** — el motor, el
+calendario, `createAppointment`, los turnos fijos y el modal del staff. Un
+horario con fecha metido en `schedules` habría obligado a los cinco a aprenderlo
+de a uno.
+
+**Por qué `desde`/`hasta` quedan en `null`.** Es la parte que más importa y no
+se ve. Si se reusaran esos campos para guardar el rato que trabaja, un servidor
+o un bundle **viejo** leería "no trabaja de 10 a 13": exactamente lo contrario,
+y mudo. Con los dos en null, el código viejo ve un documento sin franja y
+bloquea el día **entero**. Perder un día de horarios se nota y se arregla;
+mandarle un cliente a un barbero que no está, no. Por eso el orden de despliegue
+no es crítico pero conviene igual: **Functions primero, front después.**
+
+**El id lleva su propio sufijo** (`prof_fecha_horario`, contra `prof_fecha_todo`
+de la ausencia de día completo): cargar un horario especial no puede pisar en
+silencio el día que el barbero marcó que no venía. Conviven, y **gana el que no
+viene** — si alguien marcó que no va, no va.
+
+**Solo RECORTA el semanal, nunca lo agranda.** Un horario especial no puede
+abrir un día que el barbero libra, ni extenderle la jornada más allá de lo que
+tiene cargado (el horario del local también lo acota). Eso podría ser una falla
+muda de libro —día prendido en el calendario, cliente que entra y lo encuentra
+vacío— así que está dicho en los dos lados:
+
+- el panel lo avisa **antes** de guardar, con la cuenta hecha: *"Los martes
+  atendés de 14:00 a 20:00. De 10:00 a 13:00 no se cruza con eso, así que ese
+  día no quedaría ni un turno"*, o *"los lunes no tenés horario cargado, así que
+  esto no va a abrir ningún turno"*;
+- y `professionalWorksOnDate` **apaga el día** si la ventana no se cruza con el
+  horario semanal, en vez de dejarlo prendido y vacío. Es un retoque más en
+  `availabilityEngine.js`, en la misma zona que ya tocaron `corteLocal`,
+  `normalizarIntervalo` y las ausencias.
+
+**El turno tiene que caer ENTERO adentro de la ventana**, a diferencia del
+horario semanal, donde alcanza con que empiece dentro para no echar al cliente a
+la mitad del corte. Acá el barbero avisó que ese día se va a esa hora, y a esa
+hora se va. El panel lo dice: *"el último tiene que terminar antes de las 13:00,
+así que a esa hora ya estás libre"*.
+
+**Y los turnos ya reservados no se tocan**, igual que con las ausencias: el
+panel muestra cuáles quedan afuera y a qué hora, y los cancela una persona desde
+Citas.
+
+**En el panel** son dos botones arriba del formulario —*"No voy a estar"* y
+*"Ese día hago otro horario"*— en Mi Configuración y en Profesionales → 📅. Dos
+botones y no un desplegable porque el pedido empezaba con *"no hay una opción
+para poner eso"*: la opción tiene que **verse**.
+
+```bash
+node scripts/test-ausencias.mjs   # 97 casos (46 nuevos), sin emulador
+```
+
+Un caso de esos 46 encontró un bug de verdad, y no en lo nuevo:
+`timeToMinutes` hace `.split(':')` sin red, así que un documento a medio
+escribir **reventaba** `bloqueosDelDia` — o sea la grilla del cliente, entera,
+en el navegador. Ahora pasa por `minutosDe()`, que devuelve `NaN`, que es lo que
+la función ya sabía tratar: bloquear el día.
 
 ### El login se rompe adentro del navegador de Instagram (14/10/2026)
 
@@ -2346,14 +2428,14 @@ node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulador)
 node scripts/test-preview.mjs              # vista previa del link (tampoco)
 node scripts/test-intervalo.mjs            # la grilla y el consejo (tampoco)
-node scripts/test-ausencias.mjs            # el día suelto que un barbero no va (tampoco)
+node scripts/test-ausencias.mjs            # el día suelto distinto: no voy / hago otro horario
 node scripts/test-orden.mjs                # en qué orden ve el cliente la lista (tampoco)
 ```
 
 Hoy: claims 83, reservas 81, facturación 14, rules 141, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
-turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 51, orden 30.
-Todo en verde (968).
+turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 97, orden 30.
+Todo en verde (1014).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

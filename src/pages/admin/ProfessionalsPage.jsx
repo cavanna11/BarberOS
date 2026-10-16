@@ -394,7 +394,7 @@ export default function ProfessionalsPage() {
                         </button>
                       ) : (
                         <>
-                          <button className="btn btn-ghost btn-sm" title="Días que no viene" onClick={() => setAusenciasDe(prof)}>📅</button>
+                          <button className="btn btn-ghost btn-sm" title="Días que no viene, o que hace otro horario" onClick={() => setAusenciasDe(prof)}>📅</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => openEdit(prof)}>✏️</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(prof.id)}>🗑️</button>
                         </>
@@ -426,13 +426,13 @@ export default function ProfessionalsPage() {
         <div className="modal-overlay" onClick={() => setAusenciasDe(null)}>
           <div className="modal-content" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Días que no viene {ausenciasDe.name}</h2>
+              <h2>Excepciones de {ausenciasDe.name}</h2>
               <button className="modal-close" onClick={() => setAusenciasDe(null)}>&times;</button>
             </div>
             <div className="modal-body">
               <p className="text-secondary text-sm mb-md">
-                Para el día suelto que no va a estar. Su horario semanal no se toca: la semana que
-                viene sigue trabajando igual.
+                Para el día suelto en que no va a estar, o en que va a hacer otro horario. Su
+                horario semanal no se toca: la semana que viene sigue trabajando igual.
               </p>
               <AusenciasDelBarbero professionalId={ausenciasDe.id} businessId={businessId} compacto />
             </div>
