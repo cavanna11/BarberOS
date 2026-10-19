@@ -10,6 +10,7 @@ import { useVinculoBarbero, textoVinculo } from '../../hooks/useVinculoBarbero';
 import AvisoPlataforma from '../admin/AvisoPlataforma';
 import ElegirSucursalPanel from '../admin/ElegirSucursalPanel';
 import { sucursalElegidaEnPanel, elegirSucursalEnPanel, olvidarSucursalEnPanel } from '../../utils/sucursalEnPanel';
+import { fechaDMA } from '../../utils/dateUtils';
 
 // Items visibles solo para el dueño (owner)
 const ownerNavItems = [
@@ -83,13 +84,21 @@ const LINK_SOPORTE = 'https://wa.me/5492257529684?text=' +
  * browser: si el barbero tiene el reloj en otro huso, un turno de diferencia no
  * puede cambiarle el cartel.
  */
-function diasDePruebaRestantes(trialEndsAt) {
-  if (!trialEndsAt) return null;
+function diasHasta(fechaISO) {
+  if (!fechaISO) return null;
   const hoy = new Date();
   const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-  const ms = new Date(`${trialEndsAt}T00:00:00`) - new Date(`${hoyISO}T00:00:00`);
+  const ms = new Date(`${fechaISO}T00:00:00`) - new Date(`${hoyISO}T00:00:00`);
+  if (Number.isNaN(ms)) return null;
   return Math.round(ms / 86400000);
 }
+
+// Con cuántos días de anticipación se le avisa al dueño que se le vence el mes.
+//
+// Siete y no tres: el barbero paga por transferencia cuando se acuerda, y un
+// aviso que llega el día anterior es un aviso que llega tarde. Y no treinta,
+// porque un cartel que está siempre prendido deja de leerse.
+const DIAS_AVISO_VENCIMIENTO = 7;
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -400,9 +409,15 @@ export default function AdminLayout() {
           // tu prueba" por su cuenta hace pensar que cada una se paga aparte —
           // y encima el dato era el de la principal, copiado al crearla.
           if (esSucursal) return null;
-          const dias = diasDePruebaRestantes(business?.trialEndsAt);
+          const dias = diasHasta(business?.trialEndsAt);
           if (dias === null) return null;
           const vencida = dias < 0;
+          // Si ya tiene un vencimiento de abono cargado, la prueba terminó y la
+          // cuenta se está cobrando de verdad: el cartel que corresponde es el
+          // de abajo. Sin esto, una cuenta que pasó de la prueba al plan —y a la
+          // que nadie le borró `trialEndsAt`— mostraría "se terminó tu prueba"
+          // para siempre, al lado del aviso del mes.
+          if (vencida && business?.proximoVencimiento) return null;
           return (
             <div
               className={vencida ? 'notice notice-danger' : 'notice notice-info'}
@@ -433,6 +448,74 @@ export default function AdminLayout() {
                   <>
                     Estás usando una <strong>cuenta de prueba</strong>: te
                     {dias === 1 ? ' queda 1 día' : ` quedan ${dias} días`}.
+                  </>
+                )}
+              </span>
+              <a
+                href={LINK_SOPORTE}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: 'inherit', fontWeight: 700, whiteSpace: 'nowrap' }}
+              >
+                Hablar por WhatsApp →
+              </a>
+            </div>
+          );
+        })()}
+
+        {/* ── "Te quedan tantos días para abonar" ─────────────────────────────
+            Lo pidió Santiago: antes el dueño no se enteraba de nada hasta que
+            la cuenta quedaba congelada y el link dejaba de tomar turnos. Para
+            él era una caída del sistema; en realidad era la fecha de pago, que
+            no estaba en ningún lado donde él pudiera verla.
+
+            La fecha es el espejo que escribe runBilling en el documento
+            público (`proximoVencimiento`): la deuda y el abono siguen en
+            /private/billing, donde el dueño no entra. Por eso el cartel no
+            dice cuánto: dice cuándo, y manda a escribir. */}
+        {(() => {
+          if (!isOwner) return null;
+          // El abono es de la CUENTA y lo paga la principal: una sucursal
+          // avisando por su cuenta haría pensar que se paga cada local aparte.
+          if (esSucursal) return null;
+          const dias = diasHasta(business?.proximoVencimiento);
+          if (dias === null || dias > DIAS_AVISO_VENCIMIENTO) return null;
+
+          const pasado = dias < 0;
+          return (
+            <div
+              className={pasado ? 'notice notice-danger' : 'notice notice-warn'}
+              style={{
+                borderRadius: 0,
+                borderLeft: 'none',
+                borderTop: 'none',
+                borderRight: 'none',
+                borderBottomWidth: '2px',
+                borderBottomStyle: 'solid',
+                padding: '8px 16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>
+                {pasado ? (
+                  <>
+                    <strong>Se te venció el abono</strong> el{' '}
+                    {fechaDMA(business.proximoVencimiento)}. Para que la agenda
+                    siga tomando turnos, escribinos y lo regularizamos.
+                  </>
+                ) : dias === 0 ? (
+                  <>
+                    <strong>Hoy se te vence el abono.</strong> Escribinos para
+                    abonarlo y seguir sin cortes.
+                  </>
+                ) : (
+                  <>
+                    Te {dias === 1 ? 'queda 1 día' : `quedan ${dias} días`} para
+                    abonar: <strong>se te vence el {fechaDMA(business.proximoVencimiento)}</strong>.
                   </>
                 )}
               </span>

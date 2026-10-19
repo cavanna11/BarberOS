@@ -231,6 +231,12 @@ service cloud.firestore {
           .hasAny(['isFrozen', 'planId', 'monthlyFee', 'whatsappQuota', 'slug', 'id',
                    'trialEndsAt', 'createdAt', 'maxBarbers', 'maxSucursales', 'origen',
                    'mpConectado', 'mpUserId', 'grupoId', 'capacidades',
+                   // El espejo del próximo vencimiento, para que el panel del
+                   // dueño pueda avisarle que se le vence el mes. Lo escribe
+                   // runBilling con el Admin SDK. Si el dueño lo pudiera tocar,
+                   // se correría el aviso para adelante y de paso tendría cómo
+                   // mentirle a la pantalla sobre su propia deuda.
+                   'proximoVencimiento',
                    // Membresías: las prende la plataforma, cuenta por cuenta.
                    'membresiasHabilitadas']) &&
         (!request.resource.data.diff(resource.data).affectedKeys()

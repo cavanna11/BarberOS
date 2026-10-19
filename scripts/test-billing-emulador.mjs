@@ -123,5 +123,40 @@ b = await leerBilling('regalada');
 chequear('regalada: no acumula deuda aunque pasen los vencimientos', b.debt === 0, JSON.stringify(b));
 chequear('regalada: NO se suspende', (await leerNegocio('regalada')).isFrozen === false, '');
 
+// ── El espejo de la fecha en el documento público (19/10/2026) ──────────────
+// `/private/billing` no lo lee ni el dueño, así que su panel no tenía de dónde
+// sacar cuándo se le vence el mes: se enteraba cuando la cuenta ya estaba
+// congelada. runBilling copia SOLO la fecha al documento público, y de ahí sale
+// el aviso "te quedan tantos días para abonar".
+//
+// Lo que estos casos protegen: que lo copiado sea la fecha NUEVA (la vieja es
+// justo la que ya pasó), que se complete solo en las cuentas que ya existían
+// —sin migrar nada— y que la suspensión y el espejo no se pisen entre sí, que
+// van al mismo documento.
+console.log('\nEl vencimiento que ve el dueño en su panel:');
+const alDia = await leerNegocio('al-dia');
+chequear('se copia al documento público, que es el único que el dueño puede leer',
+  alDia.proximoVencimiento === (await leerBilling('al-dia')).nextBillingDate,
+  JSON.stringify({ publico: alDia.proximoVencimiento, privado: (await leerBilling('al-dia')).nextBillingDate }));
+chequear('se completa en una cuenta que ya existía, sin migrarla',
+  Boolean(alDia.proximoVencimiento), JSON.stringify(alDia.proximoVencimiento));
+
+const venc = await leerNegocio('vencido');
+chequear('al vencido se le copia la fecha NUEVA, no la que ya pasó',
+  venc.proximoVencimiento === (await leerBilling('vencido')).nextBillingDate
+  && venc.proximoVencimiento > hoyISO(),
+  JSON.stringify({ publico: venc.proximoVencimiento, hoy: hoyISO() }));
+chequear('y la suspensión del mismo documento no se pierde (van en una sola escritura)',
+  venc.isFrozen === true && Boolean(venc.proximoVencimiento),
+  JSON.stringify({ isFrozen: venc.isFrozen, venc: venc.proximoVencimiento }));
+
+chequear('la deuda y el abono NO salen al documento público',
+  alDia.debt === undefined && alDia.monthlyFee === undefined,
+  JSON.stringify({ debt: alDia.debt, monthlyFee: alDia.monthlyFee }));
+
+chequear('en período de prueba no se copia nada: ahí manda el cartel de la prueba',
+  (await leerNegocio('en-prueba')).proximoVencimiento === undefined,
+  JSON.stringify((await leerNegocio('en-prueba')).proximoVencimiento));
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

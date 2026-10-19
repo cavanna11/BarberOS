@@ -40,6 +40,29 @@ export function formatDateShort(dateStr) {
   return `${day} ${month}`;
 }
 
+/**
+ * 'YYYY-MM-DD' → '21/10/2026'. La fecha completa, sin adornos.
+ *
+ * Existe por un bug que estuvo meses a la vista: el panel global mostraba el
+ * próximo vencimiento de cada barbería con `formatDate(x).split(',')[1]`.
+ * `formatDate` devuelve "Martes 21 de Octubre, 2026", así que la mitad de
+ * después de la coma es SOLO EL AÑO: la tarjeta decía "2026" y no había forma
+ * de saber cuándo vencía ninguna cuenta. Alguien quiso sacar el día de la
+ * semana y se quedó con la mitad equivocada.
+ *
+ * Para una fecha de plata no sirve "mar 21/10" (`fechaCorta`) ni el nombre del
+ * día: sirve el día, el mes y el año, que es lo que se compara contra un
+ * comprobante.
+ */
+export function fechaDMA(fechaISO) {
+  if (!fechaISO) return '';
+  const d = new Date(`${fechaISO}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
 export function formatPrice(price, currency = 'ARS') {
   return new Intl.NumberFormat('es-AR', {
     style: 'currency',

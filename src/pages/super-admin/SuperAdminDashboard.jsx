@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import TeamPanel from './TeamPanel';
 import AvisosPanel from './AvisosPanel';
 import { PLANS, OVERAGE_COST_USD, findPlanByQuota, getPlan, precioLindo } from '../../config/plans';
-import { formatPrice, formatDate } from '../../utils/dateUtils';
+import { formatPrice, fechaDMA } from '../../utils/dateUtils';
 import {
   cobradoEnElMes,
   cobradoHistorico,
@@ -1114,7 +1114,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
                     <div>
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block' }}>Último Pago</span>
                       <span style={{ fontSize: 13, color: 'var(--text)' }}>
-                        {b.lastPaymentDate ? formatDate(b.lastPaymentDate).split(',')[1] : 'Ninguno'}
+                        {b.lastPaymentDate ? fechaDMA(b.lastPaymentDate) : 'Ninguno'}
                       </span>
                     </div>
                     <div>
@@ -1124,7 +1124,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
                         fontWeight: b.debt > 0 ? '600' : 'normal',
                         color: b.debt > 0 ? 'var(--danger)' : 'var(--text)'
                       }}>
-                        {b.nextBillingDate ? formatDate(b.nextBillingDate).split(',')[1] : '—'}
+                        {b.nextBillingDate ? fechaDMA(b.nextBillingDate) : '—'}
                       </span>
                     </div>
                   </div>
@@ -1317,7 +1317,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
                       <div>
                         <strong style={{ fontSize: 13 }}>{apt.startTime}</strong>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                          {formatDate(apt.appointmentDate).split(',')[1]}
+                          {fechaDMA(apt.appointmentDate)}
                         </div>
                       </div>
                     </td>

@@ -141,6 +141,10 @@ await esperar('dueno SI edita su marca',                  editar(duenoA, `busine
 // runBilling lee trialEndsAt de este documento: si el dueno lo pudiera tocar,
 // se ponia la prueba en 2099 y no pagaba nunca.
 await esperar('dueno NO se extiende la prueba gratis',    editar(duenoA, `businesses/${A}`, { trialEndsAt: '2099-01-01' }), 'denegado');
+// El espejo del vencimiento: sale al documento publico para que el panel del
+// dueno le avise que se le vence el mes. Si lo pudiera escribir, se correria el
+// aviso para adelante solo.
+await esperar('dueno NO se corre el vencimiento del abono', editar(duenoA, `businesses/${A}`, { proximoVencimiento: '2099-01-01' }), 'denegado');
 await esperar('dueno NO se sube el tope de barberos',     editar(duenoA, `businesses/${A}`, { maxBarbers: 99 }), 'denegado');
 await esperar('dueno NO se sube el tope de sucursales',  editar(duenoA, `businesses/${A}`, { maxSucursales: 9 }), 'denegado');
 // El peor de todos: de `grupoId` salen los claims de una cuenta con sucursales,

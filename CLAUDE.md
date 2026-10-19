@@ -339,8 +339,9 @@ no se le va a cortar—. Hay dos casos en la suite de facturación.
 node scripts/test-billing-emulador.mjs
 ```
 
-14 casos: cobro, acumulación de varios vencimientos, suspensión, reactivación al
-saldar, prueba vigente, prueba vencida y cuenta de regalo.
+20 casos: cobro, acumulación de varios vencimientos, suspensión, reactivación al
+saldar, prueba vigente, prueba vencida, cuenta de regalo y el espejo del
+vencimiento en el documento público.
 
 ### Quién puede asignar permisos
 
@@ -1773,6 +1774,51 @@ semana fijo (`DOW`), así que una fecha de prueba que caiga en otro día falla p
 no a una ruta de documento; para probar lectura y borrado hay que sembrar con el
 Admin SDK, porque un 404 cuenta como denegado.
 
+### Cuándo vence el abono: la fecha que nadie veía (19/10/2026)
+
+Dos agujeros del mismo dato, los dos encontrados por Santiago usando el panel.
+
+**1. El panel global decía "2026".** La tarjeta de cada barbería mostraba el
+próximo vencimiento (y el último pago) con
+`formatDate(x).split(',')[1]`. `formatDate` devuelve *"Martes 21 de Octubre,
+2026"*, así que la mitad de después de la coma es **solo el año**: la tarjeta
+decía `2026` y no había forma de saber cuándo vencía ninguna cuenta. Alguien
+quiso sacarle el día de la semana y se quedó con la mitad equivocada. Ahora es
+`fechaDMA()` → `21/10/2026`, en los tres lugares que tenían el mismo `split`.
+
+**2. El dueño no se enteraba hasta que lo cortaban.** La fecha vive en
+`/private/billing`, que **no lee ni él** (ahí están la deuda y el abono), así
+que su panel no tenía de dónde avisarle. Se enteraba cuando la cuenta ya estaba
+congelada y el link no tomaba turnos — para él, una caída del sistema.
+
+Ahora `runBilling` copia **solo la fecha** al documento público, en
+`proximoVencimiento`, y `AdminLayout` muestra una barra arriba del panel:
+*"Te quedan 3 días para abonar: se te vence el 21/10/2026"*, con el botón de
+WhatsApp. A los 0 días y pasada la fecha cambia el texto.
+
+- **Solo la fecha.** La deuda, el abono y el historial siguen donde estaban. Por
+  eso el cartel dice **cuándo** y no cuánto.
+- **El dueño no la puede tocar**: está en la lista de campos protegidos de las
+  Rules, al lado de `trialEndsAt`. Si no, se corre el aviso para adelante.
+- **No hay que migrar nada.** La comparación está afuera del `if (changed)`, así
+  que la primera corrida nocturna completa las cuentas que ya existían.
+- **El espejo y `isFrozen` van en UNA sola escritura.** Los dos apuntan al mismo
+  documento, y dos `set` sobre el mismo doc en un batch es justo la clase de
+  detalle que anda hasta el día que no.
+- **En período de prueba no se copia nada**: ahí manda el cartel de la prueba, y
+  dos barras diciendo cosas parecidas no son más información. Por lo mismo, si
+  hay vencimiento cargado se deja de mostrar el *"se terminó tu prueba"* — una
+  cuenta que pasó al plan y a la que nadie le borró `trialEndsAt` lo mostraría
+  para siempre.
+- **Siete días de anticipación**: el barbero transfiere cuando se acuerda, y un
+  aviso del día anterior llega tarde. Treinta lo dejaría prendido siempre, y un
+  cartel que está siempre deja de leerse.
+
+```bash
+node scripts/test-billing-emulador.mjs      # 20 casos (6 nuevos)
+node scripts/auditar-rules-emulador.mjs     # 142 (el dueño no corre la fecha)
+```
+
 ### "Mañana trabajo de 10 a 13": el horario especial de un día (16/10/2026)
 
 Santiago: *"Mañana tengo un barbero que solo por la mañana va a trabajar de 10
@@ -2432,10 +2478,10 @@ node scripts/test-ausencias.mjs            # el día suelto distinto: no voy / h
 node scripts/test-orden.mjs                # en qué orden ve el cliente la lista (tampoco)
 ```
 
-Hoy: claims 83, reservas 81, facturación 14, rules 141, alta 22, mercadopago 16,
+Hoy: claims 83, reservas 81, facturación 20, rules 142, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
 turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 97, orden 30.
-Todo en verde (1014).
+Todo en verde (1021).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

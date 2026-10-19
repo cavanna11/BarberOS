@@ -480,6 +480,27 @@ async function procesarFacturacion() {
       escrituras.push({ ref: billingSnap.ref, datos: { debt, nextBillingDate }, merge: true });
     }
 
+    // El ESPEJO de la fecha en el documento público del negocio.
+    //
+    // `/private/billing` no lo lee ni el dueño (ahí está la deuda y el abono),
+    // así que su panel no tenía forma de avisarle que se le vence el mes: se
+    // enteraba cuando la cuenta ya estaba congelada y el link no tomaba turnos.
+    // Lo único que sale al documento público es la FECHA — no la deuda, no el
+    // abono, no el historial— y el dueño no la puede tocar (está en la lista de
+    // campos protegidos de las Rules, igual que `trialEndsAt`).
+    //
+    // Se compara antes de escribir: esta función corre todas las noches sobre
+    // todas las barberías y un `set` incondicional serían cientos de
+    // escrituras diarias para guardar lo mismo. Y como se compara acá y no
+    // dentro de `changed`, las cuentas que ya existían se completan solas en la
+    // próxima corrida: no hace falta migrar nada.
+    // Se anota y se escribe en la segunda pasada, junto con `isFrozen`: las dos
+    // van al MISMO documento, y dos `set` sobre el mismo doc en un batch es
+    // justo la clase de detalle que anda hasta el día que no.
+    if (biz.proximoVencimiento !== nextBillingDate) {
+      fila.publico = { proximoVencimiento: nextBillingDate };
+    }
+
     fila.debt = debt;
   });
 
@@ -503,9 +524,13 @@ async function procesarFacturacion() {
     // `isFrozen` vive en el documento público porque las Rules y la página de
     // reservas lo necesitan para bloquear el link.
     const shouldFreeze = deudaQueManda > 0;
+    const datos = { ...(fila.publico || {}) };
     if (Boolean(biz.isFrozen) !== shouldFreeze) {
-      escrituras.push({ ref: doc.ref, datos: { isFrozen: shouldFreeze }, merge: true });
+      datos.isFrozen = shouldFreeze;
       if (shouldFreeze) suspendidos.push({ id: doc.id, name: biz.name || doc.id, debt: deudaQueManda });
+    }
+    if (Object.keys(datos).length) {
+      escrituras.push({ ref: doc.ref, datos, merge: true });
     }
   }
 
