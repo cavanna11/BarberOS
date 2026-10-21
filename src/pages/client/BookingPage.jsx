@@ -118,14 +118,17 @@ function ServiceSelect({ services, professionalServices, profIds = [], selectedI
         {available.map((service) => (
           <div
             key={service.id}
-            className={`card card-selectable service-card ${selectedId === service.id ? 'card-selected' : ''}`}
+            className={`card card-selectable service-card ${tieneVentana(service) ? 'service-promo' : ''} ${selectedId === service.id ? 'card-selected' : ''}`}
             onClick={() => onSelect(service.id)}
           >
             <div className="service-info">
+              {/* Las promos se destacan con el color de la barbería: es lo
+                  que el barbero quiere que se lleven. */}
+              {tieneVentana(service) && <span className="service-promo-etiqueta">🔥 Promo</span>}
               <h3>{service.name}</h3>
               <p>{service.description}</p>
               {tieneVentana(service) && (
-                <span className="badge badge-warning" style={{ marginTop: 6, display: 'inline-block' }}>
+                <span className="service-promo-ventana">
                   {describirVentana(service)}
                 </span>
               )}

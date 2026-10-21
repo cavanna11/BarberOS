@@ -898,6 +898,38 @@ select.form-input {
   color: var(--text-muted);
 }
 
+/* Servicio en promo (tiene `ventana`): con el color de la barbería, que llega
+   por las variables del tema. Sin colores propios, es el naranja de BarberOS. */
+.card.service-promo {
+  border: 2px solid var(--primary);
+  background: linear-gradient(135deg, var(--primary-glow), var(--surface) 70%);
+}
+.service-promo .service-price { color: var(--primary-texto); }
+.card.service-promo.card-selected { background: var(--primary-light); box-shadow: 0 0 0 2px var(--primary); }
+.service-promo-etiqueta {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--sobre-primary);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.service-promo-ventana {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-accent);
+  background: var(--primary-glow);
+  color: var(--primary-texto);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 /* Calendar */
 .calendar {
   max-width: 380px;
