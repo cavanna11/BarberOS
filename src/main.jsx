@@ -7,6 +7,14 @@ import ConfigErrorPage from './pages/ConfigErrorPage';
 import { BusinessProvider } from './contexts/BusinessContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { BookingProvider } from './contexts/BookingContext';
+import ErrorDePantalla from './components/layout/ErrorDePantalla';
+import { recargarPorVersionNueva } from './utils/versionNueva';
+
+// Vite avisa así cuando no pudo bajar un pedazo de la app: casi siempre es una
+// pestaña abierta desde antes del último deploy. Ver utils/versionNueva.js.
+window.addEventListener('vite:preloadError', (e) => {
+  if (recargarPorVersionNueva()) e.preventDefault();
+});
 
 // El login pasa por Firebase Auth (signInWithPopup), que crea la sesión de
 // servidor que necesitan las Security Rules. La config se inicializa en
@@ -22,13 +30,15 @@ if (!firebaseListo) {
 } else {
   raiz.render(
     <StrictMode>
-      <BusinessProvider>
-        <AuthProvider>
-          <BookingProvider>
-            <App />
-          </BookingProvider>
-        </AuthProvider>
-      </BusinessProvider>
+      <ErrorDePantalla>
+        <BusinessProvider>
+          <AuthProvider>
+            <BookingProvider>
+              <App />
+            </BookingProvider>
+          </AuthProvider>
+        </BusinessProvider>
+      </ErrorDePantalla>
     </StrictMode>
   );
 }

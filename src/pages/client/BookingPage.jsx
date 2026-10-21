@@ -169,39 +169,33 @@ function AdicionalesSelect({ adicionales, elegidos, onCambiar, currency }) {
   );
 }
 
-// ---- ACOMPAÑANTE ----
-// "Vengo con alguien" (un padre con el hijo): un solo turno que atiende a dos,
-// uno atrás del otro. Se elige el servicio de la otra persona; suma su tiempo
-// y su precio. No ocupa un segundo cupo del tope de turnos del cliente.
-function AcompananteSelect({ opciones, elegido, onElegir, currency }) {
-  if (opciones.length === 0) return null;
-  const abierto = Boolean(elegido);
+// ---- CUÁNTOS TURNOS ----
+// El que viene con alguien (un padre con el hijo) saca dos turnos seguidos del
+// mismo servicio: el suyo y el que le sigue. No se calcula el tiempo de la otra
+// persona: si el turno siguiente está libre, es suyo; si no, ese horario no se
+// ofrece y elige otro. Dos es el máximo.
+//
+// Por dentro es el mismo `acompanante` que ya valida createAppointment, con el
+// servicio del titular: un solo cupo del tope de turnos y un solo cobro.
+function CantidadTurnos({ dos, onCambiar, service, currency }) {
   return (
-    <div className="adicionales-reserva">
-      <label className="adicional-opcion" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input
-          type="checkbox"
-          checked={abierto}
-          onChange={() => onElegir(abierto ? null : opciones[0].id)}
-        />
-        <span className="adicional-nombre"><strong>👨‍👦 Vengo con alguien</strong></span>
+    <div className="card mb-md" style={{ textAlign: 'left' }}>
+      <strong>¿Cuántos turnos querés?</strong>
+      <label className="pago-opcion">
+        <input type="radio" name="cantidad-turnos" checked={!dos} onChange={() => onCambiar(false)} />
+        <span><strong>1 turno</strong></span>
       </label>
-      {abierto && (
-        <>
-          <p className="text-sm text-secondary" style={{ marginTop: 8 }}>
-            ¿Qué se hace la otra persona? Los atienden seguidos, en el mismo turno.
-          </p>
-          <div className="adicionales-lista">
-            {opciones.map((o) => (
-              <label key={o.id} className={`adicional-opcion ${elegido === o.id ? 'activa' : ''}`}>
-                <input type="radio" name="acompanante" checked={elegido === o.id} onChange={() => onElegir(o.id)} />
-                <span className="adicional-nombre">{o.name} · {o.durationMinutes} min</span>
-                <span className="adicional-precio">+ {formatPrice(o.price, currency)}</span>
-              </label>
-            ))}
+      <label className="pago-opcion">
+        <input type="radio" name="cantidad-turnos" checked={dos} onChange={() => onCambiar(true)} />
+        <span>
+          <strong>2 turnos seguidos</strong>
+          <div className="text-sm text-secondary">
+            Si venís con alguien: el segundo es el que sigue al tuyo
+            {service ? ` (+ ${formatPrice(Number(service.price) || 0, currency)})` : ''}.
+            Solo te mostramos los horarios que tienen el siguiente libre.
           </div>
-        </>
-      )}
+        </span>
+      </label>
     </div>
   );
 }
@@ -435,8 +429,8 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
             )}
             {acompanante && (
               <div className="summary-row">
-                <span className="summary-label">👨‍👦 Viene con alguien</span>
-                <span className="summary-value">{acompanante.name} · + {formatPrice(acompanante.price, currency)}</span>
+                <span className="summary-label">👥 Turnos</span>
+                <span className="summary-value">2 seguidos · + {formatPrice(acompanante.price, currency)}</span>
               </div>
             )}
             {recargoTarjeta > 0 && (
@@ -548,10 +542,10 @@ export default function BookingPage() {
   // Los adicionales que sumó al servicio (ids). Se vacían si cambia de servicio
   // en el paso 2 (ver abajo), no a mitad del flujo.
   const [extras, setExtras] = useState([]);
-  // El servicio de quien viene con él. Se guarda junto con el profesional con
-  // el que se eligió: si cambia de barbero, deja de valer solo (puede que el
-  // nuevo no haga ese servicio), sin un setState dentro de un efecto.
-  const [acompEstado, setAcompEstado] = useState({ profesional: null, id: null });
+  // Si saca 2 turnos seguidos. Se guarda junto con el barbero y el servicio con
+  // los que se eligió: si cambia cualquiera de los dos, vuelve a 1 solo, sin un
+  // setState dentro de un efecto.
+  const [dosTurnos, setDosTurnos] = useState({ clave: null, dos: false });
   // Cómo paga en el local, si la barbería cobra recargo por tarjeta o QR.
   const [metodoPago, setMetodoPago] = useState('efectivo');
 
@@ -633,10 +627,12 @@ export default function BookingPage() {
   const adicionalesDisponibles = services.filter((s) => s.adicional && s.isActive !== false).sort(enOrden);
   const adicionalesElegidos = adicionalesDisponibles.filter((s) => extras.includes(s.id));
   const totalAdicionales = adicionalesElegidos.reduce((t, s) => t + (Number(s.price) || 0), 0);
-  const acompId = acompEstado.profesional === professionalId ? acompEstado.id : null;
-  const acompServicio = acompId
-    ? services.find((s) => s.id === acompId && s.isActive !== false && !s.adicional) || null
-    : null;
+  const claveTurnos = `${professionalId}|${serviceId}`;
+  const sacaDos = dosTurnos.dos && dosTurnos.clave === claveTurnos;
+  // El segundo turno es del mismo servicio: viaja como `acompanante` con el id
+  // del servicio del titular.
+  const acompServicio = sacaDos && selectedService && !selectedService.adicional ? selectedService : null;
+  const acompId = acompServicio ? acompServicio.id : null;
   const acompDuracion = acompServicio ? Number(acompServicio.durationMinutes) || 0 : 0;
   // El servicio de la otra persona se paga siempre, igual que los adicionales:
   // la membresía y el cupón son del titular y cubren SU servicio.
@@ -743,17 +739,6 @@ export default function BookingPage() {
     );
     return idsBase.filter((id) => hacen.has(id));
   }, [idsBase, professionalServices, acompId]);
-
-  // Qué puede elegir para la otra persona: los servicios que hace alguno de
-  // los barberos en juego.
-  const acompOpciones = useMemo(() => {
-    const hacen = new Set(
-      professionalServices.filter((ps) => idsBase.includes(ps.professionalId)).map((ps) => ps.serviceId)
-    );
-    return services
-      .filter((s) => s.isActive !== false && !s.adicional && hacen.has(s.id))
-      .sort(enOrden);
-  }, [services, professionalServices, idsBase]);
 
   // Qué está ocupado ese día para ese profesional. No sale de `appointments`
   // del contexto: para un cliente esa lista trae SOLO sus propios turnos (las
@@ -1103,16 +1088,6 @@ export default function BookingPage() {
         />
       )}
 
-      {/* "Vengo con alguien": se elige el servicio de la otra persona. */}
-      {step === 2 && serviceId && (
-        <AcompananteSelect
-          opciones={acompOpciones}
-          elegido={acompId}
-          onElegir={(id) => setAcompEstado({ profesional: professionalId, id })}
-          currency={business.currency}
-        />
-      )}
-
       {step === 3 && (
         <DatePicker
           selectedDate={date}
@@ -1122,6 +1097,19 @@ export default function BookingPage() {
           businessHours={business.businessHours}
           service={selectedService}
           ausencias={ausencias}
+        />
+      )}
+
+      {step === 4 && selectedService && (
+        <CantidadTurnos
+          dos={sacaDos}
+          service={selectedService}
+          currency={business.currency}
+          onCambiar={(dos) => {
+            setDosTurnos({ clave: claveTurnos, dos });
+            // El horario elegido puede no tener el siguiente libre: que vuelva a elegir.
+            dispatch({ type: 'SET_TIMESLOT', payload: null });
+          }}
         />
       )}
 

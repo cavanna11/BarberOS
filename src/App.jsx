@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { importarConReintento } from './utils/versionNueva';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { useBusiness } from './contexts/BusinessContext';
@@ -28,31 +29,31 @@ import NoBusinessPage from './pages/client/NoBusinessPage';
 import CuentaSinBarberia from './pages/client/CuentaSinBarberia';
 import SinAcceso from './pages/client/SinAcceso';
 
-const LandingPage      = lazy(() => import('./pages/LandingPage'));
-const BookingPage      = lazy(() => import('./pages/client/BookingPage'));
-const PaginaBarberia   = lazy(() => import('./pages/client/PaginaBarberia'));
-const ConfirmationPage = lazy(() => import('./pages/client/ConfirmationPage'));
-const MyAppointments   = lazy(() => import('./pages/client/MyAppointments'));
-const CuentaPublica    = lazy(() => import('./pages/client/CuentaPublica'));
+const LandingPage      = lazy(importarConReintento(() => import('./pages/LandingPage')));
+const BookingPage      = lazy(importarConReintento(() => import('./pages/client/BookingPage')));
+const PaginaBarberia   = lazy(importarConReintento(() => import('./pages/client/PaginaBarberia')));
+const ConfirmationPage = lazy(importarConReintento(() => import('./pages/client/ConfirmationPage')));
+const MyAppointments   = lazy(importarConReintento(() => import('./pages/client/MyAppointments')));
+const CuentaPublica    = lazy(importarConReintento(() => import('./pages/client/CuentaPublica')));
 
 // Panel del negocio
-const DashboardPage       = lazy(() => import('./pages/admin/DashboardPage'));
-const ProfessionalsPage   = lazy(() => import('./pages/admin/ProfessionalsPage'));
-const ServicesPage        = lazy(() => import('./pages/admin/ServicesPage'));
-const AppointmentsPage    = lazy(() => import('./pages/admin/AppointmentsPage'));
-const SettingsPage        = lazy(() => import('./pages/admin/SettingsPage'));
-const SucursalesPage      = lazy(() => import('./pages/admin/SucursalesPage'));
-const PaginaPage          = lazy(() => import('./pages/admin/PaginaPage'));
-const CuponesPage         = lazy(() => import('./pages/admin/CuponesPage'));
-const MembresiasPage      = lazy(() => import('./pages/admin/MembresiasPage'));
-const ResenasPage         = lazy(() => import('./pages/admin/ResenasPage'));
-const AdminsPage          = lazy(() => import('./pages/admin/AdminsPage'));
-const ProfileSettingsPage = lazy(() => import('./pages/admin/ProfileSettingsPage'));
-const SupportPage         = lazy(() => import('./pages/admin/SupportPage'));
-const InstalarPage        = lazy(() => import('./pages/admin/InstalarPage'));
+const DashboardPage       = lazy(importarConReintento(() => import('./pages/admin/DashboardPage')));
+const ProfessionalsPage   = lazy(importarConReintento(() => import('./pages/admin/ProfessionalsPage')));
+const ServicesPage        = lazy(importarConReintento(() => import('./pages/admin/ServicesPage')));
+const AppointmentsPage    = lazy(importarConReintento(() => import('./pages/admin/AppointmentsPage')));
+const SettingsPage        = lazy(importarConReintento(() => import('./pages/admin/SettingsPage')));
+const SucursalesPage      = lazy(importarConReintento(() => import('./pages/admin/SucursalesPage')));
+const PaginaPage          = lazy(importarConReintento(() => import('./pages/admin/PaginaPage')));
+const CuponesPage         = lazy(importarConReintento(() => import('./pages/admin/CuponesPage')));
+const MembresiasPage      = lazy(importarConReintento(() => import('./pages/admin/MembresiasPage')));
+const ResenasPage         = lazy(importarConReintento(() => import('./pages/admin/ResenasPage')));
+const AdminsPage          = lazy(importarConReintento(() => import('./pages/admin/AdminsPage')));
+const ProfileSettingsPage = lazy(importarConReintento(() => import('./pages/admin/ProfileSettingsPage')));
+const SupportPage         = lazy(importarConReintento(() => import('./pages/admin/SupportPage')));
+const InstalarPage        = lazy(importarConReintento(() => import('./pages/admin/InstalarPage')));
 
 // Panel global
-const SuperAdminDashboard = lazy(() => import('./pages/super-admin/SuperAdminDashboard'));
+const SuperAdminDashboard = lazy(importarConReintento(() => import('./pages/super-admin/SuperAdminDashboard')));
 
 // Redirige a /login si no está autenticado, recordando a dónde quería ir
 // para volver ahí después del login (importante ahora que el link del cliente

@@ -44,6 +44,21 @@ function rangoDelDia(business, fechaISO) {
   return { desde: 8 * 60, hasta: 21 * 60, cerrado: Boolean(dia) && !dia.isActive, corte: null };
 }
 
+/**
+ * Lo que dice una franja que ocupa un turno que empezó antes: "sigue Juan", o
+ * "2.º turno de Juan" si ya es el rato del que vino con él.
+ */
+function textoSigue(turno, min) {
+  if (turno.type === 'walkin') return 'sigue servicio sin turno';
+  const nombre = turno.clientName || 'cliente';
+  const acomp = Number(turno.acompanante?.durationMinutes) || 0;
+  if (acomp) {
+    const finTitular = timeToMinutes(turno.startTime) + (Number(turno.durationMinutes) || 0) - acomp;
+    if (min >= finTitular) return `2.º turno de ${nombre}`;
+  }
+  return `sigue ${nombre}`;
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 const aHora = (min) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
 
@@ -212,7 +227,7 @@ export default function AgendaDelDia({
                 <div className="agenda-celda">
                   {turnos.length === 0 ? (
                     enCurso
-                      ? <span className="agenda-libre agenda-sigue">↑ sigue {enCurso.type === 'walkin' ? 'servicio sin turno' : (enCurso.clientName || 'cliente')}</span>
+                      ? <span className="agenda-libre agenda-sigue">↑ {textoSigue(enCurso, m)}</span>
                       : enCorte
                         ? <span className="agenda-libre agenda-cerrada">cerrado</span>
                         : <span className="agenda-libre">libre</span>

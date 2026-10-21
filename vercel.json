@@ -35,7 +35,7 @@
       "destination": "/api/preview?slug=:slug"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
   ],

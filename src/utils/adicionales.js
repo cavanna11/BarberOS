@@ -11,7 +11,12 @@ export function textoMetodoPago(turno) {
 export function textoAdicionales(turno) {
   const lista = Array.isArray(turno?.adicionales) ? turno.adicionales : [];
   const extras = lista.length ? ` + ${lista.map((a) => a.name).join(', ')}` : '';
-  // "Viene con alguien": el turno atiende a dos, uno atrás del otro.
-  const acomp = turno?.acompanante?.name ? ` · 👨‍👦 con otro: ${turno.acompanante.name}` : '';
+  // Viene con alguien: el turno atiende a dos, uno atrás del otro. Desde el
+  // 21/10 es siempre "2 turnos seguidos" del mismo servicio; los turnos de
+  // antes pueden traer el servicio de la otra persona.
+  const a = turno?.acompanante;
+  const acomp = !a?.serviceId ? ''
+    : a.serviceId === turno.serviceId ? ' · 👥 2 turnos seguidos'
+      : ` · 👨‍👦 con otro: ${a.name}`;
   return extras + acomp;
 }

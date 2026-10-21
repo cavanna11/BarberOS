@@ -956,6 +956,23 @@ duración total. **Orden de despliegue: Functions primero, front después**: un
 front nuevo contra un servidor viejo ignora el campo y guarda el turno sin
 acompañante, en silencio. Casos en la suite de reservas.
 
+**21/10/2026: ahora es "¿Cuántos turnos querés? 1 o 2".** En el paso 4, arriba de
+la grilla. Con 2, el segundo turno es del MISMO servicio y es el que sigue al
+suyo; la grilla muestra solo los horarios con el siguiente libre. Por dentro es
+el mismo `acompanante` con el `serviceId` del titular, así que el servidor no
+cambió. La agenda muestra "↑ 2.º turno de X" en ese rato.
+
+### La pantalla en blanco que se arreglaba con F5 (21/10/2026)
+
+Después de cada deploy, el que tenía la app abierta (el panel instalado en el
+celular) pedía pantallas `lazy()` con el hash viejo; Vercel le devolvía
+`index.html` en vez de un 404, el import fallaba y React desmontaba todo.
+Ahora: `importarConReintento` y `vite:preloadError` recargan solos una vez
+(`utils/versionNueva.js`), `ErrorDePantalla` envuelve la app con un botón de
+"Recargar", y `vercel.json` ya no reescribe `/assets/*` a `index.html`.
+Servicios rechaza duraciones fuera de 5–240 min y pide confirmar más de 120:
+un "350" tipeado bloqueó una tarde entera de Neytan.
+
 ### Adicionales: se suman al servicio, no son un turno (13/10/2026)
 
 Cejas, lavado, café, mascarilla: un servicio con `adicional: true` (se marca en Servicios) no

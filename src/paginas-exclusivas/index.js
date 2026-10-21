@@ -1,4 +1,5 @@
 import { lazy } from 'react';
+import { importarConReintento } from '../utils/versionNueva';
 
 // ============================================================================
 // Páginas exclusivas: diseño a medida, pagado aparte
@@ -21,7 +22,7 @@ import { lazy } from 'react';
 
 export const PAGINAS = {
   // Neytan Barber 777 — Santa Teresita. Diseño encargado en octubre de 2026.
-  UgRVepKBCLf84xkgVgSX: lazy(() => import('./neytan/PaginaNeytan')),
+  UgRVepKBCLf84xkgVgSX: lazy(importarConReintento(() => import('./neytan/PaginaNeytan'))),
 };
 
 /** ¿Esta barbería tiene página exclusiva? */

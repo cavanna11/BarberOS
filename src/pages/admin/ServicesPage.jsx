@@ -23,8 +23,8 @@ export default function ServicesPage() {
   // promos distintas—, y editarlo desde la vista unificada escribiría en la
   // sucursal equivocada.
   const [sucFiltro, setSucFiltro] = useState('');
-  const verTodas = esMultiSucursal && !sucFiltro;
-
+  const verTodas = esMultiSucursal && !sucFiltro;
+
   // Renumera TODA la lista, no solo los dos que se cruzan: los servicios
   // viejos no tienen `displayOrder` y las numeraciones quedan con huecos al
   // borrar. Ver `utils/orden.js`.
@@ -75,6 +75,14 @@ export default function ServicesPage() {
 
   const handleSave = async () => {
     if (!form.name || !form.price || !businessId) return;
+    // Un tipeo de más ("350" en vez de "50") no se nota en el formulario, pero
+    // en la agenda es un turno que bloquea la tarde entera.
+    const minutos = Number(form.durationMinutes);
+    if (!(minutos >= 5 && minutos <= 240)) {
+      alert('La duración tiene que estar entre 5 y 240 minutos.');
+      return;
+    }
+    if (minutos > 120 && !window.confirm(`¿Seguro que este servicio dura ${minutos} minutos (${(minutos / 60).toFixed(1).replace('.0', '')} horas)? Cada turno va a ocupar todo ese rato en la agenda.`)) return;
 
     setGuardando(true);
     try {
