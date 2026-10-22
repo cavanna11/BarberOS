@@ -644,5 +644,167 @@ for (const d of (await db.collection(`businesses/${BID}/appointments`).get()).do
 for (const d of (await db.collection(`businesses/${BID}/ventasProductos`).get()).docs) await d.ref.delete();
 for (const id of [CERA, GEL, AGOTADO, INACT]) await prodRef(id).delete();
 
+// ============================================================================
+// CAMBIAR DE BARBERO EN EL MOSTRADOR (22/10/2026)
+// ============================================================================
+// "El turno que queda ahi lo agarra el que esta libre. El problema es: decia
+// Juan, pero pidio cualquiera. Como se anota a quien lo atiende despues, para
+// que entre en las estadisticas?"
+//
+// Lo que estos casos protegen:
+//   - que no se pueda mover un turno a alguien que no puede atenderlo
+//     (no hace el servicio, no trabaja ese dia, esta ocupado, aviso que no
+//     viene): ahi el turno quedaria en una agenda donde nadie lo va a ver,
+//   - que el motivo que se devuelve sea el de verdad y no un "no se pudo",
+//   - y que lo que cuelga del turno SIGA al barbero nuevo. Esa es la parte
+//     que no se ve y la que importa a fin de mes.
+titulo('Cambiar de barbero:');
+
+const PROF_B = 'prof-2';
+await db.doc(`businesses/${BID}/professionals/${PROF_B}`).set({ name: 'Nicolas', isActive: true });
+await db.doc(`businesses/${BID}/professionalServices/ps-b`).set({ professionalId: PROF_B, serviceId: SRV });
+await db.doc(`businesses/${BID}/schedules/sch-b`).set({
+  professionalId: PROF_B, dayOfWeek: DOW, startTime: '09:00', endTime: '18:00', isActive: true,
+});
+
+// `usuario()` borra y recrea la cuenta, asi que no sirve para poner claims:
+// el segundo llamado devolveria un uid nuevo y sin ellos. Aca se crea una sola
+// vez, se le ponen los claims y RECIEN AHI se pide el token, que es cuando los
+// claims entran adentro.
+async function staff(email, claims) {
+  try { await auth.deleteUser((await auth.getUserByEmail(email)).uid); } catch { /* no existia */ }
+  const u = await auth.createUser({ email, emailVerified: true });
+  await auth.setCustomUserClaims(u.uid, claims);
+  const res = await fetch(`${AUTH}/accounts:signInWithCustomToken?key=fake`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: await auth.createCustomToken(u.uid), returnSecureToken: true }),
+  });
+  return { uid: u.uid, token: (await res.json()).idToken };
+}
+
+const duenoTok = await staff('duenio-mover@gmail.com', { businessId: BID, role: 'owner' });
+
+const CERA_M = 'prod-cera-mover';
+await db.doc(`businesses/${BID}/productos/${CERA_M}`).set({
+  name: 'Cera', price: 5000, stock: 5, isActive: true, vendidos: 0,
+});
+
+const FECHA_M = '2027-07-06'; // MARTES: DOW=1 es martes en la convencion de la app (0=Lunes). Con un lunes, todo falla por "no trabaja ese dia" y parece un bug de la reasignacion.
+const cM = await usuario('mover1@gmail.com');
+r = await reservar(cM, {
+  ...base, appointmentDate: FECHA_M, startTime: '10:00', clientName: 'Juan',
+  professionalId: 'cualquiera',
+  productos: [{ id: CERA_M, cantidad: 1 }],
+});
+chequear('reserva con "cualquiera"', r.ok?.status === 'created', JSON.stringify(r));
+const aptM = r.ok?.id;
+let docM = aptM ? (await db.doc(`businesses/${BID}/appointments/${aptM}`).get()).data() : {};
+chequear('el turno queda marcado como "pidio cualquiera"',
+  docM.pidioCualquiera === true, JSON.stringify(docM.pidioCualquiera));
+const asignado = docM.professionalId;
+const otro = asignado === PROF ? PROF_B : PROF;
+
+const mover = (u, datos) => llamar(u, 'cambiarProfesional', { businessId: BID, ...datos });
+
+r = await mover(duenoTok, { appointmentId: aptM, professionalId: otro });
+chequear('el dueno lo pasa al otro barbero', r.ok?.ok === true, JSON.stringify(r));
+docM = (await db.doc(`businesses/${BID}/appointments/${aptM}`).get()).data();
+chequear('el turno queda a nombre del nuevo', docM.professionalId === otro, docM.professionalId);
+chequear('y queda anotado de quien era', docM.reasignadoDe === asignado, String(docM.reasignadoDe));
+
+const ventaM = (await db.doc(`businesses/${BID}/ventasProductos/${aptM}`).get()).data();
+chequear('LA VENTA DEL PRODUCTO SIGUE AL BARBERO NUEVO',
+  ventaM?.professionalId === otro, JSON.stringify(ventaM?.professionalId));
+chequear('y con el nombre del nuevo, no el del viejo',
+  ventaM?.professionalName === (otro === PROF ? 'Martín' : 'Nicolas'),
+  JSON.stringify(ventaM?.professionalName));
+
+titulo('A quien NO se le puede pasar un turno:');
+r = await mover(duenoTok, { appointmentId: aptM, professionalId: otro });
+chequear('al que ya lo tiene, no', Boolean(r.error), r.mensaje);
+
+r = await mover(duenoTok, { appointmentId: aptM, professionalId: 'no-existe' });
+chequear('a uno que no existe, no', Boolean(r.error), r.mensaje);
+
+// Un servicio que el otro NO hace.
+await db.doc(`businesses/${BID}/services/srv-solo-uno`).set({
+  name: 'Color', price: 30000, durationMinutes: 30, isActive: true,
+});
+await db.doc(`businesses/${BID}/professionalServices/ps-solo-uno`).set({
+  professionalId: asignado, serviceId: 'srv-solo-uno',
+});
+const cM2 = await usuario('mover2@gmail.com');
+r = await reservar(cM2, {
+  ...base, appointmentDate: FECHA_M, startTime: '11:00', clientName: 'Color',
+  professionalId: asignado, serviceId: 'srv-solo-uno',
+});
+const aptColor = r.ok?.id;
+chequear('se reserva un servicio que solo hace uno', Boolean(aptColor), JSON.stringify(r));
+r = await mover(duenoTok, { appointmentId: aptColor, professionalId: otro });
+chequear('al que no hace ese servicio, no', Boolean(r.error), r.mensaje);
+chequear('y el motivo lo dice', /no hace/.test(r.mensaje || ''), r.mensaje);
+
+// Ocupado a esa hora.
+const cM3 = await usuario('mover3@gmail.com');
+r = await reservar(cM3, {
+  ...base, appointmentDate: FECHA_M, startTime: '12:00', clientName: 'Ocupa', professionalId: otro,
+});
+const aptOcupa = r.ok?.id;
+const cM4 = await usuario('mover4@gmail.com');
+r = await reservar(cM4, {
+  ...base, appointmentDate: FECHA_M, startTime: '12:00', clientName: 'Choca', professionalId: asignado,
+});
+const aptChoca = r.ok?.id;
+chequear('dos turnos a la misma hora, uno de cada barbero', Boolean(aptOcupa && aptChoca), JSON.stringify(r));
+r = await mover(duenoTok, { appointmentId: aptChoca, professionalId: otro });
+chequear('al que ya tiene un turno encima, no', Boolean(r.error), r.mensaje);
+chequear('y dice a que hora lo tiene', /12:00/.test(r.mensaje || ''), r.mensaje);
+
+// Aviso que ese dia no viene.
+await db.doc(`businesses/${BID}/ausencias/${otro}_${FECHA_M}_todo`).set({
+  professionalId: otro, fecha: FECHA_M, desde: null, hasta: null,
+});
+const cM5 = await usuario('mover5@gmail.com');
+r = await reservar(cM5, {
+  ...base, appointmentDate: FECHA_M, startTime: '15:00', clientName: 'Ausente', professionalId: asignado,
+});
+const aptAus = r.ok?.id;
+r = await mover(duenoTok, { appointmentId: aptAus, professionalId: otro });
+chequear('al que aviso que ese dia no viene, no', Boolean(r.error), r.mensaje);
+await db.doc(`businesses/${BID}/ausencias/${otro}_${FECHA_M}_todo`).delete();
+
+titulo('Quien puede moverlo:');
+const clienteCurioso = await usuario('curioso-mover@gmail.com');
+r = await mover(clienteCurioso, { appointmentId: aptM, professionalId: asignado });
+chequear('un cliente no mueve turnos', Boolean(r.error), r.mensaje);
+
+const barberoBTok = await staff('barbero-b@gmail.com', { businessId: BID, role: 'admin', professionalId: PROF_B });
+r = await mover(barberoBTok, { appointmentId: aptM, professionalId: PROF });
+chequear('un peluquero NO se lo pasa a OTRO', Boolean(r.error), r.mensaje);
+// Un turno de Martin que Nicolas se pasa a si mismo: es el "lo atiendo yo" del
+// mostrador, y es el unico movimiento que un peluquero puede hacer.
+const cM6 = await usuario('mover6@gmail.com');
+r = await reservar(cM6, {
+  ...base, appointmentDate: FECHA_M, startTime: '16:00', clientName: 'Para Nicolas',
+  professionalId: PROF,
+});
+const aptParaB = r.ok?.id;
+chequear('hay un turno de Martin para probarlo', Boolean(aptParaB), JSON.stringify(r));
+r = await mover(barberoBTok, { appointmentId: aptParaB, professionalId: PROF_B });
+chequear('pero SI puede ponerse a si mismo ("lo atiendo yo")', r.ok?.ok === true, JSON.stringify(r));
+chequear('y el turno queda suyo',
+  (await db.doc(`businesses/${BID}/appointments/${aptParaB}`).get()).get('professionalId') === PROF_B);
+
+for (const d of (await db.collection(`businesses/${BID}/appointments`).get()).docs) {
+  if ((d.data().appointmentDate || '') >= '2027-07-01') await d.ref.delete();
+}
+for (const d of (await db.collection(`businesses/${BID}/ventasProductos`).get()).docs) await d.ref.delete();
+await db.doc(`businesses/${BID}/productos/${CERA_M}`).delete();
+await db.doc(`businesses/${BID}/professionals/${PROF_B}`).delete();
+await db.doc(`businesses/${BID}/professionalServices/ps-b`).delete();
+await db.doc(`businesses/${BID}/professionalServices/ps-solo-uno`).delete();
+await db.doc(`businesses/${BID}/services/srv-solo-uno`).delete();
+await db.doc(`businesses/${BID}/schedules/sch-b`).delete();
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { createAppointment, updateAppointment } from '../../lib/repository';
+import { cambiarProfesional } from '../../lib/functions';
 import { calculateStats } from '../../utils/statsCalculator';
 import { ingresosDelMes, historialPorMes, variacionMensual, nombreDeMes, mesActual } from '../../utils/ingresos';
 import { formatPrice, formatDate, toDateString } from '../../utils/dateUtils';
@@ -130,6 +131,19 @@ export default function DashboardPage() {
     });
   };
 
+  // Mover el turno a otro barbero. Va por la function y NO por una escritura
+  // directa: hay que verificar que el otro haga el servicio, trabaje ese día y
+  // esté libre, y mover la venta de productos y la reseña, que guardan el
+  // barbero por su cuenta. El error se propaga a la agenda, que lo muestra con
+  // el motivo que contesta el servidor.
+  const moverDeProfesional = async (apt, professionalId) => {
+    await cambiarProfesional({
+      businessId,
+      appointmentId: apt.id,
+      professionalId,
+    });
+  };
+
   // ══════════════════════════════════════════════════════════════════════════
   // VISTA PELUQUERO
   // ══════════════════════════════════════════════════════════════════════════
@@ -206,6 +220,7 @@ export default function DashboardPage() {
             business={business}
             professionalId={esCajero ? null : user.professionalId}
             onCambiarEstado={cambiarEstado}
+            onCambiarProfesional={veTodo ? moverDeProfesional : null}
           />
         </div>
 
@@ -453,6 +468,7 @@ export default function DashboardPage() {
           services={services}
           business={business}
           onCambiarEstado={cambiarEstado}
+          onCambiarProfesional={moverDeProfesional}
         />
       </div>
     </div>

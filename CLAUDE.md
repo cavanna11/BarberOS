@@ -1791,6 +1791,67 @@ semana fijo (`DOW`), así que una fecha de prueba que caiga en otro día falla p
 no a una ruta de documento; para probar lectura y borrado hay que sembrar con el
 Admin SDK, porque un 404 cuenta como denegado.
 
+### "Pidió cualquiera": que el barbero se entere, y poder cambiarlo (22/10/2026)
+
+Santiago, de una barbería con dos barberos: *"cuando eligen cualquiera se le
+asigna a cualquiera de los dos, y cuando llegan el barbero no se entera que
+vino con esa opción: es como si lo hubieran elegido a él."*
+
+**Lo que NO se hizo, y por qué.** La salida intuitiva es bloquearles el horario
+a los dos hasta que decidan. No va, y lo vio él mismo: un turno a las 18:00
+dejaría a todo el equipo sin esa hora, y el cliente que SÍ quiere a uno puntual
+se queda afuera. Con dos barberos se pierde el doble de agenda; con cuatro, el
+cuádruple. Es aritmética, no se arregla.
+
+Entonces se sigue asignando uno —el servidor, adentro de su transacción— y se
+arregla lo que de verdad faltaba, que es **que nadie se enteraba**:
+
+1. **El turno lo dice.** `pidioCualquiera: true`, y en la agenda aparece
+   *"👥 Pidió cualquiera — lo atiende el que esté libre"*.
+2. **Y se puede cambiar en el mostrador**, con un desplegable en el turno.
+
+**La segunda es la que contesta la pregunta de verdad**, y la pregunta la hizo
+él: *"¿cómo se anota a quién lo atiende después, para que entre en las
+estadísticas?"*. Marcar el turno no alcanza: si lo atiende el otro y el turno
+sigue a nombre del primero, quedan mal los ingresos por barbero, las reseñas y
+**la venta del producto**.
+
+**Por qué es una function y no una escritura del panel.** Mover un turno no es
+cambiar un campo: hay que verificar que el otro haga ese servicio, que trabaje
+ese día, que el horario entre en SU jornada y no en su descanso, que no haya
+avisado que ese día no viene, y que no tenga otro turno encima. Nada de eso se
+puede expresar en las Rules —no saben consultar la agenda— y en el browser se
+saltea con la consola abierta. El solapamiento se chequea **dentro de una
+transacción**: dos personas en el mostrador moviendo turnos al mismo barbero a
+la misma hora leerían las dos "libre".
+
+**Y arrastra lo que cuelga.** Es la parte que no se ve: `ventasProductos` y
+`reviews` guardan el `professionalId` por su cuenta, así que sin moverlos la
+cera se la sigue acreditando el que no la vendió. Queda anotado quién movió el
+turno y desde quién (`reasignadoDe`, `reasignadoPor`): cuando a fin de mes un
+número no cierra, lo primero que se pregunta es si alguien lo movió.
+
+**Quién puede.** El dueño y el mostrador mueven cualquier turno de su barbería.
+El peluquero **solo puede ponerse a sí mismo** — es el "lo atiendo yo" — porque
+si no tendría cómo sacarse de encima los turnos que no quiere pasándoselos al
+compañero. (En la práctica el peluquero ni ve los turnos de otro: las Rules le
+filtran la agenda. El límite está igual, del lado del servidor.)
+
+```bash
+node scripts/test-reservas-emulador.mjs   # 140 casos (21 nuevos de esto)
+```
+
+Dos trampas que costaron una corrida cada una, las dos ya documentadas en este
+archivo y pisadas igual:
+
+- **Firestore exige TODAS las lecturas antes que las escrituras** en una
+  transacción. La reseña se leía después de actualizar el turno y la function
+  tiraba `INTERNAL` sin mensaje: la reasignación no pasaba y en pantalla no se
+  entendía por qué.
+- **`DOW = 1` es MARTES**, no lunes (la convención de la app es 0=Lunes). Con
+  una fecha de prueba en lunes, todo falla por *"no trabaja ese día"* y parece
+  un bug de la reasignación.
+
 ### Productos: la cera que el barbero vende al lado del corte (22/10/2026)
 
 *"Los barberos quieren subir una cera para el pelo que venden. Estaría bueno que
@@ -2617,11 +2678,11 @@ node scripts/test-orden.mjs                # en qué orden ve el cliente la list
 node scripts/test-productos.mjs            # la mercadería: stock, precio y qué se ofrece
 ```
 
-Hoy: claims 83, reservas 119, facturación 20, rules 152, alta 22, mercadopago 16,
+Hoy: claims 83, reservas 140, facturación 20, rules 155, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
 turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 97, orden 30.
 productos 54.
-Todo en verde (1123).
+Todo en verde (1147).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

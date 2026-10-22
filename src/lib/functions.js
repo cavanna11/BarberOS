@@ -127,6 +127,18 @@ export function createAppointment({ businessId, professionalId, serviceId, appoi
 }
 
 /**
+ * Cambia el barbero de un turno, en el mostrador.
+ *
+ * El servidor verifica que el nuevo haga ese servicio, trabaje ese día, que el
+ * horario le entre y esté libre, y mueve lo que cuelga del turno (la venta de
+ * productos y la reseña). `businessId` solo hace falta cuando llama la
+ * plataforma administrando una cuenta: al staff le sale de sus claims.
+ */
+export function cambiarProfesional({ businessId = null, appointmentId, professionalId }) {
+  return llamar('cambiarProfesional', { businessId, appointmentId, professionalId });
+}
+
+/**
  * Horarios tomados de un profesional en un día, para pintar la grilla.
  * Devuelve solo { startTime, endTime } de cada turno activo: el cliente no
  * puede leer la agenda del negocio (tiene datos de otros clientes), pero sí

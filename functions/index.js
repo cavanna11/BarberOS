@@ -1414,6 +1414,22 @@ exports.createAppointment = onCall(async (request) => {
         sena: { monto: montoSena, estado: 'pendiente', tipo: tipoPago },
         senaExpiraEn: new Date(Date.now() + MINUTOS_PARA_PAGAR * 60000),
       } : {}),
+      // El cliente no eligió barbero: lo eligió el servidor.
+      //
+      // Hasta ahora el turno quedaba indistinguible de uno pedido a dedo, y el
+      // barbero no tenía cómo saberlo: le llegaba "Juan Pérez - Corte" como si
+      // lo hubiera pedido a él. Santiago, de una barbería con dos barberos:
+      // "cuando llegan, el barbero no se entera que vino con la opción de
+      // cualquiera; es como si lo hubieran elegido a él".
+      //
+      // La alternativa —bloquearles el horario a los dos hasta que decidan— no
+      // va: un turno a las 18:00 dejaría sin esa hora a todo el equipo, y el
+      // cliente que SÍ quiere a uno puntual se queda afuera. Con dos barberos
+      // se pierde el doble de agenda; con cuatro, el cuádruple.
+      //
+      // Entonces se sigue asignando uno, pero el turno lo dice, y en el
+      // mostrador se cambia con un toque (`cambiarProfesional`).
+      ...(sinPreferencia ? { pidioCualquiera: true } : {}),
       // Reservado por el cliente desde el link. Los que carga el staff llevan
       // type 'manual' o 'walkin'. Sirve para que el barbero sepa, de un
       // vistazo, cuál entró solo y cuál cargó él.
@@ -2390,6 +2406,210 @@ exports.estadoPushDelEquipo = onCall(async (request) => {
       ultimo: v.ultimo ? v.ultimo.toISOString() : null,
     })),
   };
+});
+
+// ============================================================================
+// Cambiar de barbero, en el mostrador
+// ============================================================================
+// "El turno que queda ahí lo agarra el que está libre. El problema es: decía
+// Juan, pero pidió cualquiera. ¿Cómo se anota a quién lo atiende después, para
+// que entre en las estadísticas?" (Santiago, 22/10/2026).
+//
+// Esa es la pregunta que obliga a que esto exista. Marcar el turno como "vino
+// por cualquiera" sirve para que los dos barberos sepan que se lo pueden
+// repartir, pero si después lo atiende el otro y el turno sigue a nombre del
+// primero, TODO lo que cuelga queda mal: los ingresos por barbero, las
+// reseñas, y la venta del producto que se llevó el cliente.
+//
+// Por qué una function y no una escritura del panel: mover un turno a otro
+// barbero no es cambiar un campo. Hay que verificar que el otro haga ese
+// servicio, que trabaje ese día, que el horario entre en SU jornada y no en su
+// descanso, que no haya avisado que ese día no viene, y que no tenga otro
+// turno encima. Eso no se puede expresar en las Rules —no saben consultar la
+// agenda— y en el browser se saltea con la consola abierta.
+//
+// Y arrastra lo que cuelga. Es la parte que no se ve y la que importa a fin de
+// mes: la venta de productos guarda el `professionalId` del turno, así que sin
+// moverla la cera se la sigue acreditando el que no la vendió.
+const ESTADOS_REASIGNABLES = ['pendiente', 'confirmada', 'completada'];
+
+exports.cambiarProfesional = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
+  }
+  const token = request.auth.token || {};
+  const esPlataforma = token.platform === true;
+  const propias = Array.isArray(token.businessIds) && token.businessIds.length
+    ? token.businessIds
+    : [token.businessId];
+
+  // El `businessId` que manda el panel vale si el que llama lo tiene en su
+  // alcance. Importa en las cuentas con sucursales: el claim `businessId` del
+  // dueno apunta a la PRINCIPAL, asi que confiar solo en el claim movería un
+  // turno de la sucursal equivocada. Es el mismo agujero que ya pagamos con
+  // `assertCanManageAdmins`.
+  const pedido = String(request.data?.businessId || '');
+  const businessId = esPlataforma
+    ? pedido
+    : (pedido && propias.includes(pedido) ? pedido : String(token.businessId || ''));
+  const appointmentId = String(request.data?.appointmentId || '');
+  const nuevoProfId = String(request.data?.professionalId || '');
+
+  if (!businessId || !appointmentId || !nuevoProfId) {
+    throw new HttpsError('invalid-argument', 'Falta el turno o el profesional.');
+  }
+
+  // Quién puede. El dueño y el mostrador mueven cualquier turno de su
+  // barbería. El peluquero SOLO puede ponerse a sí mismo: es el "lo atiendo
+  // yo" del mostrador. Sin ese límite, un barbero podría sacarse de encima los
+  // turnos que no quiere pasándoselos al compañero.
+  const rol = token.role;
+  const esDeLaCasa = propias.includes(businessId);
+
+  if (!esPlataforma) {
+    if (!esDeLaCasa || !['owner', 'cajero', 'admin'].includes(rol)) {
+      throw new HttpsError('permission-denied', 'Solo el staff de la barbería puede cambiar el profesional de un turno.');
+    }
+    if (rol === 'admin' && token.professionalId !== nuevoProfId) {
+      throw new HttpsError('permission-denied', 'Podés ponerte a vos en un turno, pero no asignárselo a otro. Pedíselo al dueño o al mostrador.');
+    }
+  }
+
+  const aptRef = db.doc(`businesses/${businessId}/appointments/${appointmentId}`);
+  const profRef = db.doc(`businesses/${businessId}/professionals/${nuevoProfId}`);
+
+  const [aptSnap, profSnap] = await Promise.all([aptRef.get(), profRef.get()]);
+  if (!aptSnap.exists) throw new HttpsError('not-found', 'Ese turno no existe.');
+  if (!profSnap.exists || profSnap.data().isActive === false) {
+    throw new HttpsError('failed-precondition', 'Ese profesional no está disponible.');
+  }
+
+  const apt = aptSnap.data();
+  const nuevoProf = profSnap.data();
+  const anteriorId = apt.professionalId || null;
+
+  if (anteriorId === nuevoProfId) {
+    throw new HttpsError('failed-precondition', `Ese turno ya es de ${nuevoProf.name || 'ese profesional'}.`);
+  }
+  if (!ESTADOS_REASIGNABLES.includes(apt.status)) {
+    throw new HttpsError('failed-precondition', 'Ese turno está cancelado o esperando el pago: no se puede cambiar de profesional.');
+  }
+
+  const fecha = apt.appointmentDate;
+  const inicio = timeToMinutes(apt.startTime);
+  const fin = timeToMinutes(apt.endTime || apt.startTime);
+  if (!fecha || !Number.isFinite(inicio) || !Number.isFinite(fin) || fin <= inicio) {
+    throw new HttpsError('failed-precondition', 'Ese turno no tiene una fecha y hora que se puedan leer.');
+  }
+
+  // ── Que el nuevo PUEDA ──────────────────────────────────────────────────
+  // Mismo criterio y mismos mensajes que al reservar: lo que no se puede
+  // hacer se dice con el motivo, no con un "no se pudo".
+  const haceElServicio = async (srvId, comoSeLlama) => {
+    if (!srvId) return null;
+    const v = await db.collection(`businesses/${businessId}/professionalServices`)
+      .where('professionalId', '==', nuevoProfId)
+      .where('serviceId', '==', srvId)
+      .limit(1).get();
+    return v.empty
+      ? `${nuevoProf.name || 'Ese profesional'} no hace ${comoSeLlama || 'ese servicio'}.`
+      : null;
+  };
+
+  // El servicio sin turno (walk-in) no tiene serviceId: ahí no hay nada que
+  // verificar del catálogo, solo que el horario le entre.
+  let motivo = await haceElServicio(apt.serviceId, apt.serviceName);
+  if (!motivo && apt.acompanante?.serviceId && apt.acompanante.serviceId !== apt.serviceId) {
+    motivo = await haceElServicio(apt.acompanante.serviceId, apt.acompanante.name);
+  }
+  if (motivo) throw new HttpsError('failed-precondition', motivo);
+
+  const dow = diaDeLaSemana(fecha);
+  const horarios = await db.collection(`businesses/${businessId}/schedules`)
+    .where('professionalId', '==', nuevoProfId)
+    .where('dayOfWeek', '==', dow)
+    .limit(1).get();
+  const horario = horarios.empty ? null : horarios.docs[0].data();
+  if (!horario || horario.isActive === false || !horario.startTime || !horario.endTime) {
+    throw new HttpsError('failed-precondition', `${nuevoProf.name || 'Ese profesional'} no trabaja ese día.`);
+  }
+  // Alcanza con que EMPIECE dentro del horario, igual que al reservar: al que
+  // atiende hasta las 17:30 no se lo echa a la mitad del corte que arrancó
+  // 17:00.
+  if (inicio < timeToMinutes(horario.startTime) || inicio >= timeToMinutes(horario.endTime)) {
+    throw new HttpsError('failed-precondition',
+      `${nuevoProf.name || 'Ese profesional'} ese día atiende de ${horario.startTime} a ${horario.endTime}.`);
+  }
+  if (horario.breakStart && horario.breakEnd) {
+    const cb = timeToMinutes(horario.breakStart);
+    const ce = timeToMinutes(horario.breakEnd);
+    if (inicio < ce && fin > cb) {
+      throw new HttpsError('failed-precondition',
+        `A esa hora ${nuevoProf.name || 'ese profesional'} está en su descanso (${horario.breakStart} a ${horario.breakEnd}).`);
+    }
+  }
+
+  const motivoAusencia = ausencias.motivoEnLista(
+    await ausencias.leerDeLaFecha(db, businessId, nuevoProfId, fecha), inicio, fin
+  );
+  if (motivoAusencia) throw new HttpsError('failed-precondition', motivoAusencia);
+
+  // ── Y que esté libre ────────────────────────────────────────────────────
+  // Adentro de una transacción: dos personas en el mostrador moviendo turnos
+  // al mismo barbero a la misma hora leerían las dos "libre".
+  await db.runTransaction(async (tx) => {
+    const delDia = await tx.get(
+      db.collection(`businesses/${businessId}/appointments`)
+        .where('appointmentDate', '==', fecha)
+    );
+    const choca = delDia.docs.find((d) => {
+      if (d.id === appointmentId) return false;
+      const o = d.data();
+      if (o.professionalId !== nuevoProfId) return false;
+      if (!reservaViva(o) && o.status !== 'completada') return false;
+      const oi = timeToMinutes(o.startTime);
+      const of = timeToMinutes(o.endTime || o.startTime);
+      return Number.isFinite(oi) && Number.isFinite(of) && inicio < of && fin > oi;
+    });
+    if (choca) {
+      const o = choca.data();
+      throw new HttpsError('already-exists',
+        `${nuevoProf.name || 'Ese profesional'} ya tiene un turno a las ${o.startTime}.`);
+    }
+
+    // La resena se lee ACA, antes de la primera escritura. Firestore exige que
+    // TODAS las lecturas de una transaccion vayan antes que las escrituras, y
+    // leerla despues tiraba un INTERNAL sin mensaje: la reasignacion no pasaba
+    // y en pantalla no se entendia por que.
+    const reviewRef = db.doc(`businesses/${businessId}/reviews/${appointmentId}`);
+    const review = await tx.get(reviewRef);
+
+    tx.update(aptRef, {
+      professionalId: nuevoProfId,
+      professionalName: nuevoProf.name || '',
+      // Queda anotado el cambio: a fin de mes, cuando un número no cierra, lo
+      // primero que se pregunta es si alguien lo movió.
+      reasignadoDe: anteriorId,
+      reasignadoEn: FieldValue.serverTimestamp(),
+      reasignadoPor: request.auth.uid,
+    });
+
+    // Lo que cuelga del turno y guarda el barbero por su cuenta. Si no se
+    // mueve, la venta de la cera se la lleva el que no la vendió y la reseña
+    // le queda al que no atendió.
+    tx.set(db.doc(`businesses/${businessId}/ventasProductos/${appointmentId}`), {
+      professionalId: nuevoProfId,
+      professionalName: nuevoProf.name || '',
+    }, { merge: true });
+
+    if (review.exists) tx.update(reviewRef, { professionalId: nuevoProfId });
+  });
+
+  logger.info('turno reasignado', {
+    businessId, appointmentId, de: anteriorId, a: nuevoProfId, por: request.auth.uid,
+  });
+
+  return { ok: true, professionalId: nuevoProfId, professionalName: nuevoProf.name || '' };
 });
 
 exports.onNuevoTurno = onDocumentCreated('businesses/{bizId}/appointments/{aptId}', async (event) => {

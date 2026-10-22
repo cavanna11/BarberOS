@@ -75,7 +75,14 @@ export default function AgendaDelDia({
   renderAcciones = null,
   /** Si viene, la agenda dibuja sola los botones: (apt, status) => void. */
   onCambiarEstado = null,
+  /** Si viene, se puede mover el turno a otro barbero: (apt, profId) => Promise. */
+  onCambiarProfesional = null,
 }) {
+  // Qué turno está cambiando de barbero, y el último error. No es un modal a
+  // propósito: esto pasa con el cliente parado adelante, y abrir una ventana
+  // para elegir entre dos nombres es una pantalla de más.
+  const [moviendo, setMoviendo] = useState(null);
+  const [errorMover, setErrorMover] = useState('');
   const hoy = toDateString(new Date());
   const [fecha, setFecha] = useState(hoy);
   const [filtroProf, setFiltroProf] = useState('');
@@ -118,6 +125,10 @@ export default function AgendaDelDia({
   const nombreSrv = (a) => (a.serviceName || services.find((s) => s.id === a.serviceId)?.name || (a.type === 'walkin' ? 'Servicio sin turno' : '—')) + textoAdicionales(a) + textoMetodoPago(a);
 
   const activos = delDia.filter((a) => a.status === 'pendiente' || a.status === 'confirmada');
+
+  // A quién se le puede pasar un turno. Los inactivos no: el que se fue de la
+  // barbería no puede quedar con turnos nuevos.
+  const activosDelEquipo = (professionals || []).filter((p) => p && p.isActive !== false);
 
   // Turnos que ya terminaron y siguen abiertos: son los que hay que cerrar al
   // final del día. Tenerlos contados permite hacerlo de una vez en lugar de
@@ -163,6 +174,14 @@ export default function AgendaDelDia({
 
   return (
     <div className="agenda">
+      {/* El motivo por el que no se pudo mover un turno. Va arriba y no al lado
+          del select: el servidor contesta frases largas ("Nicolas ese dia
+          atiende de 14:00 a 20:00") y adentro de la fila no se leen. */}
+      {errorMover && (
+        <div className="notice notice-danger" style={{ marginBottom: 'var(--space-md)' }}>
+          {errorMover}
+        </div>
+      )}
       <div className="agenda-cabecera">
         <div className="agenda-nav">
           <button className="btn btn-ghost btn-sm" onClick={() => setFecha(sumarDias(fecha, -1))} aria-label="Día anterior">‹</button>
@@ -252,6 +271,56 @@ export default function AgendaDelDia({
                             {a.startTime}–{a.endTime || '?'} · {nombreSrv(a)}
                             {varios && !profActivo && <> · <strong>{nombreProf(a.professionalId)}</strong></>}
                           </div>
+
+                          {/* Vino por "Cualquiera": el cliente no pidió a nadie.
+                              Sin esto el turno se ve igual que uno pedido a
+                              dedo, y el barbero cree que lo eligieron a él. */}
+                          {a.pidioCualquiera && (
+                            <div className="agenda-turno-cualquiera">
+                              👥 Pidió <strong>cualquiera</strong> — lo atiende el que esté libre
+                            </div>
+                          )}
+
+                          {/* Cambiar de barbero. Aparece solo si hay a quién
+                              mover el turno: en una barbería de uno, elegir
+                              entre un nombre no es una decisión. */}
+                          {onCambiarProfesional && activosDelEquipo.length > 1
+                            && ['pendiente', 'confirmada', 'completada'].includes(a.status) && (
+                            <div className="agenda-turno-mover">
+                              <label>
+                                <span className="text-sm text-muted">Lo atiende</span>
+                                <select
+                                  className="form-input"
+                                  value={a.professionalId || ''}
+                                  disabled={moviendo === a.id}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={async (e) => {
+                                    e.stopPropagation();
+                                    const destino = e.target.value;
+                                    if (!destino || destino === a.professionalId) return;
+                                    setMoviendo(a.id);
+                                    setErrorMover('');
+                                    try {
+                                      await onCambiarProfesional(a, destino);
+                                    } catch (err) {
+                                      // El motivo se MUESTRA. El servidor contesta
+                                      // "Nicolás no trabaja ese día" o "ya tiene un
+                                      // turno a las 18:00", y eso es justo lo que
+                                      // hay que leer para resolverlo en el momento.
+                                      setErrorMover(err?.message || 'No se pudo cambiar el profesional.');
+                                    } finally {
+                                      setMoviendo(null);
+                                    }
+                                  }}
+                                >
+                                  {activosDelEquipo.map((p) => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              {moviendo === a.id && <span className="text-sm text-muted">Cambiando…</span>}
+                            </div>
+                          )}
                           {/* Lo cubre la membresía del cliente: no se cobra. Lo
                               marcó el cliente al reservar (o el dueño); el
                               barbero no lo puede poner ni sacar. */}
