@@ -143,9 +143,12 @@ export default function AgendaDelDia({
     const termino = yaTermino(a);
     return (
       <>
-        {a.status === 'pendiente' && !termino && (
-          <button className="btn btn-sm btn-outline" onClick={() => onCambiarEstado(a, 'confirmada')}>Confirmar</button>
-        )}
+        {/* No hay "Confirmar" (22/10/2026). El turno nace confirmado: apretar
+            ese botón no decidía nada —un turno pendiente ocupaba el horario,
+            se cancelaba y contaba exactamente igual— y era un toque por turno
+            en la pantalla que más se abre en el día. Los turnos viejos que
+            quedaron en 'pendiente' se siguen viendo y se siguen cerrando
+            igual: nunca hubo diferencia de comportamiento entre los dos. */}
         {termino && (
           <>
             <button className="btn btn-sm btn-primary" onClick={() => onCambiarEstado(a, 'completada')}>Vino</button>

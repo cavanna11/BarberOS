@@ -147,9 +147,8 @@ export default function DashboardPage() {
 
     const handleWalkin = async (startTime, endTime) => {
       try {
-        // Nace en 'pendiente' (lo exigen las Rules) y se confirma acto seguido:
-        // el cliente ya está sentado en la silla.
-        const id = await createAppointment(businessId, {
+        // Nace confirmado, como todos. El cliente ya está sentado en la silla.
+        await createAppointment(businessId, {
           professionalId: user.professionalId,
           serviceId: null,
           appointmentDate: today,
@@ -163,7 +162,6 @@ export default function DashboardPage() {
           adminNotes: '',
           userId: user.id,
         });
-        await updateAppointment(businessId, id, { status: 'confirmada' });
       } catch (err) {
         console.error('[Dashboard] No se pudo registrar el servicio:', err);
         alert('No se pudo registrar el servicio: ' + err.message);

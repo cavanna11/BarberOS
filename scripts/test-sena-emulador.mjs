@@ -93,7 +93,7 @@ chequear('el que paga en el local reserva sin pasar por Mercado Pago',
   r.ok?.status === 'created', JSON.stringify(r));
 const sinSena = (await db.collection(`businesses/${BID}/appointments`).get()).docs.map((d) => d.data());
 chequear('y su turno queda reservado de una, sin seña',
-  sinSena.length === 1 && sinSena[0].status === 'pendiente' && !sinSena[0].sena,
+  sinSena.length === 1 && sinSena[0].status === 'confirmada' && !sinSena[0].sena,
   JSON.stringify(sinSena.map((a) => [a.status, a.sena])));
 r = await reservar(await cliente('c6-s@gmail.com'), { startTime: '15:00', pagar: 'sena' });
 chequear('y el que elige dejar seña va al pago', r.error === 'UNAVAILABLE', JSON.stringify(r));

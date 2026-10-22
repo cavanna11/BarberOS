@@ -5918,6 +5918,10 @@ select.form-input {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
+  /* Que el contador se baje a un renglon propio antes que apretar el nombre.
+     Medido a 375 px: sin esto, "Cera mate fijacion fuerte 100 g" se partia en
+     TRES renglones porque el contador se lleva un ancho fijo del costado. */
+  flex-wrap: wrap;
 }
 
 .producto-opcion.activa {
@@ -5942,7 +5946,7 @@ select.form-input {
   font-size: 22px;
 }
 
-.producto-datos { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.producto-datos { display: flex; flex-direction: column; min-width: 0; flex: 1 1 150px; }
 .producto-nombre { font-weight: 600; }
 .producto-desc { font-size: 0.8125rem; color: var(--text-secondary); }
 .producto-precio { font-size: 0.9375rem; font-weight: 700; color: var(--primary-texto); }
@@ -5953,6 +5957,7 @@ select.form-input {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .producto-numero {
@@ -5962,7 +5967,64 @@ select.form-input {
   font-variant-numeric: tabular-nums;
 }
 
-/* En el panel */
+/* En el panel: lista de filas, no tabla. Ver el comentario en ProductosPage. */
+.productos-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.producto-fila {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 12px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+
+.producto-fila.inactivo { opacity: 0.6; }
+
+.producto-fila-datos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.producto-fila-titulo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.producto-fila-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+/* Las acciones se van abajo cuando no entran al lado, en vez de apretar el
+   nombre hasta partirlo letra por letra — que es como se veia con la tabla. */
+.producto-fila-acciones {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@media (max-width: 560px) {
+  .producto-fila-acciones {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+}
+
 .producto-celda { display: flex; align-items: center; gap: 10px; }
 .producto-stock { display: flex; align-items: center; gap: 4px; }
 .producto-foto-editor { display: flex; align-items: center; gap: var(--space-md); }

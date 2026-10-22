@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { ordenados } from '../../utils/orden';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
-import { createAppointment, updateAppointment } from '../../lib/repository';
+import { createAppointment } from '../../lib/repository';
 import { crearTurnoFijo } from '../../lib/functions';
 import { calculateAvailableSlots } from '../../utils/availabilityEngine';
 import { formatPrice, toDateString } from '../../utils/dateUtils';
@@ -128,7 +128,7 @@ export default function NuevoTurnoModal({ onClose }) {
         setGuardando(false);
         return;
       }
-      const id = await createAppointment(businessId, {
+      await createAppointment(businessId, {
         professionalId: form.professionalId,
         serviceId: form.serviceId,
         appointmentDate: form.date,
@@ -146,7 +146,6 @@ export default function NuevoTurnoModal({ onClose }) {
         userId: user.id,
         type: 'manual',
       });
-      await updateAppointment(businessId, id, { status: 'confirmada' });
       onClose();
     } catch (err) {
       console.error('[NuevoTurnoModal] No se pudo agendar:', err);

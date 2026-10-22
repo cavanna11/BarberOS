@@ -243,9 +243,6 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
             <button className="btn btn-ghost btn-sm" title="Cancelar el turno" onClick={() => handleCancel(apt)}>✕</button>
           </>
         )}
-        {apt.status === 'pendiente' && (
-          <button className="btn btn-sm btn-outline" title="Avisarle al cliente que el turno queda en pie" onClick={() => updateStatus(apt, 'confirmada')}>Confirmar</button>
-        )}
         {apt.sena?.estado === 'pagada' && (
           <button className="btn btn-sm btn-ghost" disabled={devolviendo === apt.id}
             title="Devolverle la seña desde tu Mercado Pago" onClick={() => devolver(apt)}>

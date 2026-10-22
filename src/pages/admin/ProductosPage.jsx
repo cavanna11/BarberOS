@@ -241,22 +241,21 @@ export default function ProductosPage() {
   };
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h1>Productos</h1>
-          <p className="text-secondary">
-            La mercadería que vendés: cera, shampoo, pomada. El cliente la puede sumar al
-            reservar su turno y la paga en el local, junto con el corte.
-          </p>
-        </div>
+    <div>
+      <div className="admin-page-header">
+        <h1>Productos</h1>
         <div className="flex gap-sm">
           <button className="btn btn-outline" onClick={leer} disabled={cargando}>
             {cargando ? 'Leyendo…' : 'Actualizar'}
           </button>
-          <button className="btn btn-primary" onClick={() => abrir(null)}>+ Agregar producto</button>
+          <button className="btn btn-primary" onClick={() => abrir(null)}>+ Agregar</button>
         </div>
       </div>
+
+      <p className="text-sm text-muted" style={{ marginBottom: 'var(--space-md)' }}>
+        La mercadería que vendés: cera, shampoo, pomada. El cliente la puede sumar al reservar
+        su turno y la paga en el local, junto con el corte. Con ▲ y ▼ cambiás en qué orden la ve.
+      </p>
 
       {errorCarga && <div className="notice notice-danger">{errorCarga}</div>}
       {errorVentas && <div className="notice notice-danger">{errorVentas}</div>}
@@ -292,73 +291,62 @@ export default function ProductosPage() {
           <button className="btn btn-primary mt-md" onClick={() => abrir(null)}>+ Agregar el primero</button>
         </div>
       ) : (
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th>Precio</th>
-                <th>Stock</th>
-                <th className="oculta-mobile">Vendidos</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lista.map((p) => {
-                const s = stockDe(p);
-                const agotado = s !== null && s <= 0;
-                const poco = s !== null && s > 0 && s <= STOCK_BAJO;
-                return (
-                  <tr key={p.id}>
-                    <td>
-                      <div className="producto-celda">
-                        {p.imagenUrl
-                          ? <img src={p.imagenUrl} alt="" className="producto-miniatura" />
-                          : <span className="producto-miniatura producto-miniatura-vacia">🧴</span>}
-                        <div>
-                          <strong>{p.name}</strong>
-                          {p.descripcion && <div className="text-sm text-muted">{p.descripcion}</div>}
-                        </div>
-                      </div>
-                    </td>
-                    <td><strong>{formatPrice(p.price, business?.currency)}</strong></td>
-                    <td>
-                      {s === null ? (
-                        <span className="text-sm text-secondary">Sin control</span>
-                      ) : (
-                        <div className="producto-stock">
-                          <span className={agotado ? 'badge badge-danger' : poco ? 'badge badge-warning' : 'badge badge-neutral'}>
-                            {agotado ? 'Agotado' : `${s} u.`}
-                          </span>
-                          <button className="btn btn-ghost btn-sm orden-flecha" title="Sumar una unidad"
-                            onClick={() => reponer(p, 1)}>＋</button>
-                          <button className="btn btn-ghost btn-sm orden-flecha" title="Restar una unidad"
-                            disabled={agotado} onClick={() => reponer(p, -1)}>−</button>
-                        </div>
+        <div className="productos-panel">
+          {lista.map((p) => {
+            const s = stockDe(p);
+            const agotado = s !== null && s <= 0;
+            const poco = s !== null && s > 0 && s <= STOCK_BAJO;
+            const vendidos = Number(p.vendidos) || 0;
+            return (
+              <div key={p.id} className={`producto-fila ${p.isActive === false ? 'inactivo' : ''}`}>
+                {p.imagenUrl
+                  ? <img src={p.imagenUrl} alt="" className="producto-miniatura" />
+                  : <span className="producto-miniatura producto-miniatura-vacia">🧴</span>}
+
+                <div className="producto-fila-datos">
+                  <div className="producto-fila-titulo">
+                    <strong>{p.name}</strong>
+                    {p.isActive === false && <span className="badge badge-neutral">No se ofrece</span>}
+                  </div>
+                  {p.descripcion && <div className="text-sm text-muted">{p.descripcion}</div>}
+                  <div className="producto-fila-meta">
+                    <strong>{formatPrice(p.price, business?.currency)}</strong>
+                    {s === null
+                      ? <span className="text-sm text-muted">stock sin control</span>
+                      : (
+                        <span className={agotado ? 'badge badge-danger' : poco ? 'badge badge-warning' : 'badge badge-neutral'}>
+                          {agotado ? 'Agotado' : `${s} en stock`}
+                        </span>
                       )}
-                    </td>
-                    <td className="oculta-mobile">{Number(p.vendidos) || 0}</td>
-                    <td>
-                      <span className={`badge ${p.isActive !== false ? 'badge-success' : 'badge-neutral'}`}>
-                        {p.isActive !== false ? 'Activo' : 'Inactivo'}
+                    {vendidos > 0 && (
+                      <span className="text-sm text-muted">
+                        {vendidos} vendido{vendidos === 1 ? '' : 's'}
                       </span>
-                    </td>
-                    <td>
-                      <div className="table-actions">
-                        <button className="btn btn-ghost btn-sm orden-flecha" title="Mostrarlo antes"
-                          disabled={!puedeMover(lista, p.id).arriba} onClick={() => reordenar(p.id, 'arriba')}>▲</button>
-                        <button className="btn btn-ghost btn-sm orden-flecha" title="Mostrarlo después"
-                          disabled={!puedeMover(lista, p.id).abajo} onClick={() => reordenar(p.id, 'abajo')}>▼</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => abrir(p)}>✏️</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => borrar(p)}>🗑️</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    )}
+                  </div>
+                </div>
+
+                <div className="producto-fila-acciones">
+                  {s !== null && (
+                    <div className="producto-stock">
+                      <button className="btn btn-outline btn-sm" title="Restar una unidad"
+                        disabled={agotado} onClick={() => reponer(p, -1)}>−</button>
+                      <button className="btn btn-outline btn-sm" title="Sumar una unidad"
+                        onClick={() => reponer(p, 1)}>＋</button>
+                    </div>
+                  )}
+                  <div className="table-actions">
+                    <button className="btn btn-ghost btn-sm orden-flecha" title="Mostrarlo antes"
+                      disabled={!puedeMover(lista, p.id).arriba} onClick={() => reordenar(p.id, 'arriba')}>▲</button>
+                    <button className="btn btn-ghost btn-sm orden-flecha" title="Mostrarlo después"
+                      disabled={!puedeMover(lista, p.id).abajo} onClick={() => reordenar(p.id, 'abajo')}>▼</button>
+                    <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrir(p)}>✏️</button>
+                    <button className="btn btn-ghost btn-sm" title="Sacar del catálogo" onClick={() => borrar(p)}>🗑️</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -373,8 +361,8 @@ export default function ProductosPage() {
             pendiente. Lo de un turno cancelado, o de alguien que no vino, no cuenta: esa
             mercadería no salió del estante.
           </p>
-          <div className="table-container">
-            <table className="table">
+          <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: 'var(--space-md)' }}>
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Barbero</th>

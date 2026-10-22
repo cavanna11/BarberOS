@@ -129,9 +129,16 @@ function registrarVenta(tx, db, businessId, aptId, renglones, datos) {
   if (!renglones || !renglones.length) return;
 
   for (const r of renglones) {
-    if (!r.descontado) continue;
+    // `vendidos` se cuenta SIEMPRE; el stock, solo si se controla.
+    //
+    // Estaban juntos adentro de un `if (!r.descontado) continue`, y eso hacía
+    // que un producto sin control de stock no sumara ninguna venta: el dueño
+    // veía la venta en la lista de abajo y la columna "Vendidos" clavada en
+    // cero. Lo encontró Santiago el mismo día. Son dos cosas distintas —
+    // cuántas unidades quedan y cuántas se vendieron— y el control de stock
+    // solo manda sobre la primera.
     tx.update(db.doc(`businesses/${businessId}/productos/${r.productoId}`), {
-      stock: FieldValue.increment(-r.cantidad),
+      ...(r.descontado ? { stock: FieldValue.increment(-r.cantidad) } : {}),
       // Lo vendido no se usa para decidir nada: es para que el dueño vea qué se
       // mueve sin tener que recorrer los turnos.
       vendidos: FieldValue.increment(r.cantidad),

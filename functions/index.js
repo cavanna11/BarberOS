@@ -1401,7 +1401,13 @@ exports.createAppointment = onCall(async (request) => {
       notes: String(notes).slice(0, 500),
       // Con seña, el turno NO nace reservado: nace guardado mientras el cliente
       // paga, y se confirma cuando Mercado Pago avisa. Si no paga, vence.
-      status: pideSena ? 'esperando_pago' : 'pendiente',
+      //
+      // Sin seña nace CONFIRMADO (22/10/2026). Antes nacía 'pendiente' y el
+      // barbero tenía que apretar "Confirmar" en cada turno que entraba. Ese
+      // botón no decidía nada: un turno pendiente ocupa el horario, se cancela
+      // y cuenta igual que uno confirmado. Era un toque por turno a cambio de
+      // nada, en la pantalla que el barbero abre todo el día.
+      status: pideSena ? 'esperando_pago' : 'confirmada',
       ...(pideSena ? {
         // `tipo` distingue la seña del turno pagado entero: cambia lo que ve el
         // barbero en la agenda (si le queda algo por cobrar o no).
@@ -2498,11 +2504,14 @@ exports.onTurnoConProductos = onDocumentUpdated('businesses/{bizId}/appointments
 
     if (signo !== 0) {
       for (const it of items) {
-        if (!it || !it.descontado) continue;
+        if (!it) continue;
         const n = Number(it.cantidad) || 0;
         if (!n) continue;
+        // El stock solo si ese producto lo controla; `vendidos` siempre. Es la
+        // misma distincion que al vender: cuantas quedan y cuantas se vendieron
+        // son dos numeros distintos.
         tx.update(db.doc(`businesses/${bizId}/productos/${it.productoId}`), {
-          stock: FieldValue.increment(signo * n),
+          ...(it.descontado ? { stock: FieldValue.increment(signo * n) } : {}),
           vendidos: FieldValue.increment(-signo * n),
         });
       }

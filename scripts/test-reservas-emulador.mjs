@@ -96,7 +96,11 @@ chequear('el precio lo pone el servidor (12000)', r.ok?.price === 12000, JSON.st
 chequear('el fin lo calcula el servidor (10:30)', r.ok?.endTime === '10:30', JSON.stringify(r.ok));
 
 const guardado = r.ok?.id ? (await db.doc(`businesses/${BID}/appointments/${r.ok.id}`).get()).data() : {};
-chequear('nace en estado pendiente', guardado.status === 'pendiente', JSON.stringify(guardado.status));
+// Nace CONFIRMADO desde el 22/10/2026. Antes nacía 'pendiente' y el barbero
+// tenía que apretar "Confirmar" en cada turno que entraba: un toque por turno
+// que no decidía nada (pendiente y confirmada ocupan el horario, se cancelan y
+// cuentan exactamente igual). Con seña sigue naciendo 'esperando_pago'.
+chequear('nace confirmado, sin que nadie toque nada', guardado.status === 'confirmada', JSON.stringify(guardado.status));
 chequear('el userId es el de la sesión', guardado.userId === cliente.uid, JSON.stringify(guardado.userId));
 
 titulo('Lo que antes se colaba escribiendo directo a Firestore:');

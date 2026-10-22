@@ -682,8 +682,20 @@ export async function createAppointment(businessId, data) {
     ...data,
     id: ref.id,
     businessId,
-    // Las Rules exigen que nazca en 'pendiente'.
-    status: 'pendiente',
+    // Nace CONFIRMADO (22/10/2026).
+    //
+    // Antes nacia 'pendiente' y habia que apretar "Confirmar". El comentario
+    // que estaba aca decia que lo exigian las Rules, y era falso: las Rules
+    // nunca miraron el estado al crear. Los dos lugares que cargan turnos a
+    // mano escribian 'pendiente' y hacian un update a 'confirmada' acto
+    // seguido — dos escrituras para dejarlo en el estado en el que lo querian.
+    //
+    // Santiago: "saquemos la parte de tocar confirmar cuando entra un turno,
+    // les termina sacando el tiempo que se quiere optimizar". Confirmar no
+    // decidia nada: un turno pendiente y uno confirmado ocupan el horario
+    // igual, se cancelan igual y cuentan igual. Era un toque por turno a
+    // cambio de nada.
+    status: 'confirmada',
     createdAt: serverTimestamp(),
   });
   return ref.id;
