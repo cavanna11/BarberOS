@@ -121,6 +121,33 @@ await esperar('dueno de B NO lee los admins de A',        consultar(duenoB, `bus
 await esperar('dueno de B NO lee la agenda de A',         consultar(duenoB, `businesses/${A}`, 'appointments'), 'denegado');
 await esperar('dueno de A SI escribe lo suyo',            crear(duenoA, `businesses/${A}/services`, { name: 'Corte', price: 12000 }), 'permitido');
 
+// ── Productos (22/10/2026) ─────────────────────────────────────────────────
+// La mercaderia que se vende al lado del corte. El catalogo es publico (el
+// cliente lo ve antes de tener sesion) y lo escribe el dueno, incluido el
+// stock: es SU mercaderia.
+//
+// La VENTA es otra cosa: la escribe el servidor adentro de la transaccion del
+// turno y no la toca nadie desde el browser, ni el dueno. Si se pudiera editar
+// a mano, el stock y el informe de "quien vendio que" se podrian maquillar — y
+// el sentido de todo esto es justamente que la venta quede registrada.
+console.log('\n-- Productos --');
+// Se SIEMBRA con el Admin SDK antes de leer: un 404 cuenta como denegado en
+// esta suite, asi que probar lectura sobre un documento que no existe no
+// prueba nada. Es la trampa que ya pagamos con las resenas.
+await db.doc(`businesses/${A}/productos/p-publico`).set({ name: 'Cera', price: 5000, stock: 10, isActive: true });
+await esperar('cualquiera LEE el catalogo de productos',  leer(null, `businesses/${A}/productos/p-publico`), 'permitido');
+await esperar('dueno de A SI carga un producto',          crear(duenoA, `businesses/${A}/productos`, { name: 'Cera', price: 5000, stock: 10 }), 'permitido');
+await esperar('dueno de B NO carga productos en A',       crear(duenoB, `businesses/${A}/productos`, { name: 'x', price: 1 }), 'denegado');
+await esperar('cliente NO carga productos',               crear(cliente, `businesses/${A}/productos`, { name: 'gratis', price: 0 }), 'denegado');
+await esperar('cliente NO toca el stock',                 editar(cliente, `businesses/${A}/productos/p-stock`, { stock: 999 }), 'denegado');
+await esperar('barbero NO carga productos',               crear(barberoA, `businesses/${A}/productos`, { name: 'x', price: 1 }), 'denegado');
+// Una foto pesada deja al documento sin margen para nada mas (el tope de
+// Firestore es 1 MB) y encima se la baja cada cliente que abre el link.
+await esperar('una foto gigante se rechaza',              crear(duenoA, `businesses/${A}/productos`, { name: 'x', price: 1, imagenUrl: 'd'.repeat(260000) }), 'denegado');
+await esperar('nadie escribe la venta, ni el dueno',      crear(duenoA, `businesses/${A}/ventasProductos`, { total: 0 }), 'denegado');
+await esperar('el cliente NO lee las ventas',             leer(cliente, `businesses/${A}/ventasProductos/x`), 'denegado');
+await esperar('el dueno de B NO lee las ventas de A',     leer(duenoB, `businesses/${A}/ventasProductos/x`), 'denegado');
+
 console.log('\n-- Facturacion --');
 await esperar('dueno NO lee su propia facturacion',       leer(duenoA, `businesses/${A}/private/billing`), 'denegado');
 await esperar('dueno NO escribe su facturacion',          editar(duenoA, `businesses/${A}/private/billing`, { debt: 0 }), 'denegado');

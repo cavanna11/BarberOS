@@ -1791,6 +1791,102 @@ semana fijo (`DOW`), así que una fecha de prueba que caiga en otro día falla p
 no a una ruta de documento; para probar lectura y borrado hay que sembrar con el
 Admin SDK, porque un 404 cuenta como denegado.
 
+### Productos: la cera que el barbero vende al lado del corte (22/10/2026)
+
+*"Los barberos quieren subir una cera para el pelo que venden. Estaría bueno que
+la puedan subir ahí a productos, y que cuando reserven un corte les aparezca la
+sección de productos para seleccionar algo si quieren."*
+
+Sección **propia**, no un servicio con `adicional: true`. Los adicionales
+(cejas, lavado, café) quedan exactamente como estaban. La diferencia no es de
+prolijidad: un adicional es **trabajo** —lo hace una persona, se hace durante el
+corte, no se agota— y un producto es **mercadería**: tiene stock, tiene foto, y
+cuando se vendió el último no se puede vender otro. Meterle stock a `services`
+obligaría al motor de disponibilidad a ignorar un campo que no le importa, y a
+la pantalla de Servicios a preguntar por unidades a quien está cargando un
+corte.
+
+```
+businesses/{id}/productos/{id}         ⚠️ lectura pública (el cliente los ve
+                                          antes de tener sesión). Escribe el
+                                          dueño: es su mercadería.
+businesses/{id}/ventasProductos/{aptId}  🔒 la venta. NADIE la escribe desde el
+                                          browser, ni el dueño.
+```
+
+**El stock es del LOCAL; la venta es del BARBERO.** Decisión de Santiago: hay 10
+ceras y son del local, cualquiera las vende. Lo que se registra es **quién** la
+vendió, y sale del barbero del turno. No hay stock por barbero.
+
+**El stock baja adentro de la transacción del turno.** Es toda la decisión
+técnica. `createAppointment` lee los productos con `tx.get` —no antes— porque
+entre leer el stock afuera y escribir el turno adentro hay una ventana, y esa
+ventana es exactamente donde la última cera se vende dos veces. Del cliente
+llegan **solo el id y la cantidad**: el precio sale del documento.
+
+**Y vuelve si el turno no pasa**, con el trigger `onTurnoConProductos`:
+
+| el turno queda | el stock | por qué |
+|---|---|---|
+| `cancelada` | **vuelve** | nadie se llevó nada |
+| `no_asistio` | **vuelve** | acá se separa del cupón: el cupón SÍ se consume con un no-show (el horario quedó bloqueado y eso es lo que el descuento pagó), pero la cera sigue en el estante |
+| `completada` | se queda | se la llevó |
+
+El candado contra el doble conteo es el mismo que el del uso del cupón: manda el
+`estado` del documento de VENTA, no el del turno. Sin eso, cancelar →
+reactivar → cancelar devolvería las unidades dos veces y el stock subiría solo.
+Hay un caso de la suite que hace exactamente esa secuencia.
+
+**`stock: null` es "no lo controlo", y es distinto de `stock: 0`.** El barbero
+con una caja de sobres de gel no los cuenta, y obligarlo a mantener un número
+que no mira termina con todo en cero y nada vendible. Confundir los dos deja el
+catálogo sin vender de un día para el otro, así que hay cuatro casos sobre esa
+sola distinción. Un producto sin control de stock se ofrece siempre y la venta
+anota `descontado: false`, para que el trigger no le sume unidades a algo que
+nunca las tuvo.
+
+**Lo que se agotó no se esconde del panel** —el dueño tiene que verlo para
+reponerlo, y hay un ＋/− en la fila— pero sí deja de ofrecerse al cliente. Y en
+la reserva el ＋ se apaga en la última unidad: el servidor igual lo rechazaría,
+pero recién después de que el cliente eligió día y horario, y ahí ya le
+arruinamos la reserva por algo que se sabía antes.
+
+**La foto** va como data URL de ≤320 px adentro del documento, igual que la del
+barbero y el logo (sin Storage), con el tope en las Rules. Por eso los productos
+**NO entran en la suscripción de `BusinessSync`**: esas imágenes se bajarían en
+todas las pantallas del panel, todo el tiempo, incluso para el barbero que nunca
+abre Productos. Se leen de una vez donde hacen falta (la reserva y la pantalla
+del panel), como "Mis sucursales" y las reseñas.
+
+**Los productos se pagan siempre y enteros**: la membresía cubre el *servicio* y
+el cupón descuenta el *servicio*. Una membresía que además regalara la cera sería
+la barbería regalando mercadería que compró.
+
+**En la agenda aparecen pegados al servicio** (`textoProductos` en
+`utils/adicionales.js`, que ya era el "qué más tiene este turno"). No es
+decoración: es lo único que le dice al barbero que tiene que sacar algo del
+estante. Un producto comprado que no aparece en la agenda es un producto que el
+cliente pagó y nadie le dio.
+
+```bash
+node scripts/test-productos.mjs            # 54 casos, sin emulador
+node scripts/test-reservas-emulador.mjs    # 119 (38 nuevos: stock, precio, devolución)
+node scripts/auditar-rules-emulador.mjs    # 152 (10 nuevos)
+```
+
+Trampa al escribir esos casos: **los triggers del emulador tardan**. Con una
+espera fija de 3,5 s el caso de la devolución fallaba y parecía un bug del
+trigger; el primer disparo de cada trigger carga el contenedor. Se espera hasta
+que el stock llegue al valor esperado, con tope.
+
+**Lo que NO está hecho, y Santiago lo pidió:** la sección de productos en la
+página de la barbería, y pedirlos **después del corte** desde Mis Citas para que
+se sumen al total. Se acordó arrancar por el catálogo y la reserva. Lo que falta
+necesita una function aparte (`pedirProducto`): agregarle un producto a un turno
+que ya existe mueve el precio, y el precio del turno no lo puede tocar el
+browser. El staff tampoco puede sumar productos desde `NuevoTurnoModal`
+todavía — ese modal escribe directo a Firestore, no por la function.
+
 ### Cuándo vence el abono: la fecha que nadie veía (19/10/2026)
 
 Dos agujeros del mismo dato, los dos encontrados por Santiago usando el panel.
@@ -2234,6 +2330,31 @@ mientras nadie la pida.
 
 ## Trampas ya pagadas (no volver a descubrirlas)
 
+### `createAppointment` del cliente es una LISTA BLANCA (22/10/2026)
+
+`src/lib/functions.js` no reenvía `request.data` tal cual: nombra los campos uno
+por uno. **Lo que no esté nombrado ahí no llega al servidor, y no avisa** — el
+servidor recibe un objeto sin esa clave, que es indistinguible de una reserva
+que no la usa.
+
+Encontrado de casualidad al conectar los productos. Dos features estaban
+cortadas ahí:
+
+- **`acompanante`** ("Vengo con alguien", 15/10). La pantalla preguntaba el
+  servicio de la otra persona, el servidor sabía sumar duración y precio, hay 12
+  casos en la suite que lo prueban —**porque la suite llama a la function
+  directo y no pasa por este archivo**— y el campo moría en el wrapper. En
+  producción, el padre que reservaba para él y el hijo sacaba UN turno de un
+  servicio: el barbero se encontraba con dos cabezas y la mitad del tiempo.
+- **`pagar`** (seña / pago total). Sin él, `pedido` cae en su valor por defecto
+  (`'sena'`), así que "pago en el local" y "pago todo ahora" no existían: con
+  Mercado Pago conectado, al cliente se le pedía seña siempre.
+
+Las dos arregladas. Y el archivo lleva ahora un aviso arriba de la función,
+porque la próxima vez que alguien agregue un campo va a pasar lo mismo. **Una
+suite que llama a la function directo no prueba el camino del navegador.**
+
+
 ### La plataforma podía LEER las notificaciones de una barbería pero no marcarlas (22/09/2026)
 
 El `allow update` de `businesses/{id}/notifications` listaba dueño y barbero,
@@ -2477,7 +2598,7 @@ Email/Password habilitado, alcance del barbero cerrado en Rules.
 ```bash
 firebase emulators:start --only auth,firestore,functions
 node scripts/test-claims-emulador.mjs      # permisos y cuentas con contraseña
-node scripts/test-reservas-emulador.mjs    # validación de turnos
+node scripts/test-reservas-emulador.mjs    # validación de turnos (incluye productos)
 node scripts/test-billing-emulador.mjs     # cobro, suspensión, prueba gratis y regalo
 node scripts/test-alta-emulador.mjs        # alta sola con 5 días de prueba
 node scripts/test-mercadopago-emulador.mjs # conexión de la cuenta y sus tokens
@@ -2493,12 +2614,14 @@ node scripts/test-preview.mjs              # vista previa del link (tampoco)
 node scripts/test-intervalo.mjs            # la grilla y el consejo (tampoco)
 node scripts/test-ausencias.mjs            # el día suelto distinto: no voy / hago otro horario
 node scripts/test-orden.mjs                # en qué orden ve el cliente la lista (tampoco)
+node scripts/test-productos.mjs            # la mercadería: stock, precio y qué se ofrece
 ```
 
-Hoy: claims 83, reservas 81, facturación 20, rules 142, alta 22, mercadopago 16,
+Hoy: claims 83, reservas 119, facturación 20, rules 152, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
 turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 97, orden 30.
-Todo en verde (1021).
+productos 54.
+Todo en verde (1123).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

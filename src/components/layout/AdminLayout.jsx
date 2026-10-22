@@ -22,6 +22,10 @@ const ownerNavItems = [
   { to: '/admin/sucursales',    icon: '🏠', label: 'Mis sucursales', soloSucursales: true, desde: 'Plan Empresarial' },
   { to: '/admin/profesionales', icon: '👥', label: 'Profesionales' },
   { to: '/admin/servicios',     icon: '✂️', label: 'Servicios' },
+  // Productos va PEGADO a Servicios y no en "Para sumar": son las dos mitades
+  // de lo que la barbería cobra, y el que entra a cargar precios entra una vez
+  // a cargar los dos.
+  { to: '/admin/productos',     icon: '🧴', label: 'Productos' },
   { to: '/admin/resenas',       icon: '⭐', label: 'Reseñas' },
   { to: '/admin/admins',        icon: '🛡️', label: 'Administradores' },
   // La página de presentación de la barbería. Al que no la tiene NO se le

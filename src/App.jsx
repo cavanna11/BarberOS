@@ -40,6 +40,7 @@ const CuentaPublica    = lazy(importarConReintento(() => import('./pages/client/
 const DashboardPage       = lazy(importarConReintento(() => import('./pages/admin/DashboardPage')));
 const ProfessionalsPage   = lazy(importarConReintento(() => import('./pages/admin/ProfessionalsPage')));
 const ServicesPage        = lazy(importarConReintento(() => import('./pages/admin/ServicesPage')));
+const ProductosPage       = lazy(importarConReintento(() => import('./pages/admin/ProductosPage')));
 const AppointmentsPage    = lazy(importarConReintento(() => import('./pages/admin/AppointmentsPage')));
 const SettingsPage        = lazy(importarConReintento(() => import('./pages/admin/SettingsPage')));
 const SucursalesPage      = lazy(importarConReintento(() => import('./pages/admin/SucursalesPage')));
@@ -304,6 +305,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="profesionales" element={<ProfessionalsPage />} />
           <Route path="servicios" element={<ServicesPage />} />
+          <Route path="productos" element={<ProductosPage />} />
           <Route path="citas" element={<AppointmentsPage />} />
           <Route path="admins" element={<AdminsPage />} />
           <Route path="sucursales" element={<SucursalesPage />} />

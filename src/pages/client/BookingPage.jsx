@@ -16,6 +16,11 @@ import CuponEnReserva from '../../components/client/CuponEnReserva';
 import { recordarCupon, cuponRecordado, olvidarCupon, describirCupon } from '../../utils/cupon';
 import MembresiaEnReserva from '../../components/client/MembresiaEnReserva';
 import { coberturaDelServicio } from '../../utils/membresias';
+import { obtenerSubcoleccion } from '../../lib/repository';
+import {
+  paraLaVenta, totalDeProductos, detalleDeProductos, seleccionParaElServidor,
+  maximoAPedir, stockDe, STOCK_BAJO,
+} from '../../utils/productos';
 
 // ---- STEPPER ----
 function Stepper({ step }) {
@@ -167,6 +172,72 @@ function AdicionalesSelect({ adicionales, elegidos, onCambiar, currency }) {
             <span className="adicional-precio">+ {formatPrice(a.price, currency)}</span>
           </label>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ---- PRODUCTOS ----
+// La cera, el shampoo, la pomada: mercadería, no trabajo. No agregan tiempo al
+// turno y se pagan en el local junto con el corte.
+//
+// Con cantidad y no con un casillero como los adicionales: de un adicional se
+// pide uno (nadie pide dos lavados), de una cera se pueden pedir dos.
+//
+// El "+" se apaga en la última unidad. Es a propósito y no es decoración: el
+// servidor igual lo rechazaría, pero recién después de que el cliente eligió
+// día y horario y apretó Confirmar, y ahí ya le arruinamos la reserva por algo
+// que se sabía antes.
+function ProductosSelect({ productos, seleccion, onCambiar, currency }) {
+  if (!productos.length) return null;
+
+  const cambiar = (id, delta, tope) => {
+    const actual = Number(seleccion[id]) || 0;
+    const nueva = Math.max(0, Math.min(actual + delta, tope));
+    const copia = { ...seleccion };
+    if (nueva === 0) delete copia[id];
+    else copia[id] = nueva;
+    onCambiar(copia);
+  };
+
+  return (
+    <div className="productos-reserva">
+      <h3>¿Te llevás algo?</h3>
+      <p className="text-sm text-secondary">
+        Lo pagás en la barbería, junto con el turno. No te cambia el horario.
+      </p>
+      <div className="productos-lista">
+        {productos.map((p) => {
+          const cantidad = Number(seleccion[p.id]) || 0;
+          const tope = maximoAPedir(p);
+          const quedan = stockDe(p);
+          return (
+            <div key={p.id} className={`producto-opcion ${cantidad > 0 ? 'activa' : ''}`}>
+              {p.imagenUrl
+                ? <img src={p.imagenUrl} alt="" className="producto-foto" />
+                : <span className="producto-foto producto-miniatura-vacia">🧴</span>}
+              <div className="producto-datos">
+                <span className="producto-nombre">{p.name}</span>
+                {p.descripcion && <span className="producto-desc">{p.descripcion}</span>}
+                <span className="producto-precio">{formatPrice(p.price, currency)}</span>
+                {quedan !== null && quedan <= STOCK_BAJO && (
+                  <span className="producto-ultimas">
+                    {quedan === 1 ? 'Queda 1' : `Quedan ${quedan}`}
+                  </span>
+                )}
+              </div>
+              <div className="producto-cantidad">
+                <button type="button" className="btn btn-outline btn-sm"
+                  disabled={cantidad === 0} aria-label={`Quitar ${p.name}`}
+                  onClick={() => cambiar(p.id, -1, tope)}>−</button>
+                <span className="producto-numero">{cantidad}</span>
+                <button type="button" className="btn btn-outline btn-sm"
+                  disabled={cantidad >= tope} aria-label={`Agregar ${p.name}`}
+                  onClick={() => cambiar(p.id, 1, tope)}>＋</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -405,7 +476,7 @@ function PersonalInfoStep({ user, phone, onPhoneChange }) {
 }
 
 // ---- SUMMARY ----
-function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [], acompanante = null, recargoTarjeta = 0 }) {
+function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [], productos = [], acompanante = null, recargoTarjeta = 0 }) {
   return (
     <div>
       <h2 className="booking-step-title">Confirmar tu reserva</h2>
@@ -428,6 +499,14 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
               <div className="summary-row">
                 <span className="summary-label">➕ Adicionales</span>
                 <span className="summary-value">{adicionales.map((a) => a.name).join(', ')}</span>
+              </div>
+            )}
+            {productos.length > 0 && (
+              <div className="summary-row">
+                <span className="summary-label">🧴 Te llevás</span>
+                <span className="summary-value">
+                  {productos.map((x) => (x.cantidad > 1 ? `${x.cantidad}× ${x.name}` : x.name)).join(', ')}
+                </span>
               </div>
             )}
             {acompanante && (
@@ -545,6 +624,14 @@ export default function BookingPage() {
   // Los adicionales que sumó al servicio (ids). Se vacían si cambia de servicio
   // en el paso 2 (ver abajo), no a mitad del flujo.
   const [extras, setExtras] = useState([]);
+  // Los productos elegidos: `{ idDelProducto: cantidad }`.
+  const [prodElegidos, setProdElegidos] = useState({});
+  // El catálogo se lee UNA vez, no con una suscripción: los productos llevan
+  // foto adentro del documento, y dejarlos en la suscripción permanente los
+  // bajaría en todas las pantallas del panel. Acá alcanza con leerlos al abrir
+  // la reserva. Si la lectura falla, la sección no aparece y el turno se saca
+  // igual: un producto que no se pudo leer no puede impedir reservar un corte.
+  const [catalogo, setCatalogo] = useState([]);
   // Si saca 2 turnos seguidos. Se guarda junto con el barbero y el servicio con
   // los que se eligió: si cambia cualquiera de los dos, vuelve a 1 solo, sin un
   // setState dentro de un efecto.
@@ -642,7 +729,18 @@ export default function BookingPage() {
   const totalAcompanante = acompServicio ? Number(acompServicio.price) || 0 : 0;
   // Los adicionales se pagan siempre: la membresía cubre el servicio y el cupón
   // descuenta el servicio, no los extras (igual que en el servidor).
-  const precioSinRecargo = (conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice) + totalAdicionales + totalAcompanante;
+  // Los productos se pagan SIEMPRE y enteros: la membresía cubre el servicio y
+  // el cupón descuenta el servicio. Una membresía que además regalara la cera
+  // sería la barbería regalando mercadería que compró. Igual que en el
+  // servidor, que es el que manda.
+  const productosDisponibles = useMemo(() => paraLaVenta(catalogo), [catalogo]);
+  const productosDetalle = useMemo(
+    () => detalleDeProductos(productosDisponibles, prodElegidos),
+    [productosDisponibles, prodElegidos]
+  );
+  const totalProductos = totalDeProductos(productosDisponibles, prodElegidos);
+  const precioSinRecargo = (conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice)
+    + totalAdicionales + totalAcompanante + totalProductos;
   // Recargo por tarjeta o QR: solo si la barbería lo cobra, si hay algo que
   // pagar y si NO paga todo online (ahí no paga nada en el local).
   const montoRecargo = Number(business?.recargoTarjeta) || 0;
@@ -659,6 +757,19 @@ export default function BookingPage() {
   // El cupón del link se anota y se saca de la URL. Sacarlo no es cosmética:
   // el cliente copia la dirección de la barra para mandársela a un amigo, y
   // así le manda su propio cupón de un uso. Queda anotado igual, en esta visita.
+  // El catálogo de productos, una sola lectura por visita.
+  useEffect(() => {
+    if (!businessId) return;
+    let vivo = true;
+    obtenerSubcoleccion(businessId, 'productos')
+      .then((ps) => { if (vivo) setCatalogo(ps || []); })
+      // Sin cartel: la barbería que no vende nada tiene esta colección vacía, y
+      // un error acá no puede frenar la reserva de un corte. Queda en la consola
+      // para poder diagnosticarlo.
+      .catch((e) => console.warn('no se pudieron leer los productos', e));
+    return () => { vivo = false; };
+  }, [businessId]);
+
   const codigoDelLink = params.get('cupon');
   useEffect(() => {
     if (!businessId || !codigoDelLink) return;
@@ -950,6 +1061,8 @@ export default function BookingPage() {
         // del documento del servicio; lo que se mostró acá es una vista previa.
         cuponCodigo: conMembresia ? null : cupon?.codigo || null,
         adicionales: adicionalesElegidos.map((s) => s.id),
+        // Solo ids y cantidades: el precio y el stock los resuelve el servidor.
+        productos: seleccionParaElServidor(prodElegidos),
         acompanante: acompServicio ? { serviceId: acompServicio.id } : null,
         metodoPago: preguntaMetodo ? metodoPago : null,
       });
@@ -1087,6 +1200,18 @@ export default function BookingPage() {
           adicionales={adicionalesDisponibles}
           elegidos={extras}
           onCambiar={setExtras}
+          currency={business.currency}
+        />
+      )}
+
+      {/* Y los productos, en el mismo paso: ya eligió qué se va a hacer, y es
+          el momento en que está pensando en lo que se lleva. Después, cuando
+          está eligiendo horario, interrumpirlo con una vidriera es ruido. */}
+      {step === 2 && serviceId && (
+        <ProductosSelect
+          productos={productosDisponibles}
+          seleccion={prodElegidos}
+          onCambiar={setProdElegidos}
           currency={business.currency}
         />
       )}
@@ -1243,6 +1368,7 @@ export default function BookingPage() {
           precioLista={cupon && !conMembresia ? finalPrice : null}
           conMembresia={conMembresia}
           adicionales={adicionalesElegidos}
+          productos={productosDetalle}
           acompanante={acompServicio ? { name: acompServicio.name, price: acompServicio.price, durationMinutes: acompDuracion } : null}
           recargoTarjeta={recargoTarjeta}
           currency={business.currency}

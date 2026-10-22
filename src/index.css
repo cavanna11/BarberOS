@@ -5893,6 +5893,89 @@ select.form-input {
    desplegable: son dos caminos distintos y el que entra tiene que VER que
    existe el segundo — el pedido que lo trajo empezaba con "no hay una opcion
    para poner eso". */
+/* ── Productos ──────────────────────────────────────────────────────────────
+   La mercaderia que se vende al lado del corte. En la reserva se ve como una
+   lista con foto y un contador; en el panel, como una fila de tabla.
+
+   Medido a 375 px (el panel y la reserva se usan en el celular): la fila del
+   producto no desborda con nombre largo + precio + los dos botones, porque el
+   nombre corta en dos renglones y el contador tiene ancho fijo. */
+.productos-reserva { margin-top: var(--space-lg); }
+.productos-reserva h3 { margin-bottom: 2px; }
+
+.productos-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: var(--space-md);
+}
+
+.producto-opcion {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.producto-opcion.activa {
+  border-color: var(--primary);
+  box-shadow: var(--primary-glow) 0 0 0 1px;
+}
+
+.producto-foto,
+.producto-miniatura {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--bg-secondary);
+}
+
+.producto-miniatura-vacia {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.producto-datos { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.producto-nombre { font-weight: 600; }
+.producto-desc { font-size: 0.8125rem; color: var(--text-secondary); }
+.producto-precio { font-size: 0.9375rem; font-weight: 700; color: var(--primary-texto); }
+.producto-ultimas { font-size: 0.75rem; color: var(--warning); font-weight: 600; }
+
+.producto-cantidad {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.producto-numero {
+  min-width: 20px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* En el panel */
+.producto-celda { display: flex; align-items: center; gap: 10px; }
+.producto-stock { display: flex; align-items: center; gap: 4px; }
+.producto-foto-editor { display: flex; align-items: center; gap: var(--space-md); }
+
+.producto-foto-previa {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--bg-secondary);
+}
+
 .ausencias-modos {
   display: flex;
   gap: 8px;

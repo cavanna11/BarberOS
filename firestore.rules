@@ -392,6 +392,41 @@ service cloud.firestore {
         allow write: if canManage(bizId);
       }
 
+      // Productos (la cera, el shampoo). Lectura publica, igual que el catalogo
+      // de servicios: el cliente los ve antes de tener sesion.
+      //
+      // El dueno los carga y los repone, incluido el stock: es SU mercaderia.
+      // Pero el stock tambien lo mueve el servidor al reservar, con el Admin
+      // SDK, y eso pasa por arriba de estas reglas.
+      //
+      // La imagen va como data URL adentro del documento, igual que la foto del
+      // barbero y el logo, y por la misma razon (sin Storage). El tope de
+      // tamanio no es prolijidad: un documento de Firestore no puede pasar de
+      // 1 MB, asi que una foto pesada deja al producto sin poder guardar nada
+      // mas — y si entrara, cada cliente que abre el link se la baja.
+      match /productos/{prodId} {
+        allow read: if true;
+        allow write: if canManage(bizId)
+                        && (!('imagenUrl' in request.resource.data)
+                            || request.resource.data.imagenUrl == null
+                            || (request.resource.data.imagenUrl is string
+                                && request.resource.data.imagenUrl.size() < 250000));
+      }
+
+      // La venta: un documento por turno, con el barbero que la hizo. Es de
+      // donde sale "quien vendio que".
+      //
+      // NADIE la escribe desde el browser, ni el dueno. La escribe
+      // `createAppointment` adentro de la transaccion del turno y la cierra un
+      // trigger cuando el turno se completa o se cancela. Si el browser pudiera
+      // tocarla, el stock y el informe de ventas se podrian editar a mano — y
+      // el sentido de todo esto es justamente que la venta quede registrada.
+      match /ventasProductos/{ventaId} {
+        allow read: if manejaLaAgenda(bizId)
+                       || (esBarbero(bizId) && resource.data.professionalId == claims().get('professionalId', ''));
+        allow write: if false;
+      }
+
       // El dia suelto que el barbero no va, o el rato que se tiene que ir.
       //
       // Lectura publica, igual que schedules: la grilla del cliente la necesita

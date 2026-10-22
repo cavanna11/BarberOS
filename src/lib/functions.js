@@ -90,7 +90,22 @@ export function revokeBusinessAdmin({ email, businessId }) {
  *
  * Devuelve { status: 'created', id, price, precioLista, descuento, cuponCodigo, endTime }.
  */
-export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false, adicionales = [], metodoPago = null }) {
+// ⚠️ Esta función es una LISTA BLANCA: lo que no esté acá nombrado no llega al
+// servidor, y no avisa. Si agregás un campo a `createAppointment`, agregalo
+// también acá o la feature entera no hace nada.
+//
+// Ya pasó dos veces, y las dos se descubrieron de casualidad (22/10/2026):
+//
+//   `acompanante` — "Vengo con alguien" (15/10). La pantalla preguntaba el
+//     servicio de la otra persona, el servidor sabía sumarlo… y el campo moría
+//     acá. El cliente reservaba UN turno de un servicio para dos personas, y el
+//     barbero se encontraba con dos cabezas y la mitad del tiempo.
+//   `pagar` — seña o pago total. Sin él, `pedido` cae en su valor por defecto
+//     ('sena'), así que "pago en el local" y "pago todo ahora" no existían.
+//
+// Ninguna de las dos tiraba un error: el servidor recibe un objeto sin esa
+// clave, que es exactamente lo mismo que recibir una reserva que no la usa.
+export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false, adicionales = [], productos = [], acompanante = null, pagar, metodoPago = null }) {
   return llamar('createAppointment', {
     businessId, professionalId, serviceId, appointmentDate, startTime,
     clientName, clientPhone, clientEmail, notes, cuponCodigo,
@@ -99,6 +114,13 @@ export function createAppointment({ businessId, professionalId, serviceId, appoi
     usarMembresia: usarMembresia === true,
     // Solo los ids: el precio de cada adicional lo pone el servidor.
     adicionales,
+    // Productos: solo id y cantidad. El precio sale del documento y el stock se
+    // descuenta adentro de la transacción del turno.
+    productos,
+    // El servicio de la OTRA persona ("vengo con alguien"): solo el id.
+    acompanante,
+    // 'sena' | 'total' | 'local'. Sin esto el servidor asume seña.
+    ...(pagar === undefined ? {} : { pagar }),
     // 'efectivo' | 'tarjeta': el recargo por tarjeta o QR lo calcula el servidor.
     metodoPago,
   });

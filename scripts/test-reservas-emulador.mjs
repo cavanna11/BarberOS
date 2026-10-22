@@ -472,5 +472,173 @@ await db.doc(`businesses/${BID}/professionals/${PROF2}`).delete();
 await db.doc(`businesses/${BID}/professionalServices/ps-2`).delete();
 await db.doc(`businesses/${BID}/schedules/sch-2`).delete();
 
+// ============================================================================
+// PRODUCTOS (22/10/2026)
+// ============================================================================
+// "Los barberos quieren subir una cera para el pelo que venden." El precio y el
+// stock los decide el servidor, y el stock baja DENTRO de la transacción del
+// turno: es el único momento en que dos clientes pidiendo la última unidad no
+// se la pueden llevar los dos.
+//
+// Lo que estos casos protegen:
+//   - que el precio salga del documento y no del cliente (lo de siempre),
+//   - que no se pueda comprar lo que no hay,
+//   - que la venta quede con el barbero que la hizo (es lo que se pidió),
+//   - y que el stock VUELVA si el turno se cancela o el cliente no viene.
+titulo('Productos:');
+
+const CERA = 'prod-cera', GEL = 'prod-gel', AGOTADO = 'prod-agotado', INACT = 'prod-inactivo';
+const prodRef = (id) => db.doc(`businesses/${BID}/productos/${id}`);
+const leerStock = async (id) => (await prodRef(id).get()).get('stock');
+/** Espera a que el trigger mueva el stock al valor esperado. */
+async function esperarStock(id, valor, ms = 25000) {
+  const hasta = Date.now() + ms;
+  while (Date.now() < hasta) {
+    if ((await leerStock(id)) === valor) return true;
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  return false;
+}
+/** Lo mismo para el estado de la venta. */
+async function esperarVenta(aptId, estado, ms = 25000) {
+  const hasta = Date.now() + ms;
+  while (Date.now() < hasta) {
+    const d = (await db.doc(`businesses/${BID}/ventasProductos/${aptId}`).get()).data();
+    if (d && d.estado === estado) return true;
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  return false;
+}
+const venta = async (aptId) => (await db.doc(`businesses/${BID}/ventasProductos/${aptId}`).get()).data();
+
+await prodRef(CERA).set({ name: 'Cera mate', price: 5000, stock: 3, isActive: true, vendidos: 0 });
+await prodRef(GEL).set({ name: 'Gel', price: 3000, stock: null, isActive: true, vendidos: 0 });
+await prodRef(AGOTADO).set({ name: 'Shampoo', price: 8000, stock: 0, isActive: true, vendidos: 0 });
+await prodRef(INACT).set({ name: 'Pomada', price: 6000, stock: 9, isActive: false, vendidos: 0 });
+
+const pFecha = '2027-06-01'; // lunes
+const cP1 = await usuario('prod1@gmail.com');
+r = await reservar(cP1, {
+  ...base, appointmentDate: pFecha, startTime: '10:00', clientName: 'Compra',
+  productos: [{ id: CERA, cantidad: 2 }],
+});
+chequear('se puede reservar con productos', r.ok?.status === 'created', JSON.stringify(r));
+chequear('el total suma el producto (12000 + 2×5000)', r.ok?.price === 22000, JSON.stringify(r.ok));
+const aptP1 = r.ok?.id;
+const docP1 = aptP1 ? (await db.doc(`businesses/${BID}/appointments/${aptP1}`).get()).data() : {};
+chequear('el turno guarda qué se lleva',
+  (docP1.productos || []).length === 1 && docP1.productos[0].cantidad === 2,
+  JSON.stringify(docP1.productos));
+chequear('con el precio del DOCUMENTO, no del cliente',
+  docP1.productos?.[0]?.price === 5000, JSON.stringify(docP1.productos));
+chequear('bajó el stock (3 → 1)', (await leerStock(CERA)) === 1, String(await leerStock(CERA)));
+
+let v = aptP1 ? await venta(aptP1) : null;
+chequear('quedó la venta anotada', Boolean(v), JSON.stringify(v));
+chequear('con el BARBERO que la hizo', v?.professionalId === PROF, JSON.stringify(v?.professionalId));
+chequear('en estado reservado (todavía no se la llevó)', v?.estado === 'reservado', String(v?.estado));
+chequear('con el total de los productos solos', v?.total === 10000, String(v?.total));
+
+titulo('Lo que no se puede comprar:');
+const cP2 = await usuario('prod2@gmail.com');
+r = await reservar(cP2, {
+  ...base, appointmentDate: pFecha, startTime: '11:00', clientName: 'Agotado',
+  productos: [{ id: AGOTADO, cantidad: 1 }],
+});
+chequear('un producto agotado se rechaza', Boolean(r.error), JSON.stringify(r));
+chequear('y el mensaje dice el nombre', /Shampoo/.test(r.mensaje || ''), r.mensaje);
+
+r = await reservar(cP2, {
+  ...base, appointmentDate: pFecha, startTime: '11:00', clientName: 'Mas que hay',
+  productos: [{ id: CERA, cantidad: 2 }],
+});
+chequear('pedir más de lo que queda se rechaza', Boolean(r.error), JSON.stringify(r));
+chequear('y dice cuántas quedan', /1 unidad/.test(r.mensaje || ''), r.mensaje);
+
+r = await reservar(cP2, {
+  ...base, appointmentDate: pFecha, startTime: '11:00', clientName: 'Inactivo',
+  productos: [{ id: INACT, cantidad: 1 }],
+});
+chequear('un producto inactivo se rechaza', Boolean(r.error), JSON.stringify(r));
+
+r = await reservar(cP2, {
+  ...base, appointmentDate: pFecha, startTime: '11:00', clientName: 'Fantasma',
+  productos: [{ id: 'no-existe', cantidad: 1 }],
+});
+chequear('un producto que no existe se rechaza', Boolean(r.error), JSON.stringify(r));
+chequear('y ningún rechazo gastó stock', (await leerStock(CERA)) === 1, String(await leerStock(CERA)));
+
+titulo('El producto sin control de stock:');
+const cP3 = await usuario('prod3@gmail.com');
+r = await reservar(cP3, {
+  ...base, appointmentDate: pFecha, startTime: '12:00', clientName: 'Gel',
+  productos: [{ id: GEL, cantidad: 4 }],
+});
+chequear('se vende sin mirar unidades', r.ok?.status === 'created', JSON.stringify(r));
+chequear('y suma al total (12000 + 4×3000)', r.ok?.price === 24000, JSON.stringify(r.ok));
+chequear('el stock sigue en null, NO en negativo',
+  (await leerStock(GEL)) === null, String(await leerStock(GEL)));
+const vGel = r.ok?.id ? await venta(r.ok.id) : null;
+chequear('la venta marca que esa unidad no movió stock',
+  vGel?.items?.[0]?.descontado === false, JSON.stringify(vGel?.items));
+
+titulo('La mercadería vuelve si el turno no pasa:');
+await db.doc(`businesses/${BID}/appointments/${aptP1}`).update({ status: 'cancelada', cancelledBy: 'client' });
+// El trigger corre FUERA de la llamada, así que hay que esperarlo. Con una
+// espera fija corta esto fallaba y parecía un bug del trigger: en el emulador
+// el primer disparo de cada trigger carga el contenedor y tarda varios
+// segundos. Se espera hasta que pase, con tope.
+await esperarStock(CERA, 3);
+chequear('al cancelar, el stock vuelve (1 → 3)',
+  (await leerStock(CERA)) === 3, String(await leerStock(CERA)));
+await esperarVenta(aptP1, 'devuelto');
+v = await venta(aptP1);
+chequear('y la venta queda como devuelta', v?.estado === 'devuelto', String(v?.estado));
+
+// Idempotencia: el mismo estado otra vez no puede devolver dos veces. Es el
+// mismo candado que el uso del cupón, y sin él el stock se va para arriba solo.
+await db.doc(`businesses/${BID}/appointments/${aptP1}`).update({ status: 'confirmada' });
+await new Promise((res) => setTimeout(res, 2500));
+await db.doc(`businesses/${BID}/appointments/${aptP1}`).update({ status: 'cancelada', cancelledBy: 'client' });
+await new Promise((res) => setTimeout(res, 6000));
+chequear('cancelar, reactivar y volver a cancelar NO infla el stock',
+  (await leerStock(CERA)) === 3, String(await leerStock(CERA)));
+
+const cP4 = await usuario('prod4@gmail.com');
+r = await reservar(cP4, {
+  ...base, appointmentDate: '2027-06-08', startTime: '10:00', clientName: 'Atendido',
+  productos: [{ id: CERA, cantidad: 1 }],
+});
+const aptP4 = r.ok?.id;
+chequear('reserva con una cera', Boolean(aptP4), JSON.stringify(r));
+chequear('bajó a 2', (await leerStock(CERA)) === 2, String(await leerStock(CERA)));
+await db.doc(`businesses/${BID}/appointments/${aptP4}`).update({ status: 'completada' });
+await esperarVenta(aptP4, 'vendido');
+chequear('atendido: la venta se confirma', (await venta(aptP4))?.estado === 'vendido',
+  String((await venta(aptP4))?.estado));
+chequear('y el stock NO vuelve (se la llevó)',
+  (await leerStock(CERA)) === 2, String(await leerStock(CERA)));
+
+const cP5 = await usuario('prod5@gmail.com');
+r = await reservar(cP5, {
+  ...base, appointmentDate: '2027-06-15', startTime: '10:00', clientName: 'No vino',
+  productos: [{ id: CERA, cantidad: 1 }],
+});
+const aptP5 = r.ok?.id;
+await db.doc(`businesses/${BID}/appointments/${aptP5}`).update({ status: 'no_asistio' });
+await esperarStock(CERA, 2);
+// Acá se separa del cupón, que SÍ se consume con un no-show: el horario quedó
+// bloqueado y eso es lo que el descuento pagó. La cera, en cambio, sigue en el
+// estante, y cobrársela a quien no vino es ir perdiendo mercadería que nunca
+// salió.
+chequear('el que no vino no se llevó nada: el stock vuelve',
+  (await leerStock(CERA)) === 2, String(await leerStock(CERA)));
+
+for (const d of (await db.collection(`businesses/${BID}/appointments`).get()).docs) {
+  if ((d.data().appointmentDate || '') >= '2027-06-01') await d.ref.delete();
+}
+for (const d of (await db.collection(`businesses/${BID}/ventasProductos`).get()).docs) await d.ref.delete();
+for (const id of [CERA, GEL, AGOTADO, INACT]) await prodRef(id).delete();
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

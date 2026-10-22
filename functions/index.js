@@ -25,6 +25,7 @@ const mp = require('./mercadopago');
 const { limitesDelNegocio, capacidadesDelNegocio, camposDelPlan } = require('./planes');
 const cupones = require('./cupones');
 const ausencias = require('./ausencias');
+const productosSrv = require('./productos');
 // Membresías: planes mensuales de la barbería a sus clientes (createAppointment
 // descuenta el uso; el resto vive allá).
 const membresias = require('./membresias');
@@ -844,6 +845,11 @@ exports.createAppointment = onCall(async (request) => {
     // son un turno aparte. Del cliente llegan SOLO los ids; el precio sale de
     // cada documento.
     adicionales = [],
+    // Productos (la cera, el shampoo): `[{ id, cantidad }]`. No son trabajo,
+    // son mercadería: no suman tiempo, tienen stock y el stock baja adentro de
+    // la transacción. Del cliente llegan el id y la cantidad; el precio sale
+    // del documento de cada producto.
+    productos = [],
     // "Viene con alguien" (un padre con el hijo): `{ serviceId }` del servicio
     // de la OTRA persona. Es un solo turno —un cupo del tope y un solo
     // cobro— pero atiende a dos, así que suma el tiempo y el precio de ese
@@ -1135,6 +1141,12 @@ exports.createAppointment = onCall(async (request) => {
   // transacción, así que se vuelve a resolver en cada intento (ver abajo).
   let profElegido = candidatos[0];
 
+  // Los productos, con su precio y su cantidad ya validados contra el stock.
+  // También es estado mutable: se leen adentro de la transacción (es el único
+  // lugar donde el stock no puede quedar viejo entre que se mira y se escribe)
+  // y por lo tanto se vuelven a armar en cada intento.
+  let renglonesProductos = [];
+
   await db.runTransaction(async (tx) => {
     // Firestore REINTENTA la transacción cuando hay contención, y el callback
     // vuelve a correr entero. Todo lo que se escribe en las variables de
@@ -1154,6 +1166,7 @@ exports.createAppointment = onCall(async (request) => {
     montoSena = 0;
     profElegido = candidatos[0];
     pideSena = tipoPago !== null;
+    renglonesProductos = [];
 
     // Los turnos de este cliente en esta barbería, todos, en una sola lectura.
     // Se filtran en memoria en vez de con dos queries por rango porque un
@@ -1277,6 +1290,14 @@ exports.createAppointment = onCall(async (request) => {
       }
     }
 
+    // Los productos. Se leen ACÁ, adentro de la transacción y antes de
+    // cualquier escritura: el stock es lo único de todo el turno que puede
+    // agotarse entre que el cliente lo ve y aprieta el botón, y leerlo afuera
+    // dejaría justo la ventana por la que la última cera se vende dos veces.
+    renglonesProductos = await productosSrv.leerYValidar(
+      tx, db, businessId, productos, HttpsError
+    );
+
     // La seña sale del precio FINAL, nunca del de lista. Con el fijo hace falta
     // el recorte: una seña de $5.000 sobre un corte de $15.000 con 80% OFF
     // serían $5.000 de seña por un turno de $3.000 — se le estaría cobrando de
@@ -1292,6 +1313,14 @@ exports.createAppointment = onCall(async (request) => {
     // Lo mismo con el servicio del acompañante: se paga siempre. La membresía
     // y el cupón son del titular y cubren SU servicio, no el de otra persona.
     if (acomp && acomp.price > 0) cobro = { ...cobro, precioFinal: cobro.precioFinal + acomp.price, acompananteTotal: acomp.price };
+    // Los productos también se pagan siempre, y por la misma razón: la
+    // membresía cubre el SERVICIO y el cupón descuenta el SERVICIO. Una
+    // membresía que además regalara la cera sería una barbería regalando
+    // mercadería que compró.
+    const totalProductos = productosSrv.totalDe(renglonesProductos);
+    if (totalProductos > 0) {
+      cobro = { ...cobro, precioFinal: cobro.precioFinal + totalProductos, productosTotal: totalProductos };
+    }
     // Recargo por pagar con tarjeta o QR ("$2.000 más por servicio"): lo
     // configura la barbería (`recargoTarjeta`) y se suma solo si el cliente
     // eligió pagar así EN EL LOCAL. Pagando todo online por Mercado Pago no
@@ -1348,6 +1377,15 @@ exports.createAppointment = onCall(async (request) => {
       // rechazan cualquier escritura del browser que toque este campo.
       ...(membresia ? { membresia, precioLista: precio } : {}),
       ...(extras.length ? { adicionales: extras } : {}),
+      // Los productos quedan en el turno para que el barbero sepa qué tiene
+      // que entregar, y además en `ventasProductos` —un documento por turno—
+      // que es de donde sale "quién vendió qué". Dos copias a propósito: el
+      // turno es lo que el barbero mira cuando atiende, y la venta es lo que
+      // sobrevive al informe aunque el turno cambie de estado.
+      ...(renglonesProductos.length ? {
+        productos: renglonesProductos.map(({ productoId, name, price, cantidad }) => ({ productoId, name, price, cantidad })),
+        productosTotal: totalProductos,
+      } : {}),
       ...(acomp ? { acompanante: { serviceId: acomp.serviceId, name: acomp.name, price: acomp.price, durationMinutes: acomp.durationMinutes } } : {}),
       // Cómo dijo que paga en el local (si la barbería distingue), y el recargo.
       ...(montoRecargo > 0
@@ -1375,6 +1413,17 @@ exports.createAppointment = onCall(async (request) => {
       // vistazo, cuál entró solo y cuál cargó él.
       origen: 'cliente',
       createdAt: FieldValue.serverTimestamp(),
+    });
+
+    // Baja el stock y deja la venta anotada, con el barbero que le tocó. Va
+    // adentro de la misma transacción que el turno: si el turno no se guarda,
+    // la mercadería no se movió.
+    productosSrv.registrarVenta(tx, db, businessId, ref.id, renglonesProductos, {
+      professionalId: profElegido.id,
+      professionalName: profElegido.name,
+      clientName: String(clientName).slice(0, 120),
+      userId: request.auth.uid,
+      fecha: appointmentDate,
     });
 
     if (cuponRef) {
@@ -2396,6 +2445,79 @@ exports.onTurnoCancelado = onDocumentUpdated('businesses/{bizId}/appointments/{a
  * ocurrió.
  */
 const ESTADOS_QUE_CONSUMEN = ['completada', 'no_asistio'];
+
+/**
+ * La mercadería sigue al turno.
+ *
+ * Mismo motivo que el cupón para ser un trigger y no el panel: "Vino / No vino
+ * / Cancelar" son escrituras DIRECTAS a Firestore desde el browser, y ahí no se
+ * puede sumar un contador de forma confiable ni se le puede dar al cliente
+ * permiso para tocar el stock de la barbería.
+ *
+ * Pero lo que consume es DISTINTO del cupón, y la diferencia importa:
+ *
+ *   cancelada   → vuelve el stock. Nadie se llevó nada.
+ *   no_asistio  → vuelve el stock. Acá se separa del cupón: el cupón SÍ se
+ *                 consume con un no-show, porque el horario quedó bloqueado y
+ *                 eso es lo que el descuento pagó. La cera, en cambio, sigue en
+ *                 el estante. Cobrarle el stock a un cliente que no vino sería
+ *                 ir perdiendo mercadería que nunca salió.
+ *   completada  → se confirma la venta. El stock ya había bajado al reservar.
+ *
+ * `estado` del documento de venta es lo que manda, no el del turno: sin eso,
+ * dos cambios seguidos (cancelada → confirmada → cancelada) devolverían las
+ * unidades dos veces y el stock se iría para arriba solo. Es el mismo candado
+ * que el uso del cupón.
+ */
+const ESTADOS_QUE_DEVUELVEN_STOCK = ['cancelada', 'no_asistio'];
+
+exports.onTurnoConProductos = onDocumentUpdated('businesses/{bizId}/appointments/{aptId}', async (event) => {
+  const antes = event.data?.before?.data();
+  const ahora = event.data?.after?.data();
+  if (!antes || !ahora) return;
+  if (antes.status === ahora.status) return;
+
+  const { bizId, aptId } = event.params;
+  const ventaRef = db.doc(`businesses/${bizId}/ventasProductos/${aptId}`);
+
+  await db.runTransaction(async (tx) => {
+    const venta = await tx.get(ventaRef);
+    if (!venta.exists) return;
+
+    const estado = venta.get('estado');
+    const items = venta.get('items') || [];
+    const devuelve = ESTADOS_QUE_DEVUELVEN_STOCK.includes(ahora.status);
+    const confirma = ahora.status === 'completada';
+    if (!devuelve && !confirma) return;
+    if (devuelve && estado === 'devuelto') return;
+    if (confirma && estado === 'vendido') return;
+
+    // Si vuelve de "devuelto" (el barbero reactiva un turno que había
+    // cancelado), la mercadería tiene que salir otra vez del estante.
+    const signo = devuelve ? 1 : (estado === 'devuelto' ? -1 : 0);
+
+    if (signo !== 0) {
+      for (const it of items) {
+        if (!it || !it.descontado) continue;
+        const n = Number(it.cantidad) || 0;
+        if (!n) continue;
+        tx.update(db.doc(`businesses/${bizId}/productos/${it.productoId}`), {
+          stock: FieldValue.increment(signo * n),
+          vendidos: FieldValue.increment(-signo * n),
+        });
+      }
+    }
+
+    tx.update(ventaRef, {
+      estado: devuelve ? 'devuelto' : 'vendido',
+      cerradoEn: FieldValue.serverTimestamp(),
+    });
+  }).catch((err) => {
+    logger.error('no se pudo actualizar la venta de productos', {
+      bizId, aptId, error: err.message,
+    });
+  });
+});
 
 exports.onTurnoConCupon = onDocumentUpdated('businesses/{bizId}/appointments/{aptId}', async (event) => {
   const antes = event.data?.before?.data();
