@@ -56,6 +56,7 @@ export default function ProductosPage() {
   const [ventas, setVentas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState('');
+  const [errorVentas, setErrorVentas] = useState('');
 
   const [editando, setEditando] = useState(null); // el producto, o 'nuevo'
   const [form, setForm] = useState(VACIO);
@@ -67,15 +68,26 @@ export default function ProductosPage() {
     if (!businessId) return;
     setCargando(true);
     setErrorCarga('');
+    setErrorVentas('');
     try {
-      const [prods, vts] = await Promise.all([
-        obtenerSubcoleccion(businessId, 'productos'),
-        // Las ventas son de solo lectura: las escribe el servidor. Si esta
-        // lectura falla no se tapa la pantalla — el catálogo sirve igual.
-        obtenerSubcoleccion(businessId, 'ventasProductos').catch(() => []),
-      ]);
+      const prods = await obtenerSubcoleccion(businessId, 'productos');
       setProductos(prods);
-      setVentas(vts);
+
+      // Las ventas se leen aparte y el error se MUESTRA.
+      //
+      // Acá había un `.catch(() => [])`, y duró medio día: con la lectura
+      // denegada la pantalla quedaba igualita a una barbería que no vendió
+      // nada. Santiago vendió un producto, la venta estaba escrita, y esta
+      // pantalla no decía ni que existía ni que no la podía leer. Un catálogo
+      // que se lee no justifica esconder que las ventas no.
+      try {
+        setVentas(await obtenerSubcoleccion(businessId, 'ventasProductos'));
+      } catch (e) {
+        setVentas([]);
+        setErrorVentas(e?.code === 'permission-denied'
+          ? 'No se pudieron leer las ventas: esta cuenta no tiene permiso sobre ellas. Las ventas sí se están registrando.'
+          : (e?.message || 'No se pudieron leer las ventas.'));
+      }
     } catch (e) {
       // Un catch vacío acá dejaría la pantalla con "no hay productos" cuando lo
       // que pasó es que no se pudieron leer. Son dos cosas distintas y el dueño
@@ -92,22 +104,33 @@ export default function ProductosPage() {
 
   // Lo vendido, por barbero. Es la pregunta que originó la pantalla: "si hay un
   // barbero que la vende, que quede registrado que la vendió ese barbero".
-  // Cuentan las ventas CERRADAS como vendidas, no las reservadas: hasta que el
-  // turno no se atendió, la cera no salió del estante.
+  //
+  // Cuenta lo ENTREGADO y lo PENDIENTE por separado, pero muestra las dos
+  // cosas. La primera versión contaba solo lo entregado —o sea, solo los turnos
+  // ya marcados como atendidos— y la tabla no aparecía hasta entonces: el dueño
+  // vendía una cera, venía a ver quién la vendió, y encontraba la pantalla
+  // vacía. La pregunta "¿quién vendió?" se contesta cuando la venta ocurre, no
+  // cuando alguien se acuerda de cerrar el turno.
+  //
+  // Lo devuelto (turno cancelado o cliente que no vino) NO cuenta: esa
+  // mercadería nunca salió del estante.
   const porBarbero = useMemo(() => {
     const acc = new Map();
     for (const v of ventas) {
-      if (!v || v.estado !== 'vendido') continue;
+      if (!v || (v.estado !== 'vendido' && v.estado !== 'reservado')) continue;
       const id = v.professionalId || 'sin-barbero';
       const prev = acc.get(id) || {
         id,
         nombre: v.professionalName || professionals.find((p) => p.id === id)?.name || 'Sin barbero',
         unidades: 0,
         total: 0,
+        pendientes: 0,
         ultima: null,
       };
-      prev.unidades += (v.items || []).reduce((t, i) => t + (Number(i.cantidad) || 0), 0);
+      const u = (v.items || []).reduce((t, i) => t + (Number(i.cantidad) || 0), 0);
+      prev.unidades += u;
       prev.total += Number(v.total) || 0;
+      if (v.estado === 'reservado') prev.pendientes += u;
       if (!prev.ultima || String(v.fecha || '') > prev.ultima) prev.ultima = v.fecha || null;
       acc.set(id, prev);
     }
@@ -236,6 +259,7 @@ export default function ProductosPage() {
       </div>
 
       {errorCarga && <div className="notice notice-danger">{errorCarga}</div>}
+      {errorVentas && <div className="notice notice-danger">{errorVentas}</div>}
 
       {/* Lo que el cliente pidió y todavía no se entregó. Va arriba porque es
           lo único de esta pantalla que hay que HACER: el barbero tiene que
@@ -344,8 +368,10 @@ export default function ProductosPage() {
         <div className="card mt-lg">
           <h3>Quién vendió</h3>
           <p className="text-secondary text-sm mb-md">
-            Cuenta los productos de turnos ya atendidos. El stock es del local: lo que se
-            registra es quién hizo cada venta.
+            El stock es del local y lo vende cualquiera: lo que queda registrado es quién hizo
+            cada venta. Lo que el cliente todavía no retiró se cuenta igual y se marca como
+            pendiente. Lo de un turno cancelado, o de alguien que no vino, no cuenta: esa
+            mercadería no salió del estante.
           </p>
           <div className="table-container">
             <table className="table">
@@ -354,6 +380,7 @@ export default function ProductosPage() {
                   <th>Barbero</th>
                   <th>Unidades</th>
                   <th>Total</th>
+                  <th>Sin retirar</th>
                   <th className="oculta-mobile">Última venta</th>
                 </tr>
               </thead>
@@ -363,6 +390,9 @@ export default function ProductosPage() {
                     <td><strong>{b.nombre}</strong></td>
                     <td>{b.unidades}</td>
                     <td><strong>{formatPrice(b.total, business?.currency)}</strong></td>
+                    <td>{b.pendientes > 0
+                      ? <span className="badge badge-warning">{b.pendientes}</span>
+                      : <span className="text-muted">—</span>}</td>
                     <td className="oculta-mobile">{b.ultima ? fechaDMA(b.ultima) : '—'}</td>
                   </tr>
                 ))}

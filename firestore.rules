@@ -421,8 +421,16 @@ service cloud.firestore {
       // trigger cuando el turno se completa o se cancela. Si el browser pudiera
       // tocarla, el stock y el informe de ventas se podrian editar a mano — y
       // el sentido de todo esto es justamente que la venta quede registrada.
+      // `esEquipoPlataforma()` va en la lista por la misma razon que en
+      // `appointments`, y me lo encontre en produccion el mismo dia: el dueno de
+      // la plataforma administrando una barberia NO es el dueno de esa barberia
+      // —no tiene `businessId` en sus claims— asi que sin esta linea la lectura
+      // le quedaba denegada. Santiago vendio un producto en la cuenta de prueba,
+      // la venta SI estaba escrita, y la pantalla no mostraba ni la venta ni
+      // quien la hizo. Sin un error: el `catch` de la pantalla se lo comia.
       match /ventasProductos/{ventaId} {
         allow read: if manejaLaAgenda(bizId)
+                       || esEquipoPlataforma()
                        || (esBarbero(bizId) && resource.data.professionalId == claims().get('professionalId', ''));
         allow write: if false;
       }

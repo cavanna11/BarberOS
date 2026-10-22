@@ -146,6 +146,17 @@ await esperar('barbero NO carga productos',               crear(barberoA, `busin
 await esperar('una foto gigante se rechaza',              crear(duenoA, `businesses/${A}/productos`, { name: 'x', price: 1, imagenUrl: 'd'.repeat(260000) }), 'denegado');
 await esperar('nadie escribe la venta, ni el dueno',      crear(duenoA, `businesses/${A}/ventasProductos`, { total: 0 }), 'denegado');
 await esperar('el cliente NO lee las ventas',             leer(cliente, `businesses/${A}/ventasProductos/x`), 'denegado');
+// El caso que se me paso y aparecio en produccion el mismo dia (22/10/2026).
+// El dueno de la PLATAFORMA administrando una barberia no es el dueno de esa
+// barberia: no tiene `businessId` en sus claims. Sin `esEquipoPlataforma()` en
+// la regla, la lectura le quedaba denegada y la pantalla —que se comia el
+// error— se veia igual que una barberia que no vendio nada.
+await db.doc(`businesses/${A}/ventasProductos/v-1`).set({
+  total: 5000, professionalId: 'p1', professionalName: 'Martin', estado: 'vendido',
+});
+await esperar('la PLATAFORMA SI lee las ventas',          leer(plat, `businesses/${A}/ventasProductos/v-1`), 'permitido');
+await esperar('el dueno de la barberia tambien',          leer(duenoA, `businesses/${A}/ventasProductos/v-1`), 'permitido');
+await esperar('el barbero lee las SUYAS',                 leer(barberoA, `businesses/${A}/ventasProductos/v-1`), 'permitido');
 await esperar('el dueno de B NO lee las ventas de A',     leer(duenoB, `businesses/${A}/ventasProductos/x`), 'denegado');
 
 console.log('\n-- Facturacion --');
