@@ -1791,6 +1791,72 @@ semana fijo (`DOW`), así que una fecha de prueba que caiga en otro día falla p
 no a una ruta de documento; para probar lectura y borrado hay que sembrar con el
 Admin SDK, porque un 404 cuenta como denegado.
 
+### "No encontramos este negocio" en un link que existe (24/10/2026)
+
+Un barbero mandó una captura: abrió `barberos.sacia.tech/su-barberia` desde el
+navegador de Instagram y leyó **"No encontramos este negocio"**. En SU propio
+link. Y a veces sí y a veces no.
+
+**No era la conexión: era una ventana de carrera.** Resolver el link son dos
+pasos y el segundo llega después:
+
+```
+1. se lee /slugs/{slug} y se sabe qué barbería es   → slugEstado: 'ok'
+2. llega el documento de la barbería (listener)     → business
+```
+
+Entre los dos, `business` todavía es `undefined` y el estado **ya no es
+'resolviendo'**. La condición era *"si ya no está resolviendo y no hay negocio,
+entonces no existe"*, así que en esa ventana la pantalla declaraba que la
+barbería no existe. En una conexión rápida dura milisegundos y no se ve nunca;
+en el navegador de Instagram con 4G dura lo suficiente para que el cliente lo
+lea y se vaya.
+
+Esto ya se había arreglado una vez —el destello de error mientras el slug
+resolvía— y se arregló **la mitad**: se cubrió `'resolviendo'` y quedó
+descubierto `'ok'`.
+
+**La regla, ahora en una sola función pura** (`utils/estadoDelNegocio.js`):
+*solo se declara que algo no existe cuando alguien lo afirmó*, y lo único que
+puede afirmarlo es la lectura del slug. Todo lo demás es "todavía no sé"
+(cargando) o "no pude averiguarlo" (otra pantalla, con botón).
+
+**Los otros tres agujeros del mismo viaje**, todos encontrados mirando este:
+
+1. **`obtenerSlug` usaba `getDoc`**, que contesta desde el caché cuando la red
+   no está — y un documento que no está en el caché se ve **exactamente igual**
+   que un documento que no existe: `exists() === false`, sin ningún error. Una
+   mala señal le decía al cliente que la barbería no existe. Ahora va con
+   `getDocFromServer` y devuelve `{ datos, confiable }`: de un `datos: null`
+   con `confiable: false` no se concluye nada. Es la única lectura del proyecto
+   que exige servidor, y se justifica porque es de la que sale ese cartel.
+2. **El resultado negativo se cacheaba.** `slugResuelto.current` guardaba el
+   `null` de una lectura fallida, así que el error se volvía **permanente**: el
+   resto de la visita contestaba "no existe" desde la memoria sin volver a
+   preguntar. Por eso cerrar y abrir no siempre lo arreglaba. Ahora el caché
+   guarda solo resultados buenos.
+3. **El `catch` solo logueaba**, así que una lectura que fallaba dejaba la
+   pantalla en "Cargando…" **para siempre**. Y si el listener del negocio no
+   contestaba nunca, lo mismo. Ahora hay un reloj de 12 segundos y los dos
+   caminos terminan en la pantalla de "no pudimos cargar", con *Reintentar*.
+
+Y se agregó un reintento con espera creciente (3 intentos) antes de concluir
+nada: una sola lectura fallida no puede ser la diferencia entre "tu barbería" y
+"no encontramos este negocio".
+
+```bash
+node scripts/test-estado-negocio.mjs   # 19 casos, sin emulador
+```
+
+El que importa, y que la lógica vieja NO pasaba (comprobado corriendo las dos):
+*el slug resolvió pero el negocio todavía no llegó* → **cargando**, no "no
+existe".
+
+**Es la tercera vez que este error aparece con otra ropa** en este proyecto: el
+turno que no se podía dar y no decía por qué, la agenda vacía del barbero con
+el vínculo roto, y esto. Siempre es lo mismo: **confundir "no sé" con "no
+hay"**.
+
 ### "Pidió cualquiera": que el barbero se entere, y poder cambiarlo (22/10/2026)
 
 Santiago, de una barbería con dos barberos: *"cuando eligen cualquiera se le
@@ -2676,13 +2742,15 @@ node scripts/test-intervalo.mjs            # la grilla y el consejo (tampoco)
 node scripts/test-ausencias.mjs            # el día suelto distinto: no voy / hago otro horario
 node scripts/test-orden.mjs                # en qué orden ve el cliente la lista (tampoco)
 node scripts/test-productos.mjs            # la mercadería: stock, precio y qué se ofrece
+node scripts/test-estado-negocio.mjs       # qué pantalla ve el que abre el link
 ```
 
 Hoy: claims 83, reservas 140, facturación 20, rules 155, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
 turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 97, orden 30.
 productos 54.
-Todo en verde (1147).
+estado del negocio 19.
+Todo en verde (1166).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

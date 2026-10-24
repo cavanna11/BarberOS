@@ -29,6 +29,8 @@ import {
   collection,
   doc,
   getDoc,
+  // Para la unica lectura que NO puede contestarse desde el cache: el slug.
+  getDocFromServer,
   getDocs,
   onSnapshot,
   query,
@@ -196,8 +198,29 @@ export async function getBusinessIdBySlug(slug) {
  * es ninguna sucursal: es el que pregunta "¿a cuál vas?". null si no existe.
  */
 export async function obtenerSlug(slug) {
-  const snap = await getDoc(slugDoc(slug));
-  return snap.exists() ? snap.data() : null;
+  // Del SERVIDOR, a proposito, y es la unica lectura del proyecto que lo exige.
+  //
+  // De esta respuesta sale la pantalla "No encontramos este negocio". Un
+  // `getDoc` normal contesta desde el cache cuando la red no esta, y un
+  // documento que NO esta en el cache se ve exactamente igual que un documento
+  // que no existe: `exists() === false`, sin ningun error. O sea que una
+  // conexion mala le dice al cliente que la barberia no existe.
+  //
+  // `confiable` es lo que separa "no existe" de "no pude averiguarlo". Quien
+  // llama no puede concluir nada de un `datos: null` con `confiable: false`.
+  try {
+    const snap = await getDocFromServer(slugDoc(slug));
+    return { datos: snap.exists() ? snap.data() : null, confiable: true };
+  } catch (err) {
+    // Sin red: si el cache lo tiene, sirve igual — un slug que existio no deja
+    // de existir. Lo que NO vale es el camino de vuelta: que el cache no lo
+    // tenga no prueba nada.
+    try {
+      const snap = await getDoc(slugDoc(slug));
+      if (snap.exists()) return { datos: snap.data(), confiable: true };
+    } catch { /* el cache tampoco: se informa abajo */ }
+    return { datos: null, confiable: false, error: err };
+  }
 }
 
 /**

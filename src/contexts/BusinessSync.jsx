@@ -190,6 +190,10 @@ export default function BusinessSync() {
     if (slug) {
       let cancelado = false;
       let desuscribir = null;
+      // Si el documento del negocio llegó alguna vez, y el reloj que vigila que
+      // llegue.
+      let llego = false;
+      let temporizador = null;
 
       // Mientras se resuelve, la página pública muestra "cargando" y no "no
       // existe": ese destello de error en cada apertura del link era lo
@@ -198,13 +202,45 @@ export default function BusinessSync() {
 
       (async () => {
         try {
+          // Se reintenta antes de decir nada. Una sola lectura fallida no puede
+          // ser la diferencia entre "tu barberia" y "no encontramos este
+          // negocio": adentro del navegador de Instagram, con 4G, la primera
+          // lectura falla seguido.
+          const leerSlug = async () => {
+            let ultimo = null;
+            for (let intento = 0; intento < 3; intento++) {
+              if (cancelado) return null;
+              const r = await obtenerSlug(slug);
+              if (r.confiable) return r;
+              ultimo = r;
+              await new Promise((res) => setTimeout(res, 400 * (intento + 1)));
+            }
+            return ultimo;
+          };
+
           const cache = slugResuelto.current;
-          const datos = cache.slug === slug ? cache.datos : await obtenerSlug(slug);
+          // El cache guarda SOLO resultados buenos. Antes guardaba tambien el
+          // null de una lectura fallida, y entonces el error se volvia
+          // permanente: el resto de la visita seguia contestando "no existe"
+          // desde la memoria, sin volver a preguntar nunca. Por eso cerrar y
+          // abrir la pagina no siempre lo arreglaba.
+          const r = cache.slug === slug && cache.datos
+            ? { datos: cache.datos, confiable: true }
+            : await leerSlug();
+
+          if (cancelado || !r) return;
+
+          // No se pudo averiguar. NO es "no existe": se dice lo que pasa y se
+          // ofrece reintentar.
+          if (!r.confiable) {
+            console.error('[BusinessSync] no se pudo resolver el slug', slug, r.error?.code);
+            dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'sin-conexion' } } });
+            return;
+          }
+
+          const datos = r.datos;
           const businessId = datos?.businessId || null;
-
-          slugResuelto.current = { slug, businessId, datos };
-
-          if (cancelado) return;
+          if (datos) slugResuelto.current = { slug, businessId, datos };
           // El link de la CUENTA (no de una sucursal): no hay una barbería que
           // escuchar, la pantalla pregunta a qué sucursal va.
           if (datos?.esCuenta && datos.grupoId) {
@@ -218,22 +254,51 @@ export default function BusinessSync() {
             return;
           }
           dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'ok' } } });
+
+          // El slug resolvió, pero el documento del negocio todavía no llegó.
+          // Si no llega nunca —el listener muere y no vuelve— la pantalla se
+          // quedaría cargando para siempre. A los 12 segundos se dice que no se
+          // pudo, con el botón para reintentar.
+          const seColgo = setTimeout(() => {
+            if (!cancelado && !llego) {
+              dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'sin-conexion' } } });
+            }
+          }, 12000);
+          temporizador = seColgo;
+
           desuscribir = subscribeBusiness(
             businessId,
             (negocio) => {
+              llego = true;
+              clearTimeout(seColgo);
               // Si el negocio se borró con el link abierto, que diga que no existe.
               if (!negocio) dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'no-existe' } } });
               dispatch({ type: 'SET_BUSINESSES', payload: negocio ? [negocio] : [] });
             },
-            onError
+            (err) => {
+              clearTimeout(seColgo);
+              onError(err);
+              // El listener murió y `escuchar()` ya reintenta solo. Si todavía
+              // no habíamos mostrado nada, igual hay que decir algo: una
+              // pantalla cargando sin fin es peor que un error con un botón.
+              if (!llego && !cancelado) {
+                dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'sin-conexion' } } });
+              }
+            }
           );
         } catch (err) {
+          // Un catch que solo loguea dejaba la pantalla en "Cargando…" para
+          // siempre. Lo que no se pudo hacer se dice.
           onError(err);
+          if (!cancelado) {
+            dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'sin-conexion' } } });
+          }
         }
       })();
 
       return () => {
         cancelado = true;
+        if (temporizador) clearTimeout(temporizador);
         if (desuscribir) desuscribir();
       };
     }

@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { importarConReintento } from './utils/versionNueva';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
+import { estadoDelNegocio } from './utils/estadoDelNegocio';
 import { useBusiness } from './contexts/BusinessContext';
 import BusinessSync from './contexts/BusinessSync';
 import { isPlatformOwner } from './config/platform';
@@ -132,19 +133,33 @@ function useNegocioDelSlug() {
   }
 
   if (!business) {
-    // "No existe" recién cuando se SABE que no existe. Antes se mostraba
-    // mientras el slug todavía se estaba resolviendo, y cada apertura del
-    // link arrancaba con un cartel de error que después desaparecía.
-    const esPlataforma = user?.isPlatformTeam === true;
-    const resuelto = esPlataforma
-      ? state.negociosCargados === true
-      : state.slugEstado?.slug === businessSlug && state.slugEstado.estado !== 'resolviendo';
-    return { business: null, estado: loading || !resuelto ? 'resolviendo' : 'no-existe' };
+    // "No existe" recién cuando se SABE que no existe. Esto ya se había
+    // arreglado una vez para el estado 'resolviendo', y faltaba la mitad:
+    //
+    // `slugEstado: 'ok'` se despacha apenas el slug resuelve, PERO el
+    // documento de la barbería llega después, por el listener. En esa ventana
+    // `business` todavía es undefined y el estado ya no es 'resolviendo', así
+    // que la pantalla declaraba que el negocio no existe. En una conexión
+    // rápida la ventana son milisegundos y no se ve; adentro del navegador de
+    // Instagram, con 4G, dura lo suficiente como para que el cliente lea
+    // "No encontramos este negocio" y se vaya.
+    //
+    // Ahora solo cuentan como respuesta los estados que de verdad responden:
+    // 'no-existe' (el slug no está en la base) y 'sin-conexion' (no se pudo
+    // averiguar, que es otra pantalla y con botón para reintentar).
+    return {
+      business: null,
+      estado: estadoDelNegocio({
+        business: null,
+        businessSlug,
+        slugEstado: state.slugEstado,
+        esPlataforma: user?.isPlatformTeam === true,
+        negociosCargados: state.negociosCargados === true,
+        loading,
+      }),
+    };
   }
-  if (business.isFrozen || business.onlineBookingEnabled === false) {
-    return { business, estado: 'cerrado' };
-  }
-  return { business, estado: 'ok' };
+  return { business, estado: estadoDelNegocio({ business }) };
 }
 
 /**
@@ -156,6 +171,7 @@ function TenantRoute({ children }) {
   const { estado, grupoId } = useNegocioDelSlug();
   if (estado === 'resolviendo') return <SessionLoading />;
   if (estado === 'cuenta') return <CuentaPublica grupoId={grupoId} />;
+  if (estado === 'sin-conexion') return <NoBusinessPage reason="sin-conexion" />;
   if (estado === 'no-existe') return <NoBusinessPage reason="not-found" />;
   if (estado === 'cerrado') return <NoBusinessPage reason="frozen" />;
   return children;

@@ -23,6 +23,16 @@ export default function NoBusinessPage({ reason = 'not-found' }) {
       title: 'Reservas no disponibles',
       text: 'Este negocio tiene las reservas online pausadas temporalmente. Escribinos por otro medio para coordinar tu turno.',
     },
+    // No es lo mismo "no existe" que "no pude averiguarlo", y el cliente no
+    // tiene por que pagar la diferencia. Este cartel NO acusa al link: dice que
+    // el problema es de conexion y da un boton. Antes, una lectura que no
+    // llegaba se mostraba como "no encontramos este negocio" — la barberia
+    // quedaba como inexistente por un segundo de mala senial.
+    'sin-conexion': {
+      icon: '📶',
+      title: 'No pudimos cargar la barbería',
+      text: 'Parece que la conexión se cortó. El link está bien: probá de nuevo en un momento.',
+    },
     'no-slug': {
       icon: '📅',
       title: 'Necesitás el link de tu negocio',
@@ -37,6 +47,12 @@ export default function NoBusinessPage({ reason = 'not-found' }) {
       <div className="empty-state-icon">{icon}</div>
       <h2>{title}</h2>
       <p>{text}</p>
+
+      {reason === 'sin-conexion' && (
+        <button className="btn btn-primary mt-md" onClick={() => window.location.reload()}>
+          Reintentar
+        </button>
+      )}
 
       {import.meta.env.DEV && businesses.length > 0 && (
         <div className="card" style={{ marginTop: '2rem', textAlign: 'left' }}>
