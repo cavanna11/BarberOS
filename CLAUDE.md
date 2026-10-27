@@ -1791,6 +1791,65 @@ semana fijo (`DOW`), así que una fecha de prueba que caiga en otro día falla p
 no a una ruta de documento; para probar lectura y borrado hay que sembrar con el
 Admin SDK, porque un 404 cuenta como denegado.
 
+### El "gracias" de WhatsApp pide la reseña (27/10/2026)
+
+*"Para las reseñas tendría que haber también un mensaje, en el de gracias:
+valorar a nuestro peluquero, con el link de la parte de reseñas de ese corte. Y
+también con el link de Google Maps, ambos links."*
+
+El agradecimiento es **el único momento en que el cliente está contento y con el
+teléfono en la mano**. Pedir la reseña en cualquier otro momento es pedirla
+tarde, y por eso los links van ahí y no en un mensaje aparte.
+
+```
+Hola Juan! Gracias por elegirnos en La Barbería. ¿Nos dejás tu opinión?
+Nos ayuda un montón.
+
+⭐ Valorá a tu peluquero: https://barberos.sacia.tech/la-barberia/mis-citas?valorar=…
+
+📍 Y si te queda cómodo, en Google: https://g.page/r/…/review
+
+¡Te esperamos la próxima!
+```
+
+**Los dos links, no uno**: la valoración de la app alimenta el promedio por
+barbero del panel, y la de Google es la que ve el que todavía no es cliente.
+Sirven para cosas distintas. Si la barbería no cargó su ficha de Google va solo
+el primero, y si no corresponde ninguno el mensaje vuelve a ser el de siempre
+—sin una pregunta colgada sin links debajo—. Hay un caso para cada combinación.
+
+**No hay una pantalla de reseña por turno, y no se hizo una.** La valoración
+vive adentro de "Mis citas", en un modal; el link abre esa misma pantalla con
+`?valorar={idDelTurno}` y el modal se abre solo. Una ruta menos que mantener, y
+el aislamiento ya está resuelto: "Mis citas" muestra solo los turnos del que
+entró.
+
+Tres detalles que hacen que no mande links muertos ni deje la pantalla rara:
+
+- **Solo para turnos de una cuenta de cliente de verdad.** Los que carga el
+  staff a mano (`manual`, `walkin`, `fijo`) llevan el `userId` del que los
+  cargó: ese link le abriría "Mis citas" vacío a alguien que nunca entró a la
+  app. Un link muerto adentro de un agradecimiento es peor que no mandar link.
+- **Solo si el turno está `completada`.** Antes no hay nada que valorar y las
+  Rules lo rechazarían igual.
+- **El parámetro se saca de la URL al cerrar el modal.** Si quedara puesto, el
+  modal se volvería a abrir solo, y el cliente que copia la dirección de la
+  barra para compartirla estaría mandando el link para valorar SU turno.
+
+El modal se **deriva** del parámetro en vez de copiarse a un estado adentro de
+un efecto: el turno llega por la suscripción un rato después que la pantalla, y
+guardar en estado algo que ya está en la URL es tener la misma verdad en dos
+lados. (El lint lo marca, con razón: `react-hooks/set-state-in-effect`.)
+
+Y se le ofrece a **todos**, no solo a los que uno cree que van a puntuar bien:
+filtrar por quién parece conforme es *review gating*, Google lo prohíbe y puede
+costarle la ficha al negocio. Es la misma regla que ya regía en la pantalla de
+después de valorar.
+
+```bash
+node scripts/test-whatsapp.mjs   # 32 casos (9 nuevos), sin emulador
+```
+
 ### "No encontramos este negocio" en un link que existe (24/10/2026)
 
 Un barbero mandó una captura: abrió `barberos.sacia.tech/su-barberia` desde el
@@ -2747,10 +2806,10 @@ node scripts/test-estado-negocio.mjs       # qué pantalla ve el que abre el lin
 
 Hoy: claims 83, reservas 140, facturación 20, rules 155, alta 22, mercadopago 16,
 seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
-turnos fijos 28, whatsapp 23, preview 24, intervalo 96, ausencias 97, orden 30.
+turnos fijos 28, whatsapp 32, preview 24, intervalo 96, ausencias 97, orden 30.
 productos 54.
 estado del negocio 19.
-Todo en verde (1166).
+Todo en verde (1175).
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

@@ -67,5 +67,42 @@ chequear('sin datos, la frase sigue teniendo sentido',
   !/undefined|null|NaN/.test(flojo.recordatorio) && flojo.recordatorio.startsWith('Hola!'),
   flojo.recordatorio);
 
+// ── El pedido de reseña adentro del "gracias" (27/10/2026) ────────────────
+// "Para las reseñas tendría que haber también un mensaje, en el de gracias:
+// valorar a nuestro peluquero, con el link de la parte de reseñas de ese corte.
+// Y también con el link de Google Maps, ambos links."
+//
+// El agradecimiento es el único momento en que el cliente está contento y con
+// el teléfono en la mano. Lo que estos casos cuidan es que los links aparezcan
+// cuando los hay y que el mensaje NO quede roto cuando no los hay: una barbería
+// sin ficha de Google tiene que seguir mandando un gracias que se lea.
+console.log('\nEl pedido de reseña en el agradecimiento:');
+const TURNO_OK = { clientName: 'Juan Perez', appointmentDate: '2026-10-20', startTime: '15:30', status: 'completada' };
+const LINK_R = 'https://barberos.sacia.tech/la-barberia/mis-citas?valorar=apt-1';
+const LINK_G = 'https://g.page/r/abc/review';
+
+const conLosDos = mensajesDelTurno(TURNO_OK, { nombreNegocio: 'La Barberia', linkResena: LINK_R, linkGoogle: LINK_G }).gracias;
+chequear('lleva el link para valorar al peluquero', conLosDos.includes(LINK_R), conLosDos);
+chequear('y el de Google', conLosDos.includes(LINK_G), conLosDos);
+chequear('sigue agradeciendo primero', conLosDos.startsWith('Hola Juan! Gracias'), conLosDos);
+chequear('no mete "undefined" en el medio', !/undefined|null|NaN/.test(conLosDos), conLosDos);
+
+const soloResena = mensajesDelTurno(TURNO_OK, { nombreNegocio: 'La Barberia', linkResena: LINK_R }).gracias;
+chequear('sin ficha de Google, solo el de la app',
+  soloResena.includes(LINK_R) && !soloResena.includes('Google'), soloResena);
+
+const soloGoogle = mensajesDelTurno(TURNO_OK, { nombreNegocio: 'La Barberia', linkGoogle: LINK_G }).gracias;
+chequear('sin link de la app, solo el de Google',
+  soloGoogle.includes(LINK_G) && !soloGoogle.includes('Valorá'), soloGoogle);
+
+const sinNada = mensajesDelTurno(TURNO_OK, { nombreNegocio: 'La Barberia' }).gracias;
+chequear('sin ninguno de los dos, el gracias de siempre',
+  !sinNada.includes('http') && sinNada.includes('Te esperamos'), sinNada);
+chequear('y no queda una pregunta colgada sin links',
+  !sinNada.includes('opinión'), sinNada);
+
+chequear('el recordatorio NO lleva links de reseña (el turno todavía no pasó)',
+  !mensajesDelTurno(TURNO_OK, { linkResena: LINK_R, linkGoogle: LINK_G }).recordatorio.includes('http'));
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

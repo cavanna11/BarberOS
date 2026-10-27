@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
 import { cancelAppointment, misResenas } from '../../lib/repository';
@@ -31,6 +31,35 @@ export default function MyAppointments() {
   // solo se usan para saber qué botón mostrar.
   const [resenas, setResenas] = useState({});
   const [valorando, setValorando] = useState(null);
+
+  // El link que el barbero manda por WhatsApp: `?valorar={idDelTurno}`. Abre el
+  // modal de la valoración solo, sin que el cliente tenga que buscar el botón
+  // entre sus turnos.
+  //
+  // Se DERIVA del parámetro en vez de copiarse a un estado adentro de un
+  // efecto: el turno llega por la suscripción un rato después que la pantalla,
+  // así que un efecto tendría que esperarlo, y además guardar en estado algo
+  // que ya está en la URL es tener la misma verdad en dos lados.
+  //
+  // Solo si el turno es suyo (`appointments` ya trae nada más que los de él) y
+  // está atendido: un link viejo no puede dejar la pantalla en un estado raro.
+  const [params, setParams] = useSearchParams();
+  const idAValorar = params.get('valorar');
+  const turnoDelLink = idAValorar
+    ? (appointments || []).find((a) => a && a.id === idAValorar && a.status === 'completada') || null
+    : null;
+  const aValorar = valorando || turnoDelLink;
+
+  // Al cerrar se saca el parámetro de la URL: si quedara puesto, el modal se
+  // volvería a abrir solo, y el cliente que copia la dirección de la barra para
+  // mandársela a alguien le estaría mandando el link para valorar SU turno.
+  const cerrarValoracion = () => {
+    setValorando(null);
+    if (!idAValorar) return;
+    const limpios = new URLSearchParams(params);
+    limpios.delete('valorar');
+    setParams(limpios, { replace: true });
+  };
 
   useEffect(() => {
     if (!businessId || !user?.id) return;
@@ -182,15 +211,15 @@ export default function MyAppointments() {
         })
       )}
 
-      {valorando && (
+      {aValorar && (
         <ValorarTurno
-          turno={valorando}
+          turno={aValorar}
           business={business}
-          servicio={services.find((s) => s.id === valorando.serviceId) || null}
-          profesional={professionals.find((p) => p.id === valorando.professionalId) || null}
-          resenaPrevia={resenas[valorando.id] || null}
-          onGuardada={(r) => setResenas((prev) => ({ ...prev, [valorando.id]: { ...prev[valorando.id], stars: r.stars, comment: r.comment } }))}
-          onClose={() => setValorando(null)}
+          servicio={services.find((s) => s.id === aValorar.serviceId) || null}
+          profesional={professionals.find((p) => p.id === aValorar.professionalId) || null}
+          resenaPrevia={resenas[aValorar.id] || null}
+          onGuardada={(r) => setResenas((prev) => ({ ...prev, [aValorar.id]: { ...prev[aValorar.id], stars: r.stars, comment: r.comment } }))}
+          onClose={cerrarValoracion}
         />
       )}
     </div>

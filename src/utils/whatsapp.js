@@ -106,7 +106,15 @@ function diaCorto(fechaISO) {
  * servicio. Si falta algo, la frase se acomoda sola en vez de quedar con un
  * hueco ("a las undefined").
  */
-export function mensajesDelTurno(turno, { nombreNegocio = '', nombreServicio = '', businessId = '' } = {}) {
+export function mensajesDelTurno(turno, {
+  nombreNegocio = '',
+  nombreServicio = '',
+  businessId = '',
+  /** Link para valorar ESTE turno en la app. Vacío = no se ofrece. */
+  linkResena = '',
+  /** Link de la ficha de Google de la barbería. Vacío = no se ofrece. */
+  linkGoogle = '',
+} = {}) {
   const cliente = nombreDePila(turno?.clientName);
   const hola = cliente ? `Hola ${cliente}` : 'Hola';
   const donde = nombreNegocio ? ` en ${nombreNegocio}` : '';
@@ -121,9 +129,25 @@ export function mensajesDelTurno(turno, { nombreNegocio = '', nombreServicio = '
       (hora ? ` a las ${hora}` : '') +
       `${servicio}. ¡Te esperamos!`,
 
+    // El "gracias" es el único momento en que el cliente está contento y con el
+    // teléfono en la mano. Pedir la reseña en cualquier otro momento es pedirla
+    // tarde, y por eso los links van ACÁ y no en un mensaje aparte.
+    //
+    // Los dos links, no uno: la valoración de la app alimenta el promedio por
+    // barbero del panel, y la de Google es la que ve el que todavía no es
+    // cliente. Sirven para cosas distintas.
+    //
+    // Se le ofrece a TODOS, no solo a los que uno cree que van a puntuar bien:
+    // filtrar por quién parece conforme es *review gating*, Google lo prohíbe y
+    // puede costarle la ficha al negocio.
     gracias:
       `${hola}! Gracias por elegirnos${donde}. ` +
-      `Cualquier cosa que necesites, escribinos por acá. ¡Te esperamos la próxima!`,
+      (linkResena || linkGoogle
+        ? `¿Nos dejás tu opinión? Nos ayuda un montón.` +
+          (linkResena ? `\n\n⭐ Valorá a tu peluquero: ${linkResena}` : '') +
+          (linkGoogle ? `\n\n📍 Y si te queda cómodo, en Google: ${linkGoogle}` : '') +
+          `\n\n¡Te esperamos la próxima!`
+        : `Cualquier cosa que necesites, escribinos por acá. ¡Te esperamos la próxima!`),
 
     enCamino:
       `${hola}! Te confirmamos tu turno${donde}` +
