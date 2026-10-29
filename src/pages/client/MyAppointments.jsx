@@ -134,6 +134,15 @@ export default function MyAppointments() {
     <div className="my-appointments">
       <h1>Mis Turnos</h1>
       <MiMembresia membresia={membresia.membresia} usos={membresia.usos} />
+      {/* Las recompensas tienen su pantalla: acá solo la puerta, si la
+          barbería tiene alguna campaña prendida. */}
+      {Object.keys(business?.recompensas || {}).length > 0 && (
+        <Link to={`/${slug}/premios`} className="card premios-acceso">
+          <span aria-hidden="true">🎁</span>
+          <span><strong>Tus premios</strong> <span className="text-sm text-secondary">Tu tarjeta, tus premios y lo que tenés para jugar.</span></span>
+          <span aria-hidden="true">→</span>
+        </Link>
+      )}
       <div className="tabs mt-md">
         <button className={`tab ${tab === 'upcoming' ? 'active' : ''}`} onClick={() => setTab('upcoming')}>
           Próximas ({upcoming.length})
@@ -166,6 +175,8 @@ export default function MyAppointments() {
                   {turnoConMembresia(apt)
                     ? <span className="badge badge-success">🪪 Con tu membresía</span>
                     : <span>{formatPrice(apt.price, business?.currency)}</span>}
+                  {apt.premio && <span className="badge badge-success">🎁 {apt.premio.nombre}</span>}
+                  {apt.happyHour && <span className="badge badge-neutral">⏰ Happy hour −{apt.happyHour.porcentaje}%</span>}
                 </div>
               </div>
               <div className="appointment-actions">

@@ -105,10 +105,14 @@ export function revokeBusinessAdmin({ email, businessId }) {
 //
 // Ninguna de las dos tiraba un error: el servidor recibe un objeto sin esa
 // clave, que es exactamente lo mismo que recibir una reserva que no la usa.
-export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false, adicionales = [], productos = [], acompanante = null, pagar, metodoPago = null }) {
+export function createAppointment({ businessId, professionalId, serviceId, appointmentDate, startTime, clientName = '', clientPhone = '', clientEmail = '', notes = '', cuponCodigo = null, usarMembresia = false, adicionales = [], productos = [], acompanante = null, pagar, metodoPago = null, premioId = null }) {
   return llamar('createAppointment', {
     businessId, professionalId, serviceId, appointmentDate, startTime,
     clientName, clientPhone, clientEmail, notes, cuponCodigo,
+    // El premio de recompensas que eligió usar: solo el id. Si es suyo, si
+    // vale para este servicio y esta fecha y cuánto descuenta lo decide el
+    // servidor. (El happy hour no viaja: es automático y lo calcula él.)
+    premioId,
     // "Usar mi membresía": lo marca el cliente. El servidor revalida todo
     // (activa, mes pago, servicio incluido, usos) y descuenta el uso.
     usarMembresia: usarMembresia === true,
@@ -341,6 +345,48 @@ export function revertirUsoMembresia({ businessId, appointmentId, motivo }) {
 /** La membresía del cliente que mira, en esta cuenta, o `{ membresia: null }`. */
 export function miMembresia(businessId) {
   return llamar('miMembresia', { businessId });
+}
+
+// ============================================================================
+// Recompensas (functions/recompensas.js)
+// ============================================================================
+// Nada de recompensas se escribe desde el browser: campañas, premios, tarjetas
+// y tiradas pasan por acá. Los mensajes de error ya vienen escritos para
+// mostrarse.
+
+/**
+ * Crea, edita, activa o desactiva una campaña. Sin `config`, solo cambia
+ * `activa`. El servidor revalida todo (probabilidades, topes).
+ */
+export function guardarCampana({ businessId, tipo, activa, config }) {
+  return llamar('guardarCampana', { businessId, tipo, activa, ...(config === undefined ? {} : { config }) });
+}
+
+/** Reinicia la tarjeta llena de un cliente (campañas con reinicio manual). */
+export function reiniciarTarjeta({ businessId, userId }) {
+  return llamar('reiniciarTarjeta', { businessId, userId });
+}
+
+/**
+ * Todo lo de recompensas del cliente que mira, en esta barbería: premios,
+ * tarjeta, racha, rascas pendientes y qué puede jugar. Una llamada al entrar.
+ */
+export function misRecompensas(businessId) {
+  return llamar('misRecompensas', { businessId });
+}
+
+/** El cliente carga su cumpleaños ('MM-DD'). Una sola vez. */
+export function guardarCumpleanos({ businessId, fecha }) {
+  return llamar('guardarCumpleanos', { businessId, fecha });
+}
+
+/**
+ * Juega la ruleta, la caja o la rasca (`ref` = el turno de esa rasca). El
+ * SERVIDOR sortea; devuelve `{ indice, gano, segmentos, premio, proxima }` y el
+ * browser anima hacia `indice`.
+ */
+export function jugarRecompensa({ businessId, tipo, ref = null }) {
+  return llamar('jugarRecompensa', { businessId, tipo, ref });
 }
 
 // ============================================================================

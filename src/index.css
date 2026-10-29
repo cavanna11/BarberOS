@@ -6242,3 +6242,441 @@ select.form-input {
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   line-height: 1.5;
 }
+
+/* ============================================================================
+   RECOMPENSAS  (ruleta, tarjeta de fidelidad, caja, rasca, premios)
+   ============================================================================
+   Premium y sobrio: una sola animación por juego, sin luces ni brillos de
+   casino. Todo lo que se mueve usa transform y opacity (corren en el
+   compositor y no traban la página), y al final de la sección hay un bloque
+   para `prefers-reduced-motion` que apaga todo.
+   ========================================================================== */
+
+.notice-success {
+  border-left-color: var(--success);
+  background: var(--success-light);
+  color: #0b6b44;
+}
+.notice-success strong { color: #084d31; }
+
+/* ── Panel: la grilla de campañas ──────────────────────────────────────── */
+
+.campanas-grilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-md);
+}
+
+.campana-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border-top: 3px solid var(--border);
+}
+.campana-card.activa { border-top-color: var(--success); }
+
+.campana-cabeza { display: flex; gap: 12px; align-items: center; }
+.campana-icono {
+  width: 44px; height: 44px; flex-shrink: 0;
+  display: grid; place-items: center;
+  font-size: 1.5rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+.campana-nombre { font-size: 1rem; margin: 0 0 4px; }
+.campana-desc { font-size: 0.8125rem; color: var(--text-secondary); margin: 0; }
+.campana-resumen { font-size: 0.8125rem; margin: 0; font-weight: 500; }
+
+.campana-numeros { display: flex; gap: var(--space-lg); margin: 0; }
+.campana-numeros dt { font-size: 0.6875rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); }
+.campana-numeros dd { margin: 0; font-size: 1.125rem; font-weight: 700; }
+
+.campana-acciones { display: flex; gap: var(--space-sm); margin-top: auto; padding-top: var(--space-sm); flex-wrap: wrap; }
+
+.tarjetas-llenas { border-top: 1px solid var(--border); padding-top: var(--space-sm); }
+.tarjetas-llenas ul { list-style: none; padding: 0; margin: 6px 0 0; }
+.tarjetas-llenas li { display: flex; justify-content: space-between; align-items: center; font-size: 0.8125rem; gap: 8px; }
+
+/* ── Panel: el editor ──────────────────────────────────────────────────── */
+
+.editor-campana { max-width: 720px; }
+.editor-premio {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin: 0 0 12px;
+  min-width: 0;
+}
+.editor-premio-titulo { font-size: 0.75rem; font-weight: 700; padding: 0 4px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; }
+.editor-premio-fila { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.editor-premio-fila .form-group { margin-bottom: 8px; min-width: 120px; flex: 1 1 120px; }
+.editor-premio-fila .form-group.crece { flex: 2 1 180px; }
+.editor-premio-fila .form-group.angosto { flex: 0 1 110px; min-width: 96px; }
+/* Sobre el borde de arriba, como la leyenda: adentro se montaba sobre la
+   etiqueta del último campo de la fila. */
+.editor-quitar { position: absolute; top: -14px; right: 10px; color: var(--danger); background: var(--surface); padding: 2px 8px; }
+.editor-servicios summary { cursor: pointer; margin-bottom: 6px; }
+.editor-grilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 var(--space-md); }
+.editor-errores ul { margin: 6px 0 0; padding-left: 18px; }
+.color-input { padding: 2px; height: 40px; min-width: 56px; cursor: pointer; }
+.casillas-libre { width: 80px; padding: 6px 8px; }
+
+.iconos-rapidos { display: flex; flex-wrap: wrap; gap: 4px; }
+.icono-opcion {
+  width: 34px; height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 1.05rem;
+  cursor: pointer;
+}
+.icono-opcion.activo { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-glow); }
+.icono-opcion:focus-visible, .cupon-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.barra-probabilidades {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  margin: var(--space-sm) 0 4px;
+}
+.barra-probabilidades span { height: 100%; min-width: 0; }
+.barra-probabilidades .sin-premio {
+  background: repeating-linear-gradient(45deg, #d9d9d9 0 4px, #ececec 4px 8px);
+}
+.texto-error { color: var(--danger); font-weight: 600; }
+
+.editor-preview-ruleta, .editor-preview-tarjeta {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  margin-bottom: var(--space-md); text-align: center;
+}
+.editor-preview-tarjeta { align-items: stretch; text-align: left; }
+.nivel-racha { border-left: 3px solid var(--primary-light); padding-left: 10px; margin-bottom: 8px; }
+
+/* ── La rueda ──────────────────────────────────────────────────────────── */
+
+.rueda { position: relative; max-width: 100%; aspect-ratio: 1; }
+.rueda-svg { width: 100%; height: 100%; display: block; will-change: transform; }
+.rueda-svg text { font-family: var(--font); pointer-events: none; }
+.rueda-puntero {
+  position: absolute; top: -6px; left: 50%;
+  transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 13px solid transparent;
+  border-right: 13px solid transparent;
+  border-top: 24px solid var(--text);
+  z-index: 2;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
+}
+
+/* ── Pantalla completa de los juegos ───────────────────────────────────── */
+
+.juego-pantalla {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(10, 10, 10, 0.72);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  animation: fadeIn 200ms ease;
+}
+.juego-caja {
+  position: relative;
+  width: 100%; max-width: 420px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 28px 20px 24px;
+  text-align: center;
+  box-shadow: var(--shadow-xl);
+  animation: juegoEntra 320ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  outline: none;
+}
+.juego-cerrar {
+  position: absolute; top: 10px; right: 10px;
+  width: 40px; height: 40px;
+  border: none; background: none;
+  border-radius: 50%;
+  font-size: 1.1rem; color: var(--text-secondary);
+  cursor: pointer;
+}
+.juego-cerrar:disabled { opacity: 0.3; cursor: default; }
+.juego-cerrar:focus-visible { outline: 2px solid var(--primary); }
+.juego-titulo { font-size: 1.375rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+.juego-subtitulo { color: var(--text-secondary); font-size: 0.875rem; margin: 0 0 16px; }
+.juego-acciones { display: flex; flex-direction: column; gap: 8px; align-items: stretch; margin-top: 16px; }
+.juego-boton { min-height: 52px; font-size: 1.0625rem; }
+.juego-estado { color: var(--text-secondary); margin-top: 12px; font-family: var(--font-mono); font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+.ruleta-escena { display: flex; justify-content: center; }
+
+.juego-resultado {
+  position: relative;
+  margin-top: 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  animation: premioAparece 420ms cubic-bezier(0.2, 0.9, 0.3, 1.25);
+}
+.juego-premio-icono {
+  width: 72px; height: 72px;
+  display: grid; place-items: center;
+  font-size: 2.25rem;
+  border-radius: 50%;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+}
+.juego-premio-icono.neutro { background: var(--bg-secondary); box-shadow: none; }
+.juego-premio-titulo { font-size: 1.375rem; font-weight: 700; margin: 6px 0 0; letter-spacing: -0.02em; }
+.juego-premio-detalle { color: var(--text-secondary); margin: 0; }
+.juego-resultado .btn { margin-top: 10px; width: 100%; }
+
+/* Invitación a girar, en el paso de confirmar. */
+.ruleta-invitacion {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; margin-bottom: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--text); color: #fff;
+  font-size: 0.875rem;
+}
+.ruleta-invitacion > span:first-child { font-size: 1.5rem; }
+.ruleta-invitacion > span:nth-child(2) { flex: 1; }
+.ruleta-invitacion strong { color: #fff; }
+
+/* ── Caja sorpresa ─────────────────────────────────────────────────────── */
+
+.caja-escena { display: flex; justify-content: center; padding: 24px 0 8px; }
+.caja { position: relative; width: 150px; height: 140px; }
+.caja-cuerpo {
+  position: absolute; bottom: 0; left: 10px; right: 10px; height: 92px;
+  background: var(--primary);
+  border-radius: 6px;
+}
+.caja-tapa {
+  position: absolute; top: 18px; left: 0; right: 0; height: 34px;
+  background: var(--secondary);
+  border-radius: 6px;
+  z-index: 2;
+  transform-origin: 20% 100%;
+  transition: transform 520ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+.caja-cinta, .caja-mono { position: absolute; left: 50%; transform: translateX(-50%); background: #f2b705; }
+.caja-cinta { top: 0; bottom: 0; width: 18px; }
+.caja-mono { top: -16px; width: 34px; height: 18px; border-radius: 50% 50% 0 0; }
+.caja-escena.abriendo .caja { animation: cajaSacude 450ms ease-in-out infinite; }
+.caja-escena.abierta .caja-tapa { transform: translateY(-34px) rotate(-28deg); }
+.caja-premio {
+  position: absolute; left: 50%; bottom: 40px; z-index: 1;
+  width: 64px; height: 64px; margin-left: -32px;
+  display: grid; place-items: center;
+  font-size: 2rem; border-radius: 50%;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+  animation: cajaSube 600ms 180ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+}
+
+/* ── Rasca y ganá ──────────────────────────────────────────────────────── */
+
+.rasca-tarjeta {
+  position: relative;
+  width: 300px; max-width: 100%;
+  aspect-ratio: 2 / 1;
+  margin: 8px auto 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px dashed var(--border-hover);
+}
+.rasca-fondo {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: var(--primary-light);
+  font-size: 1.125rem;
+}
+.rasca-icono { font-size: 2rem; }
+.rasca-capa {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  touch-action: none;
+  cursor: grab;
+  transition: opacity 400ms ease;
+}
+.rasca-tarjeta.descubierta .rasca-capa { opacity: 0; pointer-events: none; }
+
+/* ── Tarjeta de fidelidad ──────────────────────────────────────────────── */
+
+.tarjeta-fid {
+  --fid-color: var(--primary);
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--fid-color);
+  border-radius: 12px;
+  padding: 16px;
+}
+.tarjeta-fid-cabeza { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.tarjeta-fid-titulo { font-family: var(--font-mono); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); }
+.tarjeta-fid-contador { font-size: 0.875rem; color: var(--text-secondary); }
+.tarjeta-fid-numero { display: inline-block; font-size: 1.5rem; color: var(--text); animation: contadorSube 380ms ease; }
+.tarjeta-fid-casillas {
+  list-style: none; padding: 0; margin: 0;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.fid-casilla {
+  position: relative;
+  aspect-ratio: 1;
+  border: 2px dashed var(--border-hover);
+  border-radius: 10px;
+  display: grid; place-items: center;
+  overflow: hidden;
+}
+.fid-casilla.ultima { border-style: solid; border-color: var(--fid-color); }
+.fid-casilla::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: var(--fid-color);
+  transform: scale(0);
+  border-radius: 8px;
+}
+.fid-casilla.sellada { border-style: solid; border-color: var(--fid-color); }
+.fid-casilla.sellada::before { transform: scale(1); }
+.fid-casilla.recien::before { animation: casillaLlena 520ms cubic-bezier(0.2, 0.9, 0.3, 1.3); }
+.fid-marca { position: relative; z-index: 1; font-size: 1.25rem; font-weight: 700; color: #fff; line-height: 1; }
+.fid-casilla:not(.sellada) .fid-marca { font-size: 1.125rem; }
+.fid-casilla.recien .fid-marca { animation: selloCae 520ms 120ms cubic-bezier(0.2, 0.9, 0.3, 1.4) both; }
+.tarjeta-fid.diseno-minimal .fid-casilla { border-radius: 50%; }
+.tarjeta-fid.diseno-minimal .fid-casilla::before { border-radius: 50%; }
+.tarjeta-fid.diseno-sellos .fid-casilla.sellada::before { opacity: 0.18; }
+.tarjeta-fid.diseno-sellos .fid-marca { color: inherit; }
+.tarjeta-fid-texto { margin: 12px 0 0; font-size: 0.875rem; color: var(--text-secondary); }
+.tarjeta-fid.compacta { padding: 12px; }
+.tarjeta-fid.compacta .tarjeta-fid-casillas { gap: 5px; }
+
+/* ── Confetti ──────────────────────────────────────────────────────────── */
+
+.celebracion { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
+.celebracion-pieza {
+  position: absolute; top: -12px;
+  height: 10px;
+  border-radius: 2px;
+  opacity: 0;
+  animation-name: confettiCae;
+  animation-timing-function: cubic-bezier(0.3, 0.6, 0.5, 1);
+  animation-fill-mode: forwards;
+}
+
+/* ── Tus premios ───────────────────────────────────────────────────────── */
+
+.premios-pagina { max-width: 640px; margin: 0 auto; padding: var(--space-lg) var(--space-md) var(--space-2xl); }
+.premios-pagina > h1 { margin-bottom: 0; }
+.premios-pagina > .text-secondary { margin-top: 2px; }
+.recompensa-bloque { margin-top: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-sm); }
+.recompensa-bloque-titulo { font-size: 1rem; margin: 0; }
+details.recompensa-bloque > summary { cursor: pointer; }
+.premio-aviso-nuevo { position: relative; overflow: hidden; margin-top: var(--space-md); }
+
+.recompensa-jugar { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-md); }
+.jugar-card {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  text-align: left;
+  font: inherit; color: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border-accent);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+button.jugar-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+button.jugar-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.jugar-card > span:nth-child(2) { flex: 1; min-width: 0; }
+.jugar-card.apagada { cursor: default; border-color: var(--border); opacity: 0.85; }
+.jugar-icono { font-size: 1.75rem; }
+.jugar-icono.latido { animation: latido 1.8s ease-in-out infinite; }
+.jugar-accion {
+  font-weight: 700; font-size: 0.875rem;
+  color: var(--sobre-primary);
+  background: var(--primary);
+  padding: 6px 12px; border-radius: 999px;
+}
+
+.premios-lista { display: flex; flex-direction: column; gap: var(--space-sm); }
+.premio-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.premio-card.nuevo { animation: premioAparece 500ms cubic-bezier(0.2, 0.9, 0.3, 1.25); border-color: var(--primary); }
+.premio-card.apagado { opacity: 0.7; }
+.premio-icono {
+  width: 48px; height: 48px; flex-shrink: 0;
+  display: grid; place-items: center;
+  font-size: 1.5rem; border-radius: 50%;
+}
+.premio-info { flex: 1; min-width: 0; }
+.premio-nombre { font-size: 1rem; margin: 0; }
+.premio-detalle { font-size: 0.8125rem; color: var(--text-secondary); margin: 2px 0 6px; }
+.premio-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 0.75rem; color: var(--text-secondary); margin: 0; }
+.premio-usar { flex-shrink: 0; }
+
+.progreso-lista { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.progreso-lista li { display: flex; gap: 10px; font-size: 0.875rem; line-height: 1.45; }
+.progreso-lista li > span:first-child { font-size: 1.25rem; }
+
+.cumple-campos { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.cumple-campos .form-group { margin-bottom: 0; flex: 1 1 100px; }
+
+/* ── En la reserva ─────────────────────────────────────────────────────── */
+
+.premio-reserva { text-align: left; border: 1px solid var(--border); min-width: 0; }
+.premio-reserva-titulo { font-weight: 700; padding: 0 4px; }
+.pago-opcion.deshabilitada { opacity: 0.55; cursor: not-allowed; }
+
+.timeslot.timeslot-promo { border-color: #f2b705; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 4px; }
+.timeslot-promo-texto { font-size: 0.625rem; font-weight: 700; color: #6b4e00; letter-spacing: 0.02em; }
+.timeslot.selected .timeslot-promo-texto { color: inherit; }
+
+@media (max-width: 640px) {
+  .premio-card { flex-wrap: wrap; }
+  .premio-usar { width: 100%; }
+  .ruleta-invitacion { flex-wrap: wrap; }
+  .tarjeta-fid-casillas { gap: 6px; }
+  .editor-campana .modal-footer { flex-wrap: wrap; }
+  .editor-campana .modal-footer .btn { flex: 1 1 auto; }
+}
+
+/* ── Animaciones ───────────────────────────────────────────────────────── */
+
+@keyframes juegoEntra { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes premioAparece { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
+@keyframes casillaLlena { from { transform: scale(0); } 70% { transform: scale(1.08); } to { transform: scale(1); } }
+@keyframes selloCae { from { opacity: 0; transform: scale(1.8) rotate(-18deg); } to { opacity: 1; transform: none; } }
+@keyframes contadorSube { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes cajaSacude { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
+@keyframes cajaSube { from { opacity: 0; transform: translateY(30px) scale(0.6); } to { opacity: 1; transform: translateY(-48px); } }
+@keyframes latido { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+@keyframes confettiCae {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0); }
+  100% { opacity: 0; transform: translate(var(--deriva), 320px) rotate(var(--giro)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .juego-pantalla, .juego-caja, .juego-resultado, .premio-card.nuevo,
+  .fid-casilla.recien::before, .fid-casilla.recien .fid-marca, .tarjeta-fid-numero,
+  .caja-escena.abriendo .caja, .caja-premio, .jugar-icono.latido, .celebracion-pieza {
+    animation: none !important;
+  }
+  .rueda-svg, .caja-tapa, .rasca-capa, .jugar-card { transition: none !important; }
+}
+
+/* Acceso a "Tus premios" desde Mis turnos. */
+.premios-acceso { display: flex; align-items: center; gap: 12px; margin-top: var(--space-md); color: inherit; text-decoration: none; border: 1px solid var(--border-accent); }
+.premios-acceso > span:first-child { font-size: 1.5rem; }
+.premios-acceso > span:nth-child(2) { flex: 1; }
+.premios-acceso:hover { box-shadow: var(--shadow-lg); }
+
+/* En el celular más angosto, el link de premios queda en el ícono: con el
+   nombre de la barbería y "Mis Turnos" al lado, el header no da para más. */
+@media (max-width: 420px) {
+  .header-link-texto { display: none; }
+}

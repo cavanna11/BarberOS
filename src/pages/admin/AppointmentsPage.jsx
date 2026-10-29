@@ -196,9 +196,14 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
     }
   };
   // Con membresía, lo que queda por cobrar son los adicionales (si los hay).
+  // Con premio o happy hour, el precio ya viene descontado: se aclara por qué.
   const precioDe = (apt) => (turnoConMembresia(apt)
     ? (Number(apt.price) > 0 ? `🪪 Membresía + ${formatPrice(apt.price, business?.currency)}` : '🪪 Membresía')
-    : formatPrice(apt.price, business?.currency));
+    : apt.premio
+      ? `${formatPrice(apt.price, business?.currency)} · 🎁 ${apt.premio.nombre}`
+      : apt.happyHour
+        ? `${formatPrice(apt.price, business?.currency)} · ⏰ −${apt.happyHour.porcentaje}%`
+        : formatPrice(apt.price, business?.currency));
 
   const updateStatus = (apt, status) => {
     updateAppointment(negocioDe(apt), apt.id, { status }).catch((err) => {
@@ -249,7 +254,7 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
             {devolviendo === apt.id ? 'Devolviendo…' : 'Devolver seña'}
           </button>
         )}
-        {isOwner && apt.type !== 'walkin' && ['pendiente', 'confirmada', 'completada'].includes(apt.status) && (
+        {isOwner && apt.type !== 'walkin' && !apt.premio && ['pendiente', 'confirmada', 'completada'].includes(apt.status) && (
           turnoConMembresia(apt)
             ? <button className="btn btn-sm btn-ghost" title="El turno vuelve a cobrarse" onClick={() => quitarMembresia(apt)}>Quitar membresía</button>
             : <button className="btn btn-sm btn-ghost" title="Cubrir este turno con la membresía del cliente" onClick={() => setAplicando(apt)}>🪪 Membresía</button>

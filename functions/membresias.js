@@ -814,6 +814,11 @@ exports.aplicarMembresia = onCall(OPCIONES, async (request) => {
     if (t.membresia && t.membresia.estado !== 'revertido' && t.membresia.estado !== 'liberado') {
       throw new HttpsError('already-exists', 'Este turno ya tiene la membresía aplicada.');
     }
+    // Un beneficio por turno: si el cliente reservó con un premio de
+    // recompensas, la membresía no se le suma encima.
+    if (t.premio?.id) {
+      throw new HttpsError('failed-precondition', `Este turno ya usa un premio (${t.premio.nombre || 'recompensa'}). Es un beneficio por turno.`);
+    }
     if (!['pendiente', 'confirmada', 'completada'].includes(t.status)) {
       throw new HttpsError('failed-precondition', 'Solo se aplica a un turno pendiente, confirmado o atendido.');
     }

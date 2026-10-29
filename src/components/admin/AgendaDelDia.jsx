@@ -329,6 +329,17 @@ export default function AgendaDelDia({
                               🪪 Membresía{a.membresia.planNombre ? ` · ${a.membresia.planNombre}` : ''} — no se cobra
                             </div>
                           )}
+                          {/* Un premio de recompensas o el happy hour: el barbero
+                              tiene que saberlo antes de cobrar (y el regalo
+                              "personalizado" lo tiene que entregar él). */}
+                          {a.premio && (
+                            <div className="agenda-turno-membresia">
+                              🎁 Premio: {a.premio.nombre}{a.premio.descuento > 0 ? ` — ya descontado` : a.premio.tipo === 'personalizado' ? ' — entregáselo' : ''}
+                            </div>
+                          )}
+                          {a.happyHour && (
+                            <div className="agenda-turno-membresia">⏰ Happy hour −{a.happyHour.porcentaje}% — ya descontado</div>
+                          )}
                           {!walkin && (
                             <div className="agenda-turno-origen" title={origenTurno(a).detalle}>
                               {origenTurno(a).icono} {origenTurno(a).etiqueta}

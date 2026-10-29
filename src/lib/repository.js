@@ -335,6 +335,8 @@ const CAMPOS_SOLO_PLATAFORMA = [
   'grupoId',
   // Membresías de clientes: se habilitan cuenta por cuenta desde la plataforma.
   'membresiasHabilitadas',
+  // Espejo público de las campañas de recompensas: lo escribe `guardarCampana`.
+  'recompensas',
 ];
 
 export async function updateBusiness(businessId, cambios, { esPlataforma = false } = {}) {
@@ -343,6 +345,10 @@ export async function updateBusiness(businessId, cambios, { esPlataforma = false
     for (const campo of CAMPOS_SOLO_PLATAFORMA) delete payload[campo];
   }
   delete payload.createdAt;
+  // El espejo de recompensas no lo escribe NINGÚN browser, ni la plataforma:
+  // Configuración manda el negocio entero, y con una copia de hace un rato
+  // volvería a prender una campaña que el dueño acaba de apagar.
+  delete payload.recompensas;
   await updateDoc(businessDoc(businessId), payload);
 }
 
@@ -632,6 +638,28 @@ export async function obtenerDatosDeMembresias(cuentaId) {
 export async function obtenerPeriodosDeMembresia(cuentaId, membresiaId) {
   const snap = await getDocs(collection(db, 'businesses', cuentaId, 'membresias', membresiaId, 'periodos'));
   return rows(snap).sort((a, b) => String(b.desde).localeCompare(String(a.desde)));
+}
+
+// ============================================================================
+// RECOMPENSAS — solo lectura, solo el dueño
+// ============================================================================
+// Se escriben únicamente por las Functions (`recompensas.js`). Se leen de una
+// vez al entrar a la pantalla: la configuración de una campaña no cambia
+// mientras se mira, y una suscripción sería pagar el listener en todo el panel.
+
+/** Las campañas configuradas de una barbería, por tipo: `{ ruleta: {...}, … }`. */
+export async function obtenerCampanas(businessId) {
+  const filas = rows(await getDocs(subCol(businessId, 'recompensas')));
+  return Object.fromEntries(filas.map((c) => [c.tipo || c.id, c]));
+}
+
+/**
+ * Los clientes con la tarjeta llena esperando que el dueño la reinicie (solo
+ * pasa con reinicio manual). Igualdad sobre un solo campo: no pide índice.
+ */
+export async function obtenerTarjetasCompletas(businessId) {
+  const q = query(subCol(businessId, 'recompensasClientes'), where('fidelidad.completa', '==', true));
+  return rows(await getDocs(q));
 }
 
 /** Escucha una subcolección del negocio (professionals, services, etc.). */

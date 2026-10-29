@@ -577,6 +577,10 @@ src/
   /membresiaPlanes /membresias /membresiaUsos /membresiaPagos
                                   🔒 membresías de clientes (en la principal);
                                      solo las escriben Functions
+  /recompensas /premios /recompensasClientes /recompensasSellos
+                                  🔒 campañas de fidelización, premios y
+                                     tarjetas; solo las escriben Functions
+                                     (espejo público en `recompensas` del negocio)
   /notifications                  🔒 dueño todas; barbero las suyas. Las
                                      escribe un trigger; el browser solo
                                      marca leídas
@@ -2514,6 +2518,122 @@ existe en vez de dar acceso de dueño.
 plata o benefician a un cliente puntual, y parecía la decisión correcta
 mientras nadie la pida.
 
+### Recompensas: ruleta, tarjeta de fidelidad y compañía (29/10/2026)
+
+Siete campañas que cada barbería configura y prende por separado, desde
+**Recompensas** en el panel (al lado de Cupones): 🎡 ruleta, 🎟️ tarjeta de
+fidelidad, 🎁 caja sorpresa, 🎫 rasca y ganá, ⏰ happy hour, 🔥 racha y 🎂
+cumpleaños. **Todas nacen apagadas**: activar una que nunca se configuró abre
+el editor, y el servidor rechaza prender algo sin configuración válida.
+
+**Un motor, siete juegos.** Los juegos solo deciden CUÁNDO se gana y QUÉ
+definición de premio sale. El premio es siempre el mismo documento y lo maneja
+un solo ciclo, el mismo que el cupón:
+
+```
+disponible ──reservar──▶ reservado ──"vino"/"no vino"──▶ usado
+     ▲                        │
+     └──────cancelar──────────┘        (vencido: pasó venceEn sin usarse)
+```
+
+**El premio NO se consume al reservar**: queda `reservado` atado al turno y lo
+consume el trigger `onTurnoRecompensas` cuando el turno pasa a `completada` (o
+`no_asistio`, igual que el cupón: el horario quedó bloqueado). Cancelar lo
+devuelve, que era lo pedido: nadie pierde un premio por cancelar. Un turno
+ATENDIDO que después "se cancela" no lo devuelve (sería usarlo dos veces), como
+la membresía.
+
+**Dónde vive cada pieza:**
+
+| | |
+|---|---|
+| `functions/recompensasMotor.js` | el motor, puro: validación, sorteo, descuentos, tarjeta, racha, cumpleaños |
+| `src/utils/recompensas.js` | **generado** del anterior (`node scripts/espejar-recompensas.mjs`); no se edita a mano |
+| `functions/recompensas.js` | callables, el trigger, y lo que usa `createAppointment` |
+| `pages/admin/RecompensasPage.jsx` | grilla de campañas + editor por tipo, con la validación en vivo del MISMO motor |
+| `pages/client/PremiosPage.jsx` | "Tus premios" en `/:slug/premios` |
+| `components/recompensas/` | rueda, juegos (pantalla completa), tarjeta, premios, confetti |
+
+**Modelo** (todo por BARBERÍA, como los cupones: en una cuenta con sucursales
+cada local tiene sus campañas, sus servicios y sus clientes; un premio de una
+sucursal en otra "no existe"):
+
+```
+businesses/{id}.recompensas               espejo PÚBLICO de lo activo, sin probabilidades
+                                          (lo lee la reserva antes de la sesión y
+                                          createAppointment para el happy hour). Solo
+                                          lo escribe guardarCampana; protegido en Rules
+                                          y en CAMPOS_SOLO_PLATAFORMA
+businesses/{id}/recompensas/{tipo}        🔒 la campaña completa; lee el dueño
+businesses/{id}/premios/{id}              🔒 dueño + el cliente los suyos
+businesses/{id}/recompensasClientes/{uid} 🔒 tarjeta, racha, tiradas, rascas, cumpleaños
+businesses/{id}/recompensasSellos/{aptId} 🔒 un sello por turno atendido
+```
+
+Rules en `false` para todo eso: lo escribe solo el servidor. Ids que hacen
+imposible el doble conteo sin chequear nada: el sello ES el id del turno, y cada
+premio lleva el id de lo que lo originó (`fid_{uid}_{ciclo}`, `rasca_{turno}`,
+`ruleta_{uid}_{fecha}`, `racha_{uid}_{inicio}_{nivel}`, `cumple_{uid}_{año}`).
+
+**Callables:** `guardarCampana` (dueño/plataforma; sin `config` solo prende o
+apaga), `reiniciarTarjeta`, `misRecompensas` (una llamada al abrir "Tus
+premios"; de paso escribe los vencidos y genera el regalo de cumpleaños — sin
+proceso nocturno), `guardarCumpleanos` (UNA vez), `jugarRecompensa` (el
+SERVIDOR sortea con `crypto`; el browser anima hacia el índice que le
+devuelven).
+
+**En la reserva:** `createAppointment` recibe `premioId` (está en la lista
+blanca de `functions.js`) y lo valida ADENTRO de la transacción: suyo, de esta
+barbería, disponible, el turno antes de `venceEn`, vale para el servicio. Si no
+sirve, rompe con el motivo (como la membresía: el cliente eligió no pagar).
+**Un beneficio por turno**: premio + cupón o premio + membresía se rechaza, y
+`aplicarMembresia` del dueño también rechaza un turno con premio. El **happy
+hour** es automático y corre solo si no hay ningún otro. El turno guarda
+`premio` / `happyHour` + `precioLista` + `descuento`; las Rules no dejan
+crearlos desde el browser ni tocarle precio o servicio a un turno con premio
+(`noTocaLaMembresia` ahora cubre los tres).
+
+**Casos límite, decididos:**
+
+- *Campaña desactivada:* no se juega ni se gana más; lo ganado vale hasta su
+  vencimiento y la tarjeta conserva los sellos (si se prende, sigue).
+- *Cambian las probabilidades:* solo para las tiradas siguientes; el premio es
+  una copia de la definición del momento en que se ganó.
+- *Cambia la cantidad de casillas:* la tarjeta en curso conserva las suyas; la
+  siguiente toma las nuevas.
+- *Reinicio manual:* la tarjeta llena queda llena y los turnos de en el medio
+  NO suman, hasta que el dueño la reinicia (lista en la tarjeta de la campaña).
+- *Reprogramar:* es el mismo turno, el premio lo sigue.
+- *Turno eliminado:* no pasa; los turnos no se borran (Rules), se cancelan.
+- *"Vino" deshecho:* el sello se saca si es de la tarjeta en curso y no la
+  completó; un premio ya entregado no se retira por un clic. La racha no vuelve.
+- *Solo suman los turnos del cliente con SU cuenta* (`origen: 'cliente'`): los
+  que carga el staff llevan el uid del que los cargó.
+- *Ruleta:* aparece al llegar a confirmar (paso 6), nunca después del pago, una
+  vez cada `frecuenciaDias`. Porciones iguales: no muestra las chances.
+- *Rasca:* una por turno atendido, hasta 5 sin raspar.
+
+**Accesibilidad y movimiento:** los juegos son `role="dialog"` con foco
+atrapado, Escape (salvo girando) y el foco devuelto; el resultado toma el foco;
+cada casilla dice si está sellada (✓ además del color); `prefers-reduced-motion`
+saltea todas las animaciones (JS y CSS) y muestra el resultado directo.
+
+**Trampa del compilador de React** (encontrada acá): pasarle a una función
+importada un valor que sale de un documento (`finalPrice`) hace que el
+compilador suponga que se puede mutar y deje de memoizar todo lo que depende del
+servicio — `react-hooks/preserve-manual-memoization` en un `useMemo` que nadie
+tocó. Se arregla con `Number(...)` antes de pasarlo.
+
+```bash
+node scripts/test-recompensas.mjs             # 117 casos, sin emulador (y que las dos copias sean iguales)
+node scripts/test-recompensas-emulador.mjs    # 105 casos
+node scripts/sembrar-recompensas-emulador.mjs # escenario con las 7 prendidas para el browser
+```
+
+Orden de despliegue: **Rules y Functions primero, front después** (un front
+nuevo contra un servidor viejo mandaría `premioId` y el servidor lo ignoraría:
+el cliente vería el descuento y se le cobraría el precio de lista).
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### `createAppointment` del cliente es una LISTA BLANCA (22/10/2026)
@@ -2794,6 +2914,8 @@ node scripts/test-planes-emulador.mjs      # topes y funciones de cada plan
 node scripts/test-resenas-emulador.mjs     # reseñas: cuándo, quién y una por turno
 node scripts/test-membresias-emulador.mjs  # membresías: uso, fraude, webhooks (MP falso)
 node scripts/test-turnos-fijos-emulador.mjs # turnos fijos: serie, salteos, baja
+node scripts/test-recompensas-emulador.mjs  # recompensas: permisos, sorteo, premio en la reserva, tarjeta
+node scripts/test-recompensas.mjs           # el motor de recompensas (sin emulador)
 node scripts/auditar-rules-emulador.mjs    # aislamiento entre barberías
 node scripts/test-whatsapp.mjs             # links de wa.me (no necesita emulador)
 node scripts/test-preview.mjs              # vista previa del link (tampoco)

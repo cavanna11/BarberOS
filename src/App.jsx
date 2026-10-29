@@ -35,6 +35,7 @@ const BookingPage      = lazy(importarConReintento(() => import('./pages/client/
 const PaginaBarberia   = lazy(importarConReintento(() => import('./pages/client/PaginaBarberia')));
 const ConfirmationPage = lazy(importarConReintento(() => import('./pages/client/ConfirmationPage')));
 const MyAppointments   = lazy(importarConReintento(() => import('./pages/client/MyAppointments')));
+const PremiosPage      = lazy(importarConReintento(() => import('./pages/client/PremiosPage')));
 const CuentaPublica    = lazy(importarConReintento(() => import('./pages/client/CuentaPublica')));
 
 // Panel del negocio
@@ -47,6 +48,7 @@ const SettingsPage        = lazy(importarConReintento(() => import('./pages/admi
 const SucursalesPage      = lazy(importarConReintento(() => import('./pages/admin/SucursalesPage')));
 const PaginaPage          = lazy(importarConReintento(() => import('./pages/admin/PaginaPage')));
 const CuponesPage         = lazy(importarConReintento(() => import('./pages/admin/CuponesPage')));
+const RecompensasPage     = lazy(importarConReintento(() => import('./pages/admin/RecompensasPage')));
 const MembresiasPage      = lazy(importarConReintento(() => import('./pages/admin/MembresiasPage')));
 const ResenasPage         = lazy(importarConReintento(() => import('./pages/admin/ResenasPage')));
 const AdminsPage          = lazy(importarConReintento(() => import('./pages/admin/AdminsPage')));
@@ -328,6 +330,7 @@ export default function App() {
           <Route path="resenas" element={<ResenasPage />} />
           <Route path="pagina" element={<PaginaPage />} />
           <Route path="cupones" element={<CuponesPage />} />
+          <Route path="recompensas" element={<RecompensasPage />} />
           <Route path="membresias" element={<MembresiasPage />} />
           <Route path="configuracion" element={<SettingsPage />} />
           <Route path="ajustes" element={<ProfileSettingsPage />} />
@@ -379,6 +382,13 @@ export default function App() {
         <Route path="/:businessSlug/mis-citas" element={
           <ProtectedRoute>
             <RutaDeCliente><MyAppointments /></RutaDeCliente>
+          </ProtectedRoute>
+        } />
+        {/* "Tus premios": la tarjeta de fidelidad, la caja, la rasca y los
+            premios ganados. Pide sesión: todo lo que muestra es de la cuenta. */}
+        <Route path="/:businessSlug/premios" element={
+          <ProtectedRoute>
+            <RutaDeCliente><PremiosPage /></RutaDeCliente>
           </ProtectedRoute>
         } />
 

@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { enOrden } from '../../utils/orden';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBooking } from '../../contexts/BookingContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenantData';
-import { createAppointment, getBusySlots, miMembresia } from '../../lib/functions';
+import { createAppointment, getBusySlots, miMembresia, misRecompensas } from '../../lib/functions';
 import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/availabilityEngine';
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
 import { servicioAplicaAlDia, servicioAplicaAlHorario, describirVentana, tieneVentana } from '../../utils/ventanaServicio';
@@ -17,6 +17,10 @@ import { recordarCupon, cuponRecordado, olvidarCupon, describirCupon } from '../
 import MembresiaEnReserva from '../../components/client/MembresiaEnReserva';
 import { coberturaDelServicio } from '../../utils/membresias';
 import { obtenerSubcoleccion } from '../../lib/repository';
+import { calcularPremio, premioUsableEn, enHappyHour, descuentoHappyHour } from '../../utils/recompensas';
+import { RuletaJuego } from '../../components/recompensas/Juegos';
+import { PremioEnReserva } from '../../components/recompensas/Premios';
+import { premioRecordado, olvidarPremio } from '../../utils/premioElegido';
 import {
   paraLaVenta, totalDeProductos, detalleDeProductos, seleccionParaElServidor,
   maximoAPedir, stockDe, STOCK_BAJO,
@@ -339,7 +343,7 @@ function DatePicker({ selectedDate, onSelect, profIds = [], schedules: allSchedu
 }
 
 // ---- TIME SLOT GRID ----
-function TimeSlotGrid({ slots, selectedSlot, onSelect, date, cargando }) {
+function TimeSlotGrid({ slots, selectedSlot, onSelect, date, cargando, destacar = null }) {
   const morning = slots.filter(s => parseInt(s.startTime.split(':')[0]) < 13);
   const afternoon = slots.filter(s => parseInt(s.startTime.split(':')[0]) >= 13);
 
@@ -381,10 +385,12 @@ function TimeSlotGrid({ slots, selectedSlot, onSelect, date, cargando }) {
               {morning.map(slot => (
                 <button
                   key={slot.startTime}
-                  className={`timeslot ${selectedSlot?.startTime === slot.startTime ? 'selected' : ''}`}
+                  className={`timeslot ${selectedSlot?.startTime === slot.startTime ? 'selected' : ''} ${destacar?.(slot) ? 'timeslot-promo' : ''}`}
                   onClick={() => onSelect(slot)}
+                  aria-label={destacar?.(slot) ? `${slot.startTime}, ${destacar(slot)}` : undefined}
                 >
                   {slot.startTime}
+                  {destacar?.(slot) && <span className="timeslot-promo-texto" aria-hidden="true">{destacar(slot)}</span>}
                 </button>
               ))}
             </div>
@@ -397,10 +403,12 @@ function TimeSlotGrid({ slots, selectedSlot, onSelect, date, cargando }) {
               {afternoon.map(slot => (
                 <button
                   key={slot.startTime}
-                  className={`timeslot ${selectedSlot?.startTime === slot.startTime ? 'selected' : ''}`}
+                  className={`timeslot ${selectedSlot?.startTime === slot.startTime ? 'selected' : ''} ${destacar?.(slot) ? 'timeslot-promo' : ''}`}
                   onClick={() => onSelect(slot)}
+                  aria-label={destacar?.(slot) ? `${slot.startTime}, ${destacar(slot)}` : undefined}
                 >
                   {slot.startTime}
+                  {destacar?.(slot) && <span className="timeslot-promo-texto" aria-hidden="true">{destacar(slot)}</span>}
                 </button>
               ))}
             </div>
@@ -475,8 +483,17 @@ function PersonalInfoStep({ user, phone, onPhoneChange }) {
   );
 }
 
+/**
+ * Los premios que trajo `misRecompensas` más los que ganó recién en la ruleta
+ * (sin repetir): el recién ganado tiene que poder elegirse sin volver a pedir
+ * todo al servidor.
+ */
+function juntarPremios(ganados, delServidor = []) {
+  return [...ganados, ...(delServidor || []).filter((p) => !ganados.some((g) => g.id === p.id))];
+}
+
 // ---- SUMMARY ----
-function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [], productos = [], acompanante = null, recargoTarjeta = 0 }) {
+function BookingSummary({ professional, service, date, timeSlot, price, precioLista, currency, clientName, clientPhone, conMembresia = false, adicionales = [], productos = [], acompanante = null, recargoTarjeta = 0, beneficio = null }) {
   return (
     <div>
       <h2 className="booking-step-title">Confirmar tu reserva</h2>
@@ -513,6 +530,12 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
               <div className="summary-row">
                 <span className="summary-label">👥 Turnos</span>
                 <span className="summary-value">2 seguidos · + {formatPrice(acompanante.price, currency)}</span>
+              </div>
+            )}
+            {beneficio && (
+              <div className="summary-row">
+                <span className="summary-label">{beneficio.icono} {beneficio.titulo}</span>
+                <span className="summary-value">{beneficio.texto}</span>
               </div>
             )}
             {recargoTarjeta > 0 && (
@@ -654,6 +677,40 @@ export default function BookingPage() {
     return () => { vigente = false; };
   }, [uidCliente, businessId]);
 
+  // ── Recompensas ──────────────────────────────────────────────────────────
+  // Los premios del cliente y si tiene tirada de ruleta. Una llamada, cuando
+  // ya entró y solo si la barbería tiene alguna campaña prendida (el espejo
+  // público lo dice sin leer nada más). Vista previa; decide createAppointment.
+  const campanas = business?.recompensas || {};
+  const hayRecompensas = Object.keys(campanas).length > 0;
+  const [recomp, setRecomp] = useState({ clave: null, r: null });
+  const claveRecomp = `${businessId}|${uidCliente}`;
+  useEffect(() => {
+    if (!uidCliente || !businessId || !hayRecompensas) return undefined;
+    let vigente = true;
+    misRecompensas(businessId)
+      .then((r) => { if (vigente) setRecomp({ clave: claveRecomp, r }); })
+      .catch((err) => console.warn('[BookingPage] No se pudieron leer tus premios:', err.message));
+    return () => { vigente = false; };
+  }, [uidCliente, businessId, hayRecompensas, claveRecomp]);
+  const datosRecomp = recomp.clave === claveRecomp ? recomp.r : null;
+  // Los que ganó recién en la ruleta, sin volver a pedir todo.
+  const [ganados, setGanados] = useState([]);
+  const misPremios = juntarPremios(ganados, datosRecomp?.premios);
+  // El premio elegido. Arranca con el que tocó "Usar" en Tus premios.
+  const [premioElegido, setPremioElegido] = useState(() => (businessId ? premioRecordado(businessId) : null));
+  const [ruletaCerrada, setRuletaCerrada] = useState(false);
+  // Ya giró en esta visita (ganara o no): el servidor no le deja otra tirada,
+  // así que la invitación se va. Es estado aparte del resultado a propósito:
+  // si la apertura dependiera de "tiene tirada", ganar la cerraría en el acto
+  // y el cliente no vería qué ganó.
+  const [yaGiro, setYaGiro] = useState(false);
+  const alJugar = useCallback(() => setYaGiro(true), []);
+  const alGanar = useCallback((premio) => {
+    setGanados((g) => [premio, ...g]);
+    setPremioElegido(premio.id);
+  }, []);
+
   const { sucursales, cargando: cargandoSucursales } = useSucursalesPublicas(business);
   const grupoId = business?.grupoId || null;
   // El link de una SUCURSAL entra directo a esa sucursal: el que lo abrió ya
@@ -739,7 +796,37 @@ export default function BookingPage() {
     [productosDisponibles, prodElegidos]
   );
   const totalProductos = totalDeProductos(productosDisponibles, prodElegidos);
-  const precioSinRecargo = (conMembresia ? 0 : cupon ? cupon.precioFinal : finalPrice)
+
+  // Un beneficio por turno: membresía, cupón o premio, en ese orden de
+  // precedencia (el que ya está puesto bloquea a los otros en pantalla). El
+  // happy hour es automático y solo corre si no hay ninguno de los tres.
+  // Mismo orden que createAppointment, que es el que manda.
+  const hoyLocal = toDateString(new Date());
+  // Un número de verdad: `finalPrice` sale del documento del servicio, y si se
+  // le pasa tal cual a una función importada, el compilador de React supone
+  // que lo puede mutar y deja de memoizar todo lo que depende del servicio.
+  const precioBase = Number(finalPrice) || 0;
+  const premioSel = misPremios.find((p) => p.id === premioElegido && p.estado === 'disponible') || null;
+  const calcPremio = premioSel && !conMembresia && !cupon && premioUsableEn(premioSel, { fecha: date, hoy: hoyLocal }).usable
+    ? calcularPremio(premioSel, { precio: precioBase, serviceId })
+    : null;
+  const conPremio = Boolean(calcPremio?.aplica);
+  const cfgHappy = campanas.happyHour || null;
+  const happy = !conMembresia && !cupon && !conPremio && timeSlot
+    && enHappyHour(cfgHappy, { fecha: date, startTime: timeSlot.startTime, serviceId })
+    ? descuentoHappyHour(cfgHappy, precioBase)
+    : null;
+  const precioServicio = conMembresia ? 0
+    : cupon ? cupon.precioFinal
+      : conPremio ? calcPremio.precioFinal
+        : happy ? happy.precioFinal
+          : finalPrice;
+  const beneficio = conPremio
+    ? { icono: premioSel.icono || '🎁', titulo: 'Premio', texto: premioSel.nombre }
+    : happy && happy.descuento > 0
+      ? { icono: '⏰', titulo: 'Happy hour', texto: `${cfgHappy.porcentaje}% menos` }
+      : null;
+  const precioSinRecargo = precioServicio
     + totalAdicionales + totalAcompanante + totalProductos;
   // Recargo por tarjeta o QR: solo si la barbería lo cobra, si hay algo que
   // pagar y si NO paga todo online (ahí no paga nada en el local).
@@ -753,6 +840,10 @@ export default function BookingPage() {
   // Con recargo, "pagar todo ahora" es el camino de la tarjeta: no hay otro.
   const ofreceTotal = Boolean(infoSena?.permiteTotal) && !(montoRecargo > 0);
   const finalDuration = ps?.customDuration || selectedService?.durationMinutes || 30;
+  // La ruleta aparece sola al llegar a confirmar, una vez. Derivado, no un
+  // efecto: si la cierra ("Ahora no"), queda el botón para abrirla otra vez.
+  const tieneTirada = Boolean(campanas.ruleta && datosRecomp?.puede?.ruleta) && !yaGiro;
+  const ruletaAbierta = step === 6 && !ruletaCerrada && (tieneTirada || yaGiro);
 
   // El cupón del link se anota y se saca de la URL. Sacarlo no es cosmética:
   // el cliente copia la dirección de la barra para mandársela a un amigo, y
@@ -1059,7 +1150,9 @@ export default function BookingPage() {
         clientEmail: user.email,
         // SOLO el código. El descuento lo recalcula el servidor sobre el precio
         // del documento del servicio; lo que se mostró acá es una vista previa.
-        cuponCodigo: conMembresia ? null : cupon?.codigo || null,
+        cuponCodigo: conMembresia || conPremio ? null : cupon?.codigo || null,
+        // El premio elegido: solo el id. El servidor revalida y lo reserva.
+        premioId: conPremio ? premioSel.id : null,
         adicionales: adicionalesElegidos.map((s) => s.id),
         // Solo ids y cantidades: el precio y el stock los resuelve el servidor.
         productos: seleccionParaElServidor(prodElegidos),
@@ -1075,6 +1168,8 @@ export default function BookingPage() {
       datos.price = res.price;
       datos.endTime = res.endTime;
       datos.membresia = res.membresia || null;
+      datos.premio = res.premio || null;
+      datos.happyHour = res.happyHour || null;
       datos.adicionales = adicionalesElegidos.map((s) => ({ id: s.id, name: s.name, price: s.price }));
       datos.acompanante = acompServicio
         ? { serviceId: acompServicio.id, name: acompServicio.name, price: acompServicio.price, durationMinutes: acompDuracion }
@@ -1093,6 +1188,7 @@ export default function BookingPage() {
       borrarPendiente();
       // El cupón ya se usó: que no se aplique solo en la reserva siguiente.
       olvidarCupon(businessId);
+      olvidarPremio(businessId);
       dispatch({ type: 'RESET' });
       navigate(`/${slug}/confirmacion`, {
         state: { appointment: { ...datos, id, businessId, status: 'pendiente' } },
@@ -1248,6 +1344,7 @@ export default function BookingPage() {
           onSelect={s => dispatch({ type: 'SET_TIMESLOT', payload: s })}
           date={date}
           cargando={cargandoOcupados}
+          destacar={cfgHappy ? (slot) => (enHappyHour(cfgHappy, { fecha: date, startTime: slot.startTime, serviceId }) ? `⏰ -${cfgHappy.porcentaje}%` : null) : null}
         />
       )}
 
@@ -1274,6 +1371,42 @@ export default function BookingPage() {
           cobertura={cobertura}
           usar={usarMembresia}
           onUsar={setUsarMembresia}
+        />
+      )}
+
+      {/* La ruleta: justo antes de confirmar, nunca después de pagar. Lo que
+          gane queda elegido abajo y se ve en el total. */}
+      {step === 6 && tieneTirada && (
+        <div className="ruleta-invitacion">
+          <span aria-hidden="true">🎡</span>
+          <span><strong>¡Tenés una tirada!</strong> Girá la ruleta antes de confirmar.</span>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setRuletaCerrada(false)}>
+            Girar
+          </button>
+        </div>
+      )}
+      {ruletaAbierta && (
+        <RuletaJuego
+          businessId={businessId}
+          segmentos={campanas.ruleta.segmentos || []}
+          onGanado={alGanar}
+          onJugado={alJugar}
+          onCerrar={() => setRuletaCerrada(true)}
+        />
+      )}
+
+      {step === 6 && selectedService && (
+        <PremioEnReserva
+          premios={misPremios}
+          elegido={conPremio ? premioSel.id : null}
+          onElegir={setPremioElegido}
+          serviceId={serviceId}
+          fecha={date}
+          hoy={hoyLocal}
+          precio={finalPrice}
+          currency={business.currency}
+          services={services}
+          bloqueadoPor={conMembresia ? 'tu membresía' : cupon ? `el cupón ${cupon.codigo}` : null}
         />
       )}
 
@@ -1365,8 +1498,9 @@ export default function BookingPage() {
           date={date}
           timeSlot={timeSlot}
           price={precioAPagar}
-          precioLista={cupon && !conMembresia ? finalPrice : null}
+          precioLista={(cupon || conPremio || happy) && !conMembresia ? finalPrice : null}
           conMembresia={conMembresia}
+          beneficio={beneficio}
           adicionales={adicionalesElegidos}
           productos={productosDetalle}
           acompanante={acompServicio ? { name: acompServicio.name, price: acompServicio.price, durationMinutes: acompDuracion } : null}
@@ -1379,7 +1513,7 @@ export default function BookingPage() {
 
       {/* El cupón va DESPUÉS del resumen: primero que vea qué está reservando.
           Arranca cerrado, salvo que el cupón haya venido en el link. */}
-      {step === 6 && selectedService && !conMembresia && (
+      {step === 6 && selectedService && !conMembresia && !conPremio && (
         <CuponEnReserva
           businessId={businessId}
           serviceId={serviceId}

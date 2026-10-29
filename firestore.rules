@@ -238,7 +238,13 @@ service cloud.firestore {
                    // mentirle a la pantalla sobre su propia deuda.
                    'proximoVencimiento',
                    // Membresías: las prende la plataforma, cuenta por cuenta.
-                   'membresiasHabilitadas']) &&
+                   'membresiasHabilitadas',
+                   // El espejo público de las campañas de recompensas activas
+                   // (ruleta, happy hour…). Lo escribe `guardarCampana`
+                   // después de validarlo, y `createAppointment` aplica el
+                   // happy hour leyéndolo de acá: si el dueño lo pudiera
+                   // escribir a mano, se saltearía la validación.
+                   'recompensas']) &&
         (!request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['primaryColor', 'secondaryColor', 'accentColor'])
          || capacidadEn(resource.data, 'colores')) &&
@@ -523,6 +529,42 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // ── Recompensas (ruleta, tarjeta, caja, rasca, racha, cumpleaños) ────
+      // NADIE escribe acá desde el browser, ni el dueño: todo va por las
+      // functions de `recompensas.js`. Una campaña regala plata y un premio es
+      // un descuento real; si el browser pudiera escribir, el cliente se
+      // daría un corte gratis y el dueño se inflaría los números.
+      //
+      // La configuración completa (con probabilidades) la lee el dueño. Lo que
+      // necesita ver cualquiera —sin probabilidades— está en el espejo
+      // `recompensas` del documento del negocio, que ya es público.
+      match /recompensas/{tipo} {
+        allow read: if canManage(bizId) || esEquipoPlataforma();
+        allow write: if false;
+      }
+
+      // Los premios: el dueño todos, el cliente los suyos. El barbero no: lo
+      // que necesita (que el turno trae un premio) viaja en el turno.
+      match /premios/{premioId} {
+        allow read: if canManage(bizId) || esEquipoPlataforma()
+                       || (signedIn() && resource.data.userId == request.auth.uid);
+        allow write: if false;
+      }
+
+      // La tarjeta, la racha y las tiradas de cada cliente. El id ES su uid.
+      match /recompensasClientes/{clienteUid} {
+        allow read: if canManage(bizId) || esEquipoPlataforma()
+                       || (signedIn() && clienteUid == request.auth.uid);
+        allow write: if false;
+      }
+
+      // Un sello por turno atendido (el id ES el del turno): es lo que hace
+      // imposible que un turno sume dos veces.
+      match /recompensasSellos/{aptId} {
+        allow read: if canManage(bizId) || esEquipoPlataforma();
+        allow write: if false;
+      }
+
       // ── Turnos ───────────────────────────────────────────────────────────
       // El beneficio de la membresía viaja en el turno (`membresia`) y lo
       // escribe SOLO el servidor. Desde el browser no se puede ponerlo, ni
@@ -531,9 +573,13 @@ service cloud.firestore {
       // cubierto por "Corte" a "Corte + barba" sería sacarle al plan algo que
       // no incluye. Fecha, hora y estado sí se tocan: los sigue el trigger
       // onTurnoMembresia (cancelar libera el uso, atender o faltar lo consume).
+      // Lo mismo vale para el PREMIO de recompensas y el HAPPY HOUR: los pone
+      // el servidor al reservar, y a un turno con premio no se le cambia el
+      // servicio ni el precio (sería usar un "corte gratis" para un servicio
+      // que el premio no incluye, o cobrarle al cliente lo que ganó).
       function noTocaLaMembresia() {
-        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['membresia'])
-               && (!('membresia' in resource.data)
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['membresia', 'premio', 'happyHour'])
+               && ((!('membresia' in resource.data) && !('premio' in resource.data))
                    || !request.resource.data.diff(resource.data).affectedKeys()
                          .hasAny(['serviceId', 'price', 'precioLista', 'userId']));
       }
@@ -583,6 +629,8 @@ service cloud.firestore {
         // no puede plantarle un turno a otra cuenta, que lo vería en "Mis citas".
         allow create: if request.resource.data.userId == request.auth.uid
                          && !('membresia' in request.resource.data)
+                         && !('premio' in request.resource.data)
+                         && !('happyHour' in request.resource.data)
                          && (isPlatform()
                              || manejaLaAgenda(bizId)
                              || (esBarbero(bizId)

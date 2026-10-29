@@ -34,6 +34,9 @@ const ownerNavItems = [
   // mostrando qué es y desde qué plan está.
   { to: '/admin/pagina',        icon: '🔗', label: 'Mi página', capacidad: CAPACIDADES.pagina, desde: 'Plan Intermedio' },
   { to: '/admin/cupones',       icon: '🎟️', label: 'Cupones' },
+  // Ruleta, tarjeta de fidelidad, caja sorpresa… Al lado de Cupones porque es
+  // la misma familia: cosas que la barbería regala para que vuelvan.
+  { to: '/admin/recompensas',   icon: '🎁', label: 'Recompensas' },
   // Solo en las cuentas donde la plataforma las habilitó (y para la plataforma,
   // que es la que las prende desde esa misma pantalla).
   { to: '/admin/membresias',    icon: '🪪', label: 'Membresías', soloMembresias: true, desde: 'Se activa aparte' },

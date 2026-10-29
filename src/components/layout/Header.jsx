@@ -48,6 +48,13 @@ export default function Header() {
                 📅 Mis Turnos
               </Link>
             )}
+            {/* Solo si la barbería tiene alguna recompensa prendida: el
+                espejo público dice cuáles, sin una lectura de más. */}
+            {slug && Object.keys(business?.recompensas || {}).length > 0 && (
+              <Link to={`${home}/premios`} className="btn btn-ghost btn-sm" aria-label="Premios">
+                🎁 <span className="header-link-texto">Premios</span>
+              </Link>
+            )}
             <button onClick={logout} className="btn btn-ghost btn-sm">
               Salir
             </button>

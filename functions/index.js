@@ -31,6 +31,7 @@ const productosSrv = require('./productos');
 const membresias = require('./membresias');
 // Turnos fijos: el cliente de todos los martes a las 18 (ver turnosFijos.js).
 const turnosFijos = require('./turnosFijos');
+const recompensas = require('./recompensas');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
@@ -858,7 +859,19 @@ exports.createAppointment = onCall(async (request) => {
     // Cómo dice que va a pagar en el local: 'efectivo' (o transferencia) o
     // 'tarjeta' (o QR). Solo importa si la barbería cobra recargo por tarjeta.
     metodoPago = null,
+    // El premio que eligió usar (ruleta, tarjeta, caja…). Solo el id: si es
+    // suyo, si sigue disponible, si vale para este servicio y esta fecha, y
+    // cuánto descuenta, lo decide `recompensas.prepararPremio` adentro de la
+    // transacción.
+    premioId = null,
   } = request.data || {};
+
+  // Un beneficio por turno. El premio no se acumula con el cupón ni con la
+  // membresía: se rechaza en vez de elegir uno en silencio, porque cuál prefiere
+  // usar es decisión del cliente y la pantalla ya no deja mandar los dos.
+  if (premioId && (cuponCodigo || usarMembresia === true)) {
+    throw new HttpsError('invalid-argument', 'Elegí un solo beneficio: el premio, el cupón o la membresía.');
+  }
 
   // "Cualquier barbero": el cliente no tiene preferencia y QUIÉN lo atiende lo
   // decide el servidor. Es un centinela y no un professionalId vacío para que
@@ -1124,6 +1137,10 @@ exports.createAppointment = onCall(async (request) => {
   let cobro = { precioLista: precio, descuento: 0, precioFinal: precio, cuponCodigo: null, cuponId: null };
   // El beneficio de la membresía, si el cliente la usó. Se completa adentro.
   let membresiaAplicada = null;
+  // El premio y el happy hour que quedan en el turno. También se completan
+  // adentro, y también vuelven a cero en cada intento.
+  let premioAplicado = null;
+  let happyHourAplicado = null;
 
   // ── Solapamiento, en transacción ──────────────────────────────────────────
   // Va en transacción y no en un get suelto porque dos personas mirando la
@@ -1162,6 +1179,8 @@ exports.createAppointment = onCall(async (request) => {
     // a todo el mundo, sin dejar rastro.
     cobro = { precioLista: precio, descuento: 0, precioFinal: precio, cuponCodigo: null, cuponId: null };
     membresiaAplicada = null;
+    premioAplicado = null;
+    happyHourAplicado = null;
     tipoPago = tipoPagoPedido;
     montoSena = 0;
     profElegido = candidatos[0];
@@ -1290,6 +1309,40 @@ exports.createAppointment = onCall(async (request) => {
       }
     }
 
+    // ── El premio ───────────────────────────────────────────────────────────
+    // Misma razón que la membresía para ir acá: dos pestañas reservando con el
+    // mismo premio leen "disponible" las dos si se chequea afuera. Y misma
+    // conducta: si no sirve, rompe con el motivo (el cliente eligió no pagar).
+    let premioPreparado = null;
+    if (premioId) {
+      premioPreparado = await recompensas.prepararPremio(tx, {
+        businessId, premioId, uid: request.auth.uid, serviceId, precio, appointmentDate,
+      });
+      cobro = {
+        precioLista: precio,
+        descuento: premioPreparado.calculo.descuento,
+        precioFinal: premioPreparado.calculo.precioFinal,
+        cuponCodigo: null,
+        cuponId: null,
+      };
+      premioAplicado = recompensas.snapshotDelPremio(premioPreparado);
+    }
+
+    // ── Happy hour ──────────────────────────────────────────────────────────
+    // Automático, sin que el cliente haga nada, y SOLO si no usa otro
+    // beneficio: no se acumula con cupón, premio ni membresía. Sale del espejo
+    // del negocio (ya leído), que escribe solo el servidor.
+    if (!usoMembresia && !cuponRef && !premioPreparado) {
+      const hh = recompensas.happyHourDelTurno(negocio, { appointmentDate, startTime, serviceId });
+      if (hh) {
+        const d = recompensas.motor.descuentoHappyHour(hh, precio);
+        if (d.descuento > 0) {
+          cobro = { precioLista: precio, descuento: d.descuento, precioFinal: d.precioFinal, cuponCodigo: null, cuponId: null };
+          happyHourAplicado = { porcentaje: Number(hh.porcentaje), descuento: d.descuento };
+        }
+      }
+    }
+
     // Los productos. Se leen ACÁ, adentro de la transacción y antes de
     // cualquier escritura: el stock es lo único de todo el turno que puede
     // agotarse entre que el cliente lo ve y aprieta el botón, y leerlo afuera
@@ -1376,6 +1429,12 @@ exports.createAppointment = onCall(async (request) => {
       // Snapshot del beneficio aplicado. Lo escribe SOLO el servidor: las Rules
       // rechazan cualquier escritura del browser que toque este campo.
       ...(membresia ? { membresia, precioLista: precio } : {}),
+      // El premio o el happy hour, con el precio de lista para el tachado. Los
+      // escribe SOLO el servidor (las Rules los rechazan desde el browser), y
+      // el premio lo siguen el trigger `onTurnoRecompensas`: al atenderse se
+      // consume, al cancelarse vuelve.
+      ...(premioAplicado ? { premio: premioAplicado, precioLista: cobro.precioLista, descuento: cobro.descuento } : {}),
+      ...(happyHourAplicado ? { happyHour: happyHourAplicado, precioLista: cobro.precioLista, descuento: cobro.descuento } : {}),
       ...(extras.length ? { adicionales: extras } : {}),
       // Los productos quedan en el turno para que el barbero sepa qué tiene
       // que entregar, y además en `ventasProductos` —un documento por turno—
@@ -1448,6 +1507,8 @@ exports.createAppointment = onCall(async (request) => {
       fecha: appointmentDate,
     });
 
+    if (premioPreparado) recompensas.reservarPremio(tx, premioPreparado, ref.id);
+
     if (cuponRef) {
       // Un documento por uso, con el id del turno. Mismo truco que las reseñas:
       // Firestore no deja dos documentos con el mismo id, así que el mismo
@@ -1515,7 +1576,8 @@ exports.createAppointment = onCall(async (request) => {
   // cliente que no eligió necesita enterarse.
   return {
     status: 'created', id: ref.id, price: cobro.precioFinal, ...cobro,
-    membresia: membresiaAplicada, endTime: minutesToTime(fin),
+    membresia: membresiaAplicada, premio: premioAplicado, happyHour: happyHourAplicado,
+    endTime: minutesToTime(fin),
     professionalId: profElegido.id, professionalName: profElegido.name,
   };
 });
@@ -3292,6 +3354,18 @@ exports.miMembresia = membresias.miMembresia;
 exports.onTurnoMembresia = membresias.onTurnoMembresia;
 exports.reconciliarMembresias = membresias.reconciliarMembresias;
 exports.reconciliarMembresiasDiario = membresias.reconciliarMembresiasDiario;
+
+// ============================================================================
+// 3c. RECOMPENSAS (ruleta, tarjeta de fidelidad, caja, rasca, happy hour,
+//     racha, cumpleaños). Ver recompensas.js. El premio al reservar está en
+//     createAppointment, arriba.
+// ============================================================================
+exports.guardarCampana = recompensas.guardarCampana;
+exports.reiniciarTarjeta = recompensas.reiniciarTarjeta;
+exports.misRecompensas = recompensas.misRecompensas;
+exports.guardarCumpleanos = recompensas.guardarCumpleanos;
+exports.jugarRecompensa = recompensas.jugarRecompensa;
+exports.onTurnoRecompensas = recompensas.onTurnoRecompensas;
 
 // Turnos fijos (se agendan solos cada N semanas).
 exports.crearTurnoFijo = turnosFijos.crearTurnoFijo;
