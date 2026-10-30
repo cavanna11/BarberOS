@@ -6680,3 +6680,8 @@ button.jugar-card:focus-visible { outline: 2px solid var(--primary); outline-off
 @media (max-width: 420px) {
   .header-link-texto { display: none; }
 }
+
+/* La fila de "Sin premio" en el editor de la ruleta, la caja y la rasca: se ve
+   distinta de un premio porque NO es uno (es lo que sobra para llegar a 100). */
+.editor-sin-premio { border-style: dashed; background: var(--bg-secondary); }
+.editor-aviso-cero { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

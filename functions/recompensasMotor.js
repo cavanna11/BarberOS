@@ -104,7 +104,12 @@ function normalizarPremio(p, { conProbabilidad = false, indice = 0 } = {}) {
   if (tipo === 'porcentaje') {
     valor = Number(d.valor);
     if (!Number.isFinite(valor) || valor < 1 || valor > 100 || !Number.isInteger(valor)) {
-      errores.push('El porcentaje tiene que ser un número entero entre 1 y 100.');
+      // El caso real que lo trajo: un barbero cargó "0% de descuento" como
+      // "seguí participando". Eso no es un premio: es lo que sobra para
+      // llegar a 100, y el mensaje se lo dice.
+      errores.push(Number(d.valor) === 0
+        ? 'Un premio de 0% no es un premio: para "Seguí participando" usá la fila "Sin premio" (es lo que sobra para llegar a 100%).'
+        : 'El porcentaje tiene que ser un número entero entre 1 y 100.');
       valor = Math.min(100, Math.max(0, Math.round(Number(d.valor) || 0)));
     }
   } else if (tipo === 'monto') {
@@ -241,6 +246,49 @@ function sortear(premios, r) {
     if (ticket < acumulado) return i;
   }
   return -1;
+}
+
+/**
+ * Reparte `objetivo` (en %) entre los premios, en proporción a lo que cada uno
+ * tiene hoy. Es el "si subo el Sin premio a 40, que los demás se acomoden":
+ * con 40 sin premio, los premios pasan a sumar 60 y conservan su peso
+ * relativo (el 5% que salía el doble que el 10% sigue saliendo el doble).
+ *
+ * En puntos básicos y con el resto al de mayor fracción, así la suma da EXACTO
+ * el objetivo, sin 59,99. Ningún premio queda en 0 (eso lo sacaría del sorteo
+ * sin que nadie lo decida): mínimo 0,01%. Si todos estaban en 0, se reparte
+ * parejo.
+ *
+ * Devuelve los premios con `probabilidad` nueva; no toca nada más.
+ */
+function repartirProbabilidades(premios, objetivo) {
+  const lista = Array.isArray(premios) ? premios : [];
+  if (!lista.length) return [];
+  const meta = Math.max(lista.length, Math.min(TOTAL_PB, aPB(Number(objetivo) || 0)));
+  const pesos = lista.map((p) => Math.max(0, aPB(p.probabilidad) || 0));
+  const total = pesos.reduce((t, x) => t + x, 0);
+  const base = total > 0 ? pesos : lista.map(() => 1);
+  const sumaBase = total > 0 ? total : lista.length;
+
+  // Se reparte el total en proporción (así 25 de 50 escalado a 60 da 30 y no
+  // 29,99) y recién después se le asegura el mínimo al que quedó en 0,
+  // sacándoselo al más grande.
+  const crudos = base.map((w) => (w / sumaBase) * meta);
+  const enteros = crudos.map((x) => Math.floor(x));
+  let falta = meta - enteros.reduce((t, x) => t + x, 0);
+  const orden = crudos
+    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
+    .sort((a, b) => b.frac - a.frac);
+  for (let k = 0; falta > 0; k = (k + 1) % orden.length, falta--) enteros[orden[k].i] += 1;
+  for (let i = 0; i < enteros.length; i++) {
+    while (enteros[i] < 1) {
+      const mayor = enteros.indexOf(Math.max(...enteros));
+      enteros[mayor] -= 1;
+      enteros[i] += 1;
+    }
+  }
+
+  return lista.map((p, i) => ({ ...p, probabilidad: enteros[i] / 100 }));
 }
 
 /** Puntos básicos que quedan para "sin premio". */
@@ -600,6 +648,7 @@ module.exports = {
   premioUsableEn,
   sortear,
   restoSinPremio,
+  repartirProbabilidades,
   segmentosDelJuego,
   validarCampana,
   vistaPublica,

@@ -160,6 +160,35 @@ console.log('\nSorteo:');
 }
 ambos('servidor y web sortean igual', (m) => [0, 0.1, 0.5, 0.88, 0.9, 0.95].map((r) => m.sortear(m.validarCampana('ruleta', { premios: ejemplo }).config.premios, r)));
 
+// ── 2b. "Si subo el Sin premio, que los demás se acomoden" ─────────────────
+// El pedido de un barbero: cargó "0% de descuento" al 40% como "seguí
+// participando" y no lo dejaba guardar.
+console.log('\nSin premio y reparto automático:');
+{
+  const r = srv.validarCampana('ruleta', { premios: [premio('porcentaje', 0, 40, { nombre: 'Seguí participando' }), premio('porcentaje', 10, 30)] });
+  chequear('un premio de 0% se rechaza con un mensaje que dice qué hacer', !r.ok && r.errores.some((e) => /Sin premio/.test(e)), r.errores.join(' | '));
+
+  const cinco = [premio('porcentaje', 5, 40), premio('porcentaje', 10, 25), premio('porcentaje', 15, 15), premio('porcentaje', 20, 8), premio('gratis', 0, 2)];
+  const nuevos = srv.repartirProbabilidades(cinco, 60);
+  const suma = nuevos.reduce((t, p) => t + Math.round(p.probabilidad * 100), 0);
+  chequear('sin premio en 40%: los premios pasan a sumar EXACTO 60', suma === 6000, JSON.stringify(nuevos.map((p) => p.probabilidad)));
+  chequear('…y la configuración queda válida, con 40% sin premio',
+    srv.validarCampana('ruleta', { premios: nuevos }).ok && srv.restoSinPremio(nuevos) === 4000);
+  chequear('…conservando el peso relativo (el 5% sigue saliendo 5 veces más que el 10%... de 40 a 25)',
+    nuevos[0].probabilidad > nuevos[1].probabilidad && nuevos[1].probabilidad > nuevos[2].probabilidad && nuevos[3].probabilidad > nuevos[4].probabilidad);
+  chequear('el corte gratis (2%) no desaparece: queda en 1,33%', Math.abs(nuevos[4].probabilidad - 1.33) < 0.011, String(nuevos[4].probabilidad));
+  const delBarbero = srv.repartirProbabilidades([premio('porcentaje', 10, 25), premio('porcentaje', 15, 15), premio('porcentaje', 20, 8), premio('gratis', 0, 2)], 60);
+  chequear('el caso del barbero (25/15/8/2 a 60) da números redondos: 30 / 18 / 9,6 / 2,4',
+    JSON.stringify(delBarbero.map((p) => p.probabilidad)) === JSON.stringify([30, 18, 9.6, 2.4]), JSON.stringify(delBarbero.map((p) => p.probabilidad)));
+  chequear('repartir 100 entre 3 da 33,34 + 33,33 + 33,33',
+    srv.repartirProbabilidades([premio('porcentaje', 5, 10), premio('porcentaje', 5, 10), premio('porcentaje', 5, 10)], 100)
+      .reduce((t, p) => t + Math.round(p.probabilidad * 100), 0) === 10000);
+  chequear('todos en 0: se reparte parejo', srv.repartirProbabilidades([premio('porcentaje', 5, 0), premio('porcentaje', 5, 0)], 50).every((p) => p.probabilidad === 25));
+  chequear('objetivo 0: nadie queda en 0 (mínimo 0,01%)', srv.repartirProbabilidades([premio('porcentaje', 5, 30), premio('porcentaje', 5, 30)], 0).every((p) => p.probabilidad >= 0.01));
+  chequear('solo toca la probabilidad', srv.repartirProbabilidades([premio('porcentaje', 7, 30, { nombre: 'X', color: '#123456' })], 50)[0].nombre === 'X');
+  ambos('servidor y web reparten igual', (m) => m.repartirProbabilidades(cinco, 60).map((p) => p.probabilidad));
+}
+
 // ── 3. La plata ─────────────────────────────────────────────────────────────
 console.log('\nDescuentos de cada premio:');
 for (const [titulo, p, precio, esperado] of [

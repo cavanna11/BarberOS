@@ -2613,6 +2613,17 @@ crearlos desde el browser ni tocarle precio o servicio a un turno con premio
   vez cada `frecuenciaDias`. Porciones iguales: no muestra las chances.
 - *Rasca:* una por turno atendido, hasta 5 sin raspar.
 
+**"Sin premio" es una fila, no un premio (30/10/2026).** Un barbero quería un
+"seguí participando" al 40%, lo cargó como "0% de descuento" y no lo dejaba
+guardar (el porcentaje va de 1 a 100). El "sin premio" ya existía, pero era lo
+que sobraba hasta 100 y no se veía en ningún lado. Ahora el editor lo muestra
+como una fila propia con su porcentaje y el texto que ve el cliente; editarla
+reacomoda los premios en proporción para que todo sume 100
+(`repartirProbabilidades`, en el motor: reparte en puntos básicos, cierra
+EXACTO y nadie queda en 0). Un premio de 0% muestra "Convertir en Sin premio",
+y si los premios se pasan de 100 hay un botón para acomodarlos. No se guarda
+nada nuevo: el servidor sigue derivando el sin premio como el resto.
+
 **Accesibilidad y movimiento:** los juegos son `role="dialog"` con foco
 atrapado, Escape (salvo girando) y el foco devuelto; el resultado toma el foco;
 cada casilla dice si está sellada (✓ además del color); `prefers-reduced-motion`
@@ -2625,7 +2636,7 @@ servicio — `react-hooks/preserve-manual-memoization` en un `useMemo` que nadie
 tocó. Se arregla con `Number(...)` antes de pasarlo.
 
 ```bash
-node scripts/test-recompensas.mjs             # 117 casos, sin emulador (y que las dos copias sean iguales)
+node scripts/test-recompensas.mjs             # 128 casos, sin emulador (y que las dos copias sean iguales)
 node scripts/test-recompensas-emulador.mjs    # 105 casos
 node scripts/sembrar-recompensas-emulador.mjs # escenario con las 7 prendidas para el browser
 ```

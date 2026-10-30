@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import { useTenant } from '../../hooks/useTenantData';
 import { obtenerCampanas, obtenerTarjetasCompletas } from '../../lib/repository';
 import { guardarCampana, reiniciarTarjeta } from '../../lib/functions';
-import { validarCampana, restoSinPremio, segmentosDelJuego, describirPremio, COLORES } from '../../utils/recompensas';
+import { validarCampana, restoSinPremio, segmentosDelJuego, describirPremio, repartirProbabilidades, COLORES } from '../../utils/recompensas';
 import { diasEnTexto } from '../../components/recompensas/movimiento';
 import Rueda from '../../components/recompensas/Rueda';
 import TarjetaFidelidad from '../../components/recompensas/TarjetaFidelidad';
@@ -356,7 +356,7 @@ function EditorCampana({ tipo, inicial, activa, services, onCerrar, onGuardar })
 
 const ICONOS = ['🎁', '✂️', '💈', '💸', '⭐', '🔥', '☕', '🧴', '🎉', '🎂'];
 
-function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQuitar = null, titulo }) {
+function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQuitar = null, titulo, aviso = null }) {
   const p = premio || {};
   const cambiar = (patch) => onCambio({ ...p, ...patch });
   const ids = p.serviceIds || [];
@@ -435,6 +435,7 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
           </div>
         </details>
       )}
+      {aviso}
       {onQuitar && (
         <button type="button" className="btn btn-sm btn-ghost editor-quitar" onClick={onQuitar}>Quitar</button>
       )}
@@ -452,7 +453,44 @@ function EditorSorteo({ tipo, cfg, set, services }) {
 
   // La vista previa se arma con lo que haya, aunque todavía no valide.
   const normalizados = premios.map((p) => ({ ...p, valor: Number(p.valor) || 0, probabilidad: Number(p.probabilidad) || 0, nombre: p.nombre || describirPremio({ ...p, valor: Number(p.valor) || 0 }) }));
+  const sumaPremios = (10000 - restoSinPremio(normalizados)) / 100;
   const sinPremio = restoSinPremio(normalizados) / 100;
+
+  // "Sin premio" no es un premio más: es lo que sobra para llegar a 100. Por
+  // eso no se guarda (el servidor lo deriva), pero se MUESTRA como una fila con
+  // su porcentaje, porque un barbero cargó "0% de descuento" al 40% buscando
+  // justamente esto y no lo encontró.
+  //
+  // Editar esa fila reacomoda los premios en proporción para que todo sume
+  // 100: con "Sin premio" en 40, los premios pasan a sumar 60 y conservan su
+  // peso entre ellos. Lo tipeado se guarda aparte mientras se escribe (con
+  // "4" camino a "40" no hay que repartir dos veces sobre algo a medias).
+  const [sinPremioTexto, setSinPremioTexto] = useState(null);
+  const valorSinPremio = sinPremioTexto ?? (sinPremio >= 0 ? String(Math.round(sinPremio * 100) / 100) : '0');
+  const fijarSinPremio = (texto) => {
+    setSinPremioTexto(texto);
+    const n = Number(String(texto).replace(',', '.'));
+    if (texto === '' || !Number.isFinite(n) || n < 0 || n >= 100 || !premios.length) return;
+    set({ premios: repartirProbabilidades(premios, 100 - n) });
+  };
+  // Lo que el dueño quiere de "sin premio" cuando la suma se pasó: lo último
+  // que escribió ahí, o nada.
+  const objetivoSinPremio = Math.min(99, Math.max(0, Number(String(sinPremioTexto ?? '0').replace(',', '.')) || 0));
+  const ajustar = () => {
+    setSinPremioTexto(null);
+    set({ premios: repartirProbabilidades(premios, 100 - objetivoSinPremio) });
+  };
+  // Un "0% de descuento" cargado como premio: se convierte en la fila de
+  // "Sin premio" con su probabilidad, y los demás se reacomodan.
+  const convertirEnSinPremio = (i) => {
+    const prob = Math.min(99, Math.max(0, Number(premios[i].probabilidad) || 0));
+    const resto = premios.filter((_, j) => j !== i);
+    setSinPremioTexto(null);
+    set({
+      premios: resto.length ? repartirProbabilidades(resto, 100 - prob) : resto,
+      textoSinPremio: premios[i].nombre && premios[i].nombre !== '0% OFF' ? premios[i].nombre : cfg.textoSinPremio,
+    });
+  };
 
   return (
     <>
@@ -469,12 +507,13 @@ function EditorSorteo({ tipo, cfg, set, services }) {
         ))}
         {sinPremio > 0 && <span className="sin-premio" style={{ width: `${sinPremio}%` }} title={`Sin premio: ${sinPremio}%`} />}
       </div>
-      <p className={`text-sm ${sinPremio < 0 ? 'texto-error' : 'text-secondary'}`}>
+      <p className={`text-sm ${sinPremio < 0 ? 'texto-error' : 'text-secondary'}`} aria-live="polite">
         {sinPremio < 0
-          ? `Te pasaste por ${Math.abs(sinPremio).toLocaleString('es-AR')} puntos: la suma no puede superar 100%.`
-          : sinPremio > 0
-            ? `${sinPremio.toLocaleString('es-AR')}% de las veces no sale premio ("${cfg.textoSinPremio || 'Seguí participando'}").`
-            : 'Siempre sale un premio.'}
+          ? <>Los premios suman {sumaPremios.toLocaleString('es-AR')}%: no pueden pasar de 100.{' '}
+              <button type="button" className="btn btn-sm btn-outline" onClick={ajustar}>
+                Acomodar para que sume 100%{objetivoSinPremio > 0 ? ` (con ${objetivoSinPremio}% sin premio)` : ''}
+              </button></>
+          : <>Premios: {sumaPremios.toLocaleString('es-AR')}% · Sin premio: {sinPremio.toLocaleString('es-AR')}% · Total: 100%</>}
       </p>
 
       {premios.map((p, i) => (
@@ -482,12 +521,45 @@ function EditorSorteo({ tipo, cfg, set, services }) {
           key={i}
           titulo={`Premio ${i + 1}`}
           premio={p}
-          onCambio={(np) => cambiarPremio(i, np)}
+          onCambio={(np) => { setSinPremioTexto(null); cambiarPremio(i, np); }}
           services={services}
           conProbabilidad
-          onQuitar={premios.length > 1 ? () => quitar(i) : null}
+          onQuitar={premios.length > 1 ? () => { setSinPremioTexto(null); quitar(i); } : null}
+          aviso={p.tipo === 'porcentaje' && String(p.valor) !== '' && Number(p.valor) === 0 ? (
+            <div className="notice notice-info editor-aviso-cero">
+              Un 0% no es un premio. Si querés un <strong>"Seguí participando"</strong>, va en la fila de abajo, <strong>Sin premio</strong>.{' '}
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => convertirEnSinPremio(i)}>
+                Convertir en "Sin premio"
+              </button>
+            </div>
+          ) : null}
         />
       ))}
+
+      {/* La fila de "Sin premio": no se guarda como premio, es lo que sobra. */}
+      <fieldset className="editor-premio editor-sin-premio">
+        <legend className="editor-premio-titulo">🙂 Sin premio</legend>
+        <div className="editor-premio-fila">
+          <label className="form-group crece">
+            <span className="form-label">Lo que ve el cliente</span>
+            <input type="text" maxLength={40} className="form-input" value={cfg.textoSinPremio || ''} placeholder="Seguí participando" onChange={(e) => set({ textoSinPremio: e.target.value })} />
+          </label>
+          <label className="form-group angosto">
+            <span className="form-label">Probabilidad %</span>
+            <input
+              type="number" inputMode="decimal" step="0.01" min="0" max="99" className="form-input"
+              value={valorSinPremio}
+              onChange={(e) => fijarSinPremio(e.target.value)}
+              onBlur={() => setSinPremioTexto(null)}
+              aria-describedby="sin-premio-ayuda"
+            />
+          </label>
+        </div>
+        <p id="sin-premio-ayuda" className="text-sm text-muted" style={{ margin: 0 }}>
+          Si la cambiás, los premios de arriba se acomodan solos para que todo sume 100%, sin perder la proporción entre ellos.
+        </p>
+      </fieldset>
+
       {premios.length < (tipo === 'ruleta' ? 11 : 12) && (
         <button type="button" className="btn btn-sm btn-outline" onClick={agregar}>+ Agregar premio</button>
       )}
@@ -502,10 +574,6 @@ function EditorSorteo({ tipo, cfg, set, services }) {
         <label className="form-group">
           <span className="form-label">El premio vence a los (días)</span>
           <input type="number" min="1" max="365" className="form-input" value={cfg.diasVencimiento ?? ''} onChange={(e) => set({ diasVencimiento: e.target.value })} />
-        </label>
-        <label className="form-group">
-          <span className="form-label">Texto cuando no sale premio</span>
-          <input type="text" maxLength={40} className="form-input" value={cfg.textoSinPremio || ''} onChange={(e) => set({ textoSinPremio: e.target.value })} />
         </label>
       </div>
       {tipo === 'rasca' && <p className="text-sm text-secondary">Se gana una tarjeta para raspar por cada turno que marcás como atendido.</p>}
