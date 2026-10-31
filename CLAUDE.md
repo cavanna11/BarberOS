@@ -2645,6 +2645,108 @@ Orden de despliegue: **Rules y Functions primero, front después** (un front
 nuevo contra un servidor viejo mandaría `premioId` y el servidor lo ignoraría:
 el cliente vería el descuento y se le cobraría el precio de lista).
 
+### "Se traba y hasta que no cerrás no vuelve" (30/10/2026)
+
+Tres síntomas que los barberos contaban como uno: pantalla en blanco o
+cargando, "no encontramos este negocio" en un link que existe, y "todavía no
+hay turnos disponibles" en una barbería con la agenda llena. Siempre se
+arreglaba cerrando la app. Eran cinco agujeros, y todos son la misma idea:
+**la app esperaba un evento que con la red colgada no llega nunca.**
+
+1. **El canal muerto que el SDK cree vivo.** El celular que vuelve de estar
+   bloqueado, el paso de wifi a datos, el navegador de Instagram: el canal de
+   Firestore queda abierto pero no trae nada. Los listeners no reciben ni datos
+   ni error, así que ni el descarte de vacíos ni el reintento de `escuchar()`
+   corrían nunca. Ahora:
+   - `reconectarFirestore()` (`lib/firebase.js`) apaga y prende la red del SDK:
+     cierra los canales, corta la espera de hasta un minuto y vuelve a conectar
+     todos los listeners sin perder lo que hay en pantalla. Es lo mismo que
+     cerrar y abrir la app. Una sola a la vez, con 2,5 s mínimo entre dos.
+   - Se llama sola: al volver la red (`online`), al volver a la app después de
+     más de 20 s afuera (`visibilitychange`) y cuando Safari restaura la página
+     desde su caché (`pageshow`).
+   - **Vigía en `escuchar()`**: si en 12 s un listener no recibió una respuesta
+     del SERVIDOR (`metadata.fromCache === false`, por eso
+     `includeMetadataChanges`), reconecta, y así cada vez más espaciado hasta
+     un minuto. Si tenía servidor y vuelve a contestar el caché, se rearma.
+   - Adentro de una app (`navegadorEmbebido()`) Firestore va por **long
+     polling forzado**: HTTP común, que pasa por todos los proxies.
+2. **Leer el link se podía colgar para siempre.** `getDocFromServer` con la red
+   colgada no falla: espera. Sin error no corría ningún reintento. Ahora tiene
+   un reloj de 8 s, el respaldo es `getDocFromCache` (un `getDoc` común también
+   espera), y después del primer fallo se reconecta antes de reintentar.
+3. **"No pudimos cargar" era un final.** Ahora se reintenta solo cada 4 s
+   (reconectando antes), y si el negocio llega tarde por el listener el cartel
+   se saca: antes quedaba puesto con los datos ya en la mano. Medido con la red
+   colgada a propósito: vuelve sola a los 5 s de que vuelve la señal.
+4. **"Todavía no hay turnos disponibles" mientras cargaba.** La reserva lo
+   mostraba con `professionals.length === 0`, que es tanto "no hay" como "no
+   llegó". `BusinessSync` ahora marca qué colecciones contestaron
+   (`state.listas`, acción `SET_COLECCION`, hook `useColeccionesListas`) y la
+   reserva, la agenda del día, Citas y Mis turnos muestran "cargando" hasta
+   saber. A los 15 s la reserva dice que es la conexión, con Reintentar.
+5. **La sesión esperaba una Cloud Function.** `applyPendingClaims` (en frío,
+   segundos) se llamaba ANTES de dejar entrar, a casi todo cliente nuevo. Ahora
+   va después, en segundo plano. La lectura del token lleva reloj de 8 s.
+
+Y dos más que salieron al mirar esto:
+
+- **El link con mayúsculas o con basura al final** (`/NeytanBarber777`,
+  `/franlook-olivos.`, que ponen Instagram y los teclados) era "no existe": los
+  ids de Firestore distinguen mayúsculas. `BusinessSync` lo pasa por `slugify`
+  y corrige la URL con `replace`.
+- **`getBusySlots` esperaba 70 s** (el default de los callables): ahora dos
+  intentos de 12 s y, si no, la grilla sigue sin los ocupados (el servidor
+  frena el solapamiento al confirmar).
+
+Para probarlo sin celular: en la consola, colgar los `XMLHttpRequest`/`fetch`
+que van a `:8080` del emulador sin rechazarlos (que no respondan nunca),
+navegar a otra barbería, y soltarlos.
+
+### El horario: el turno tiene que TERMINAR dentro (30/10/2026)
+
+Reemplaza lo de "Un turno entra si EMPIEZA dentro del horario" (22/09) más
+abajo. Es la regla de Calendly, Fresha, Booksy y compañía: **se ofrece un
+horario si el servicio termina antes del cierre, con el cierre incluido.**
+Atiende hasta las 19:00 → el corte de 60 de las 18:00 se ofrece (termina 19:00
+justo); el de las 18:30 no.
+
+Con la regla vieja, Franlook ofrecía las **19:45 para un servicio de 90
+minutos** en un local que cierra 20:00 (terminaba 21:15). Simulado con el
+motor real sobre los horarios de producción, el último horario quedó en
+cierre − duración para todos.
+
+Está en `availabilityEngine.js` (cuarta excepción al "no tocar"),
+`createAppointment` y `turnosFijos.js`. Con acompañante o "2 turnos" el bloque
+entero tiene que entrar. **La promo por franja sigue mirando solo el inicio**
+(es una regla de precio, no de horario), y **reasignar un turno ya tomado**
+a otro barbero también (es una decisión del mostrador sobre algo que ya
+existe).
+
+⚠️ **Lucas, de Volcado**, atiende martes a jueves hasta las 17:30 con turnos de
+60: pierde el de las 17:00. Si lo atiende, su horario es hasta las 18:00.
+
+### El cliente puede entrar con mail y contraseña (30/10/2026)
+
+Un cliente de Neytan con iPhone no podía reservar nunca: Google lo mandaba a
+otra página. Dos cosas:
+
+- **Cuando Google no puede abrir su ventana, redirige**, y al volver la app
+  arranca de cero y `location.state.from` ya no existe: el cliente quedaba
+  logueado en el login o en "creá tu barbería", sin su reserva. Ahora el
+  destino va también a sessionStorage (`utils/vueltaDelLogin.js`) y
+  `PublicOnlyRoute` lo devuelve ahí.
+- **Cuenta de cliente con mail y contraseña** (`registerWithPassword`,
+  `resetPassword` en `AuthContext`): "¿Google no te deja? Entrá con tu mail" en
+  el login de la reserva, con crear cuenta, entrar y "me olvidé la
+  contraseña". No abre ventanas ni redirige, así que anda también adentro de
+  Instagram. No da ningún permiso; lo que exige mail verificado (permisos
+  pendientes, atar una membresía cargada a mano) lo sigue exigiendo el
+  servidor, y se manda el mail de verificación.
+
+Al 30/10: 191 clientes en Auth, todos de Google, 176 reservaron alguna vez, 15
+entraron y nunca reservaron (13 en los últimos 30 días).
+
 ## Trampas ya pagadas (no volver a descubrirlas)
 
 ### `createAppointment` del cliente es una LISTA BLANCA (22/10/2026)

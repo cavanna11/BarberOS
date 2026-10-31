@@ -28,12 +28,12 @@ const MENSAJES = {
   'functions/permission-denied': 'No tenés permiso para esta operación.',
 };
 
-async function llamar(nombre, datos) {
+async function llamar(nombre, datos, opciones) {
   if (!functions) {
     throw new Error('Firebase no está inicializado: revisá las variables de entorno.');
   }
   try {
-    const { data } = await httpsCallable(functions, nombre)(datos);
+    const { data } = await httpsCallable(functions, nombre, opciones)(datos);
     return data;
   } catch (err) {
     // Se conserva el código original: quien llama a veces necesita distinguir
@@ -149,8 +149,19 @@ export function cambiarProfesional({ businessId = null, appointmentId, professio
  * necesita saber qué está ocupado. Respuesta: { ocupados: [...] }.
  * No pide sesión: la grilla se mira antes de entrar.
  */
-export function getBusySlots({ businessId, professionalId, appointmentDate }) {
-  return llamar('getBusySlots', { businessId, professionalId, appointmentDate });
+export async function getBusySlots({ businessId, professionalId, appointmentDate }) {
+  // Es una lectura: se puede cortar y repetir sin riesgo. Sin reloj propio, el
+  // callable espera 70 segundos, y todo ese rato el cliente mira "Buscando
+  // horarios libres…" con la function fría o la señal floja. Dos intentos de
+  // 12 segundos; si no, la grilla sigue sin los ocupados (el servidor frena
+  // igual el solapamiento al confirmar).
+  const datos = { businessId, professionalId, appointmentDate };
+  try {
+    return await llamar('getBusySlots', datos, { timeout: 12000 });
+  } catch (err) {
+    if (err?.code === 'functions/invalid-argument' || err?.code === 'functions/permission-denied') throw err;
+    return llamar('getBusySlots', datos, { timeout: 12000 });
+  }
 }
 
 /**

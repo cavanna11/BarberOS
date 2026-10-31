@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useTenant } from '../../hooks/useTenantData';
+import { useTenant, useColeccionesListas } from '../../hooks/useTenantData';
 import { createAppointment, updateAppointment } from '../../lib/repository';
 import { cambiarProfesional } from '../../lib/functions';
 import { calculateStats } from '../../utils/statsCalculator';
@@ -100,6 +100,7 @@ function WalkinModal({ onClose, onConfirm }) {
 export default function DashboardPage() {
   const { user } = useAuth();
   const { appointments, professionals, services, professionalServices, business, businessId } = useTenant();
+  const turnosListos = useColeccionesListas('appointments');
   const [showWalkinModal, setShowWalkinModal] = useState(false);
   const [agendando, setAgendando] = useState(false);
 
@@ -214,6 +215,7 @@ export default function DashboardPage() {
         {/* La agenda del día, como calendario. Es lo que mira entre corte y corte. */}
         <div className="card">
           <AgendaDelDia
+            cargando={!turnosListos}
             appointments={visibleAppointments}
             professionals={professionals}
             services={services}
@@ -463,6 +465,7 @@ export default function DashboardPage() {
       {/* Agenda del día, con todos los barberos o filtrada por uno. */}
       <div className="card">
         <AgendaDelDia
+          cargando={!turnosListos}
           appointments={visibleAppointments}
           professionals={professionals}
           services={services}

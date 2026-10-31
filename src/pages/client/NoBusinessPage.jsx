@@ -31,7 +31,7 @@ export default function NoBusinessPage({ reason = 'not-found' }) {
     'sin-conexion': {
       icon: '📶',
       title: 'No pudimos cargar la barbería',
-      text: 'Parece que la conexión se cortó. El link está bien: probá de nuevo en un momento.',
+      text: 'Parece que la conexión se cortó. El link está bien: lo estamos reintentando solo, y aparece apenas vuelva la señal.',
     },
     'no-slug': {
       icon: '📅',

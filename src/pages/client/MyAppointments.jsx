@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useTenant } from '../../hooks/useTenantData';
+import { useTenant, useColeccionesListas } from '../../hooks/useTenantData';
 import { cancelAppointment, misResenas } from '../../lib/repository';
 import { formatDate, formatPrice } from '../../utils/dateUtils';
 import ValorarTurno from '../../components/client/ValorarTurno';
@@ -23,6 +23,8 @@ export default function MyAppointments() {
   const { user, isAuthenticated } = useAuth();
   // Solo las citas del negocio por el que entró el cliente.
   const { appointments, professionals, services, business, slug, businessId } = useTenant();
+  // Hasta que la agenda conteste, "no tenés turnos" sería una mentira.
+  const turnosListos = useColeccionesListas('appointments');
   const [tab, setTab] = useState('upcoming');
   const ahora = new Date();
 
@@ -152,7 +154,9 @@ export default function MyAppointments() {
         </button>
       </div>
 
-      {displayed.length === 0 ? (
+      {displayed.length === 0 && !turnosListos ? (
+        <div className="empty-state"><p>Cargando tus turnos…</p></div>
+      ) : displayed.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">{tab === 'upcoming' ? '📅' : '📋'}</div>
           <p>{tab === 'upcoming' ? 'No tenés turnos próximos' : 'No tenés turnos pasados'}</p>

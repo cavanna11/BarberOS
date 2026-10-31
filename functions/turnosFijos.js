@@ -17,7 +17,8 @@
 // cierra), ese turno se SALTEA y queda anotado en la serie: no se pisa a nadie
 // ni se mueve el horario por su cuenta.
 
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+
 const ausenciasSrv = require('./ausencias');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -81,7 +82,8 @@ function motivoDelDia(negocio, horarioProf, fecha, inicio, fin, ausenciasProf = 
   if (!prof || prof.isActive === false || !prof.startTime || !prof.endTime) return 'el barbero no trabaja ese día';
   let desde = aMinutos(prof.startTime), hasta = aMinutos(prof.endTime);
   if (local?.startTime && local?.endTime) { desde = Math.max(desde, aMinutos(local.startTime)); hasta = Math.min(hasta, aMinutos(local.endTime)); }
-  if (inicio < desde || inicio >= hasta) return 'fuera del horario de atención';
+  // Tiene que terminar dentro del horario, igual que al reservar.
+  if (inicio < desde || fin > hasta) return 'fuera del horario de atención';
   for (const h of [prof, local]) {
     if (h?.breakStart && h?.breakEnd && inicio < aMinutos(h.breakEnd) && fin > aMinutos(h.breakStart)) return 'cae en el corte del mediodía';
   }

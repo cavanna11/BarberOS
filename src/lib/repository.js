@@ -31,6 +31,7 @@ import {
   getDoc,
   // Para la unica lectura que NO puede contestarse desde el cache: el slug.
   getDocFromServer,
+  getDocFromCache,
   getDocs,
   onSnapshot,
   query,
@@ -49,7 +50,7 @@ import {
   idDeHorarioEspecial,
   normalizarHorarioEspecial,
 } from '../utils/ausencias';
-import { db } from './firebase';
+import { db, reconectarFirestore } from './firebase';
 
 // ── Helpers de rutas ───────────────────────────────────────────────────────
 const businessesCol = () => collection(db, 'businesses');
@@ -78,31 +79,76 @@ const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 //   2. Si el listener falla con un error terminal, onSnapshot lo cierra y no
 //      vuelve a intentar nunca. Acá se reintenta con espera creciente, y
 //      además al volver la conexión o la pestaña al frente.
+//   3. El listener que no recibe NADA: ni datos ni error. Es el canal muerto
+//      que el SDK cree vivo (el celular que volvió de estar bloqueado, el
+//      navegador de Instagram). Sin (3) nada se enteraba: ni (1) ni (2) corren
+//      si no llega ningún evento, y la app quedaba "trabada" hasta cerrarla.
+//      Ahora, si en VIGILANCIA_MS no llegó una respuesta del servidor, se
+//      reconecta Firestore entero (`reconectarFirestore`) y se sigue mirando.
+//
+// `cb` recibe además, como segundo argumento, `{ delServidor }`: quien quiera
+// distinguir "todavía no sé" de "no hay" (la reserva, para no decir que la
+// barbería no tiene turnos) mira eso.
 //
 // Devuelve una función para desuscribirse, igual que onSnapshot.
+const VIGILANCIA_MS = 12000;
+
 function escuchar(ref, mapear, cb, onError) {
   let off = null;
   let cancelado = false;
   let intentos = 0;
   let timer = null;
+  let vigia = null;
+  let delServidor = false;
+  let reconexiones = 0;
+
+  // Mientras no haya llegado una respuesta del servidor, cada VIGILANCIA_MS
+  // (y cada vez más espaciado) se reconecta. Una vez que llegó, el vigía se
+  // apaga: lo que pase después lo cubren `online`/`visibilitychange` en
+  // firebase.js.
+  const vigilar = () => {
+    clearTimeout(vigia);
+    if (cancelado || delServidor) return;
+    const espera = Math.min(VIGILANCIA_MS * 2 ** reconexiones, 60000);
+    vigia = setTimeout(() => {
+      if (cancelado || delServidor) return;
+      reconexiones++;
+      reconectarFirestore('un listener no recibió respuesta');
+      vigilar();
+    }, espera);
+  };
 
   const conectar = () => {
     if (cancelado) return;
     if (off) { off(); off = null; }
+    vigilar();
     off = onSnapshot(
       ref,
+      { includeMetadataChanges: true },
       (snap) => {
         intentos = 0;
+        const delServidorAhora = !snap.metadata.fromCache;
+        if (delServidorAhora && !delServidor) {
+          delServidor = true;
+          reconexiones = 0;
+          clearTimeout(vigia);
+        } else if (!delServidorAhora && delServidor) {
+          // Tenía servidor y volvió a contestar el caché: se cortó. A vigilar
+          // de nuevo, por si el SDK no vuelve solo.
+          delServidor = false;
+          vigilar();
+        }
         const vacio = 'docs' in snap ? snap.empty : !snap.exists();
         if (vacio && snap.metadata.fromCache) return; // ver (1)
-        cb(mapear(snap));
+        cb(mapear(snap), { delServidor: delServidorAhora });
       },
       (err) => {
         if (cancelado) return;
         onError?.(err);
         // permission-denied no se arregla reintentando: es una regla.
-        if (err?.code === 'permission-denied') return;
+        if (err?.code === 'permission-denied') { clearTimeout(vigia); return; }
         intentos++;
+        delServidor = false;
         const espera = Math.min(3000 * 2 ** (intentos - 1), 60000);
         console.warn(`[repository] Listener caído (${err?.code}); reintento en ${espera / 1000}s.`);
         timer = setTimeout(conectar, espera);
@@ -123,6 +169,7 @@ function escuchar(ref, mapear, cb, onError) {
   return () => {
     cancelado = true;
     clearTimeout(timer);
+    clearTimeout(vigia);
     window.removeEventListener('online', despertar);
     document.removeEventListener('visibilitychange', despertar);
     if (off) off();
@@ -208,15 +255,24 @@ export async function obtenerSlug(slug) {
   //
   // `confiable` es lo que separa "no existe" de "no pude averiguarlo". Quien
   // llama no puede concluir nada de un `datos: null` con `confiable: false`.
+  //
+  // Con reloj: con la red colgada (no caída) `getDocFromServer` no falla, se
+  // queda esperando, y la pantalla quedaba en "Cargando…" para siempre — sin
+  // error no corría ningún reintento. A los 8 segundos se lo da por perdido y
+  // quien llama reconecta y vuelve a probar.
   try {
-    const snap = await getDocFromServer(slugDoc(slug));
+    const snap = await Promise.race([
+      getDocFromServer(slugDoc(slug)),
+      new Promise((_, rechazar) => setTimeout(() => rechazar(Object.assign(new Error('tardó demasiado'), { code: 'deadline-exceeded' })), 8000)),
+    ]);
     return { datos: snap.exists() ? snap.data() : null, confiable: true };
   } catch (err) {
     // Sin red: si el cache lo tiene, sirve igual — un slug que existio no deja
     // de existir. Lo que NO vale es el camino de vuelta: que el cache no lo
     // tenga no prueba nada.
     try {
-      const snap = await getDoc(slugDoc(slug));
+      // Solo del caché: un `getDoc` común, con la red colgada, también espera.
+      const snap = await getDocFromCache(slugDoc(slug));
       if (snap.exists()) return { datos: snap.data(), confiable: true };
     } catch { /* el cache tampoco: se informa abajo */ }
     return { datos: null, confiable: false, error: err };

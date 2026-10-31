@@ -3,7 +3,8 @@ import { enOrden } from '../../utils/orden';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBooking } from '../../contexts/BookingContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { useTenant } from '../../hooks/useTenantData';
+import { useTenant, useColeccionesListas } from '../../hooks/useTenantData';
+import { reconectarFirestore } from '../../lib/firebase';
 import { createAppointment, getBusySlots, miMembresia, misRecompensas } from '../../lib/functions';
 import { calculateAvailableSlots, professionalWorksOnDate } from '../../utils/availabilityEngine';
 import { formatDate, formatPrice, toDateString, getMonthName } from '../../utils/dateUtils';
@@ -582,6 +583,41 @@ function BookingSummary({ professional, service, date, timeSlot, price, precioLi
   );
 }
 
+// ---- CARGANDO: los datos de la barbería todavía no llegaron ----
+// Antes, mientras llegaban, el array vacío de barberos se leía como "esta
+// barbería no tiene barberos" y la pantalla decía "Todavía no hay turnos
+// disponibles". El cliente lo creía y se iba. Ahora se espera, y si en 15
+// segundos no llegó nada, se dice que es la conexión y se ofrece reintentar
+// (que reconecta primero, sin recargar, y recién después recarga).
+function CargandoReserva() {
+  const [tarda, setTarda] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setTarda(true), 15000);
+    return () => clearTimeout(t);
+  }, []);
+  const reintentar = async () => {
+    setTarda(false);
+    await reconectarFirestore('el cliente tocó Reintentar');
+    setTimeout(() => window.location.reload(), 6000);
+  };
+  return (
+    <div className="booking-container" style={{ textAlign: 'center', padding: 'var(--space-xl) var(--space-md)' }}>
+      <div className="empty-state">
+        {tarda ? (
+          <>
+            <div className="empty-state-icon">📶</div>
+            <h2>Está tardando más de lo normal</h2>
+            <p>Parece un problema de conexión. La barbería y sus turnos están bien.</p>
+            <button className="btn btn-primary mt-md" onClick={reintentar}>Reintentar</button>
+          </>
+        ) : (
+          <p>Cargando la agenda…</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---- AVISO: el negocio no puede tomar turnos ----
 // 'frozen'    → cuenta suspendida por falta de pago
 // 'not-ready' → cuenta nueva, todavía sin profesionales o sin servicios
@@ -734,9 +770,15 @@ export default function BookingPage() {
   // Motivos por los que este negocio no puede tomar turnos ahora mismo.
   // Se calcula acá pero se renderiza recién después de todos los hooks: cortar
   // el render antes rompe las reglas de hooks si el motivo cambia en vivo.
+  //
+  // "No hay barberos" solo se afirma cuando la colección CONTESTÓ vacía. Antes
+  // de eso es "todavía no sé", y se muestra cargando.
+  const datosListos = useColeccionesListas('professionals', 'services', 'schedules', 'professionalServices');
   const blockedReason = business?.isFrozen
     ? 'frozen'
-    : (professionals.length === 0 || services.length === 0)
+    : !datosListos
+      ? 'cargando'
+      : (professionals.length === 0 || services.length === 0)
       ? 'not-ready'
       : null;
 
@@ -1070,6 +1112,7 @@ export default function BookingPage() {
     );
   }
 
+  if (blockedReason === 'cargando') return <CargandoReserva />;
   if (blockedReason) {
     return <BookingUnavailable reason={blockedReason} business={business} />;
   }

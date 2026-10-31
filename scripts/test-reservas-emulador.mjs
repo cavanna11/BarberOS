@@ -124,12 +124,15 @@ chequear('servicio que ese profesional no hace, rechazado', r.error === 'FAILED_
 titulo('Horario:');
 r = await reservar(cliente, { ...base, startTime: '08:00' });
 chequear('antes de abrir, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
-// Regla del mostrador: alcanza con que EMPIECE dentro del horario. El barbero
-// termina la cabeza que arrancó antes de cerrar. (Cliente nuevo: el de arriba
-// ya tiene su turno del día y lo pararía el uno-por-día.)
+// La regla de todos los sistemas de turnos (30/10/2026): el turno tiene que
+// TERMINAR dentro del horario, con el cierre incluido. Cierra 18:00 y el corte
+// dura 30: el de las 17:30 entra justo, el de las 17:45 no. (Clientes nuevos:
+// el de arriba ya tiene su turno del día y lo pararía el uno-por-día.)
 const cTarde = await usuario('ctarde@gmail.com');
 r = await reservar(cTarde, { ...base, startTime: '17:45', clientName: 'Tarde' });
-chequear('arranca 17:45 y termina pasado el cierre: se toma', r.ok?.status === 'created', JSON.stringify(r));
+chequear('arranca 17:45 y terminaría 18:15, pasado el cierre: rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(cTarde, { ...base, startTime: '17:30', clientName: 'Tarde' });
+chequear('arranca 17:30 y termina 18:00 justo al cierre: se toma', r.ok?.status === 'created' && r.ok?.endTime === '18:00', JSON.stringify(r));
 r = await reservar(cliente, { ...base, startTime: '18:00' });
 chequear('arranca justo al cierre, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 r = await reservar(cliente, { ...base, startTime: '19:00' });
@@ -224,12 +227,13 @@ const c8 = await usuario('c8@gmail.com');
 // FECHA es martes → día ok. 15:00 está fuera de la franja.
 r = await reservar(c8, { ...base, serviceId: 'srv-promo', startTime: '15:00' });
 chequear('martes 15:00: fuera de la franja, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
-// El caso de Lucas: la promo va hasta 19:30 pero el barbero cierra 18:00.
-// 17:45 arranca dentro de las dos cosas y termina 18:15, después del cierre.
-// Antes esto se rechazaba y la promo quedaba sin un solo horario para él.
+// La promo va hasta 19:30 pero el barbero cierra 18:00: manda el cierre. El de
+// las 17:30 termina 18:00 justo y entra; el de las 17:45 terminaría 18:15.
 const c8b = await usuario('c8b@gmail.com');
 r = await reservar(c8b, { ...base, serviceId: 'srv-promo', appointmentDate: MARTES[3], startTime: '17:45' });
-chequear('martes 17:45: promo que termina pasado el cierre, se toma', r.ok?.status === 'created' && r.ok?.price === 10800, JSON.stringify(r));
+chequear('martes 17:45: promo que terminaría pasado el cierre, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(c8b, { ...base, serviceId: 'srv-promo', appointmentDate: MARTES[3], startTime: '17:30' });
+chequear('martes 17:30: promo que termina justo al cierre, se toma', r.ok?.status === 'created' && r.ok?.price === 10800, JSON.stringify(r));
 r = await reservar(c8, { ...base, serviceId: 'srv-promo', startTime: '17:00' });
 chequear('martes 17:00: adentro, creado', r.ok?.status === 'created' && r.ok?.price === 10800, JSON.stringify(r));
 // Un jueves (2027-03-04) no aplica aunque el horario esté bien. El barbero no
@@ -317,7 +321,9 @@ chequear('un adicional no vale como acompañante', r.error === 'FAILED_PRECONDIT
 r = await reservar(ca3, { ...base, appointmentDate: DIA_AC, startTime: '14:00', acompanante: { serviceId: SRV_HUERFANO } });
 chequear('un servicio que el barbero no hace se rechaza', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
 r = await reservar(ca3, { ...base, appointmentDate: DIA_AC, startTime: '17:45', acompanante: { serviceId: 'srv-nino' } });
-chequear('arranca dentro del horario aunque el bloque termine después del cierre', r.ok?.status === 'created' && r.ok?.endTime === '18:35', JSON.stringify(r));
+chequear('con acompañante, el bloque entero tiene que entrar antes del cierre: 17:45 → 18:35, rechazado', r.error === 'FAILED_PRECONDITION', JSON.stringify(r));
+r = await reservar(ca3, { ...base, appointmentDate: DIA_AC, startTime: '17:10', acompanante: { serviceId: 'srv-nino' } });
+chequear('y 17:10 → 18:00 justo, se toma', r.ok?.status === 'created' && r.ok?.endTime === '18:00', JSON.stringify(r));
 
 titulo('Recargo por pagar con tarjeta o QR:');
 const c14 = await usuario('c14@gmail.com');

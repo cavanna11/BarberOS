@@ -94,10 +94,16 @@ export function calculateAvailableSlots({
   const breakStart = schedule.breakStart ? timeToMinutes(schedule.breakStart) : null;
   const breakEnd = schedule.breakEnd ? timeToMinutes(schedule.breakEnd) : null;
 
-  // Alcanza con que el turno EMPIECE dentro del horario: el barbero que
-  // atiende hasta las 17:30 termina la cabeza que arrancó 17:00, no lo echa a
-  // la mitad. Antes se exigía que entrara entero y el último turno del día se
-  // perdía siempre (y con él, las promos de media tarde).
+  // El turno tiene que TERMINAR dentro del horario, con el cierre incluido:
+  // atiende hasta las 19:00 → el corte de 60 min de las 18:00 se ofrece (termina
+  // 19:00 justo) y el de las 18:30 no. Es la regla de Calendly, Fresha, Booksy y
+  // compañía, y la que el barbero espera cuando escribe "hasta las 19".
+  //
+  // Cuarta excepción al "no tocar" (30/10/2026). Del 22/09 a acá alcanzaba con
+  // que EMPEZARA antes del cierre, y eso ofrecía las 19:45 para un servicio de
+  // 90 minutos en un local que cierra 20:00: el cliente reservaba un turno que
+  // terminaba 21:15, con el local cerrado.
+  //
   // El paso NUNCA puede ser cero: este bucle avanza sumándolo, y con 0 no
   // termina nunca — se le cuelga el navegador a cada cliente que abra el link
   // de esa barbería. Dejó de ser hipotético el día que el intervalo pasó de ser
@@ -106,6 +112,7 @@ export function calculateAvailableSlots({
 
   for (let cursor = scheduleStart; cursor < scheduleEnd; cursor += paso) {
     const slotEnd = cursor + duration;
+    if (slotEnd > scheduleEnd) break; // ya no entra ninguno más
 
     // Verificar si toca el descanso
     if (breakStart !== null && breakEnd !== null) {

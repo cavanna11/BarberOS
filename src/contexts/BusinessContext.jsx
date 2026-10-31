@@ -220,6 +220,14 @@ function businessReducer(state, action) {
     case 'SET_TENANT_DATA':
       return { ...state, ...action.payload };
 
+    // Una subcolección que contestó: el dato y la marca de que ya se sabe.
+    case 'SET_COLECCION':
+      return {
+        ...state,
+        [action.col]: action.filas,
+        listas: { ...(state.listas || {}), [action.col]: true },
+      };
+
     // ── Tenant activo ──────────────────────────────────────────────────────
     // Cambia cuál es el negocio sobre el que operan las lecturas y escrituras.
     case 'SET_CURRENT_BUSINESS': {

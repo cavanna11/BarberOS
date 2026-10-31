@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useTenant } from '../../hooks/useTenantData';
+import { useTenant, useColeccionesListas } from '../../hooks/useTenantData';
 import { updateAppointment, cancelAppointment } from '../../lib/repository';
 import NuevoTurnoModal from '../../components/admin/NuevoTurnoModal';
 import TurnosFijosModal from '../../components/admin/TurnosFijosModal';
@@ -78,6 +78,8 @@ export default function AppointmentsPage() {
   const {
     appointments, professionals, services, business, businessId, esMultiSucursal,
   } = useTenant();
+  // Hasta que la agenda conteste, "no hay turnos" sería una mentira.
+  const turnosListos = useColeccionesListas('appointments');
 
   // `isOwner` acá no significa "es el dueño": significa "ve la agenda entera".
   // El mostrador también, y es el motivo por el que existe el rol. Lo que NO
@@ -392,7 +394,9 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
         })}
         {filtered.length === 0 && (
           <div className="empty-state">
-            {vinculo.esBarbero && !vinculo.vinculado
+            {!turnosListos && !(vinculo.esBarbero && !vinculo.vinculado)
+              ? <p>Cargando turnos…</p>
+              : vinculo.esBarbero && !vinculo.vinculado
               ? <p>⚠️ {textoVinculo(vinculo.motivo)} Pedile al dueño que te vincule desde Administradores.</p>
               : <p>No se encontraron turnos con estos filtros</p>}
           </div>

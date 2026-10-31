@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { reconectarFirestore } from '../lib/firebase';
+import { slugify } from '../utils/slug';
 import { useBusiness } from './BusinessContext';
 import { useAuth } from './AuthContext';
 import {
@@ -33,7 +35,10 @@ const COLECCIONES = [
 // necesita para armar la grilla.
 const PUBLICAS = ['professionals', 'services', 'schedules', 'professionalServices', 'ausencias'];
 
-const VACIO = { ...Object.fromEntries(COLECCIONES.map((c) => [c, []])), notifications: [] };
+// `listas` dice qué colecciones ya contestaron. Sin eso, "todavía no llegó" y
+// "no hay" se ven iguales (un array vacío), y la reserva le decía al cliente
+// "Todavía no hay turnos disponibles" mientras los barberos venían en camino.
+const VACIO = { ...Object.fromEntries(COLECCIONES.map((c) => [c, []])), notifications: [], listas: {} };
 
 /**
  * Puente entre Firestore y el estado de negocios de la app.
@@ -51,13 +56,43 @@ const VACIO = { ...Object.fromEntries(COLECCIONES.map((c) => [c, []])), notifica
 // Primeros segmentos de URL que son rutas de la app, no slugs de negocio.
 const RUTAS_RESERVADAS = new Set(['login', 'admin', 'super-admin', 'cuenta', '']);
 
+/**
+ * El link como lo escribió la barbería. Instagram y los teclados del celular
+ * lo cambian sin preguntar: "/NeytanBarber777", "/franlook-olivos." al final de
+ * una oración, un espacio pegado. Los ids de Firestore distinguen mayúsculas,
+ * así que cualquiera de esos era "No encontramos este negocio" en un link que
+ * existe. Los slugs se crean con `slugify`, así que pasarlos por lo mismo es
+ * volver al original.
+ */
+function slugDeLaUrl(segmento) {
+  let crudo = segmento;
+  try { crudo = decodeURIComponent(segmento); } catch { /* queda como vino */ }
+  return slugify(crudo);
+}
+
 export default function BusinessSync() {
   const { state, dispatch } = useBusiness();
   const { user, loading } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, search, hash } = useLocation();
+  const navigate = useNavigate();
 
   const primerSegmento = pathname.split('/')[1] || '';
-  const slug = RUTAS_RESERVADAS.has(primerSegmento) ? null : primerSegmento;
+  const slugNormal = RUTAS_RESERVADAS.has(primerSegmento) ? null : slugDeLaUrl(primerSegmento);
+  // Mientras la URL no esté en su forma normal no se resuelve nada: el efecto de
+  // abajo la corrige y recién ahí se busca.
+  const slug = slugNormal && slugNormal === primerSegmento ? slugNormal : null;
+
+  useEffect(() => {
+    if (!slugNormal || slugNormal === primerSegmento) return;
+    const resto = pathname.split('/').slice(2).join('/');
+    navigate(`/${slugNormal}${resto ? `/${resto}` : ''}${search}${hash}`, { replace: true });
+  }, [slugNormal, primerSegmento, pathname, search, hash, navigate]);
+
+  // Cada vez que cambia, se vuelve a intentar resolver el link. Lo sube un
+  // reloj cuando la pantalla quedó en "no pudimos cargar": el cliente no tiene
+  // que tocar nada para que se arregle solo cuando vuelve la señal.
+  const [vuelta, setVuelta] = useState(0);
+  const slugEstadoActual = state.slugEstado?.slug;
 
   const esPlataforma = user?.isPlatformTeam === true;
   const businessIdPropio = user?.businessId || null;
@@ -194,11 +229,30 @@ export default function BusinessSync() {
       // llegue.
       let llego = false;
       let temporizador = null;
+      let otraVuelta = null;
+
+      // "No pudimos cargar" no es un final: a los 5 segundos se vuelve a
+      // probar solo, y así hasta que ande. Es lo que el cliente hacía a mano
+      // cerrando y abriendo la app.
+      const sinConexion = () => {
+        dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'sin-conexion' } } });
+        clearTimeout(otraVuelta);
+        // Canal nuevo antes de volver a preguntar: reintentar sobre el que se
+        // colgó es esperar a que el SDK se dé cuenta solo, y eso tarda.
+        otraVuelta = setTimeout(async () => {
+          if (cancelado) return;
+          await reconectarFirestore('reintento automático del link');
+          if (!cancelado) setVuelta((v) => v + 1);
+        }, 4000);
+      };
 
       // Mientras se resuelve, la página pública muestra "cargando" y no "no
       // existe": ese destello de error en cada apertura del link era lo
-      // primero que veía el cliente.
-      dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'resolviendo' } } });
+      // primero que veía el cliente. En los reintentos automáticos no: la
+      // pantalla quedaría saltando entre "cargando" y "no pudimos".
+      if (vuelta === 0 || slugEstadoActual !== slug) {
+        dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'resolviendo' } } });
+      }
 
       (async () => {
         try {
@@ -206,6 +260,11 @@ export default function BusinessSync() {
           // ser la diferencia entre "tu barberia" y "no encontramos este
           // negocio": adentro del navegador de Instagram, con 4G, la primera
           // lectura falla seguido.
+          //
+          // Después del primer fallo se reconecta Firestore: si el SDK quedó
+          // "offline" (canal muerto, celular que volvió de estar bloqueado),
+          // `getDocFromServer` falla en el acto en cada intento, y reintentar
+          // sin reconectar es preguntarle tres veces a alguien que no oye.
           const leerSlug = async () => {
             let ultimo = null;
             for (let intento = 0; intento < 3; intento++) {
@@ -213,7 +272,8 @@ export default function BusinessSync() {
               const r = await obtenerSlug(slug);
               if (r.confiable) return r;
               ultimo = r;
-              await new Promise((res) => setTimeout(res, 400 * (intento + 1)));
+              if (intento === 0) await reconectarFirestore('no se pudo leer el link');
+              await new Promise((res) => setTimeout(res, 700 * (intento + 1)));
             }
             return ultimo;
           };
@@ -234,7 +294,7 @@ export default function BusinessSync() {
           // ofrece reintentar.
           if (!r.confiable) {
             console.error('[BusinessSync] no se pudo resolver el slug', slug, r.error?.code);
-            dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'sin-conexion' } } });
+            sinConexion();
             return;
           }
 
@@ -253,12 +313,15 @@ export default function BusinessSync() {
             dispatch({ type: 'SET_BUSINESSES', payload: [] });
             return;
           }
-          dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'ok' } } });
+          dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'ok', businessId } } });
 
           // El slug resolvió, pero el documento del negocio todavía no llegó.
           // Si no llega nunca —el listener muere y no vuelve— la pantalla se
           // quedaría cargando para siempre. A los 12 segundos se dice que no se
           // pudo, con el botón para reintentar.
+          //
+          // El listener sigue vivo y reconectándose (`escuchar`): si el negocio
+          // llega después, la pantalla vuelve sola (ver abajo).
           const seColgo = setTimeout(() => {
             if (!cancelado && !llego) {
               dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'sin-conexion' } } });
@@ -271,8 +334,12 @@ export default function BusinessSync() {
             (negocio) => {
               llego = true;
               clearTimeout(seColgo);
-              // Si el negocio se borró con el link abierto, que diga que no existe.
-              if (!negocio) dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'no-existe' } } });
+              clearTimeout(otraVuelta);
+              // Si el negocio se borró con el link abierto, que diga que no
+              // existe. Y si llegó después de que la pantalla dijera "no
+              // pudimos cargar", se saca ese cartel: antes quedaba puesto con
+              // los datos ya en la mano.
+              dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: negocio ? 'ok' : 'no-existe', businessId } } });
               dispatch({ type: 'SET_BUSINESSES', payload: negocio ? [negocio] : [] });
             },
             (err) => {
@@ -290,22 +357,27 @@ export default function BusinessSync() {
           // Un catch que solo loguea dejaba la pantalla en "Cargando…" para
           // siempre. Lo que no se pudo hacer se dice.
           onError(err);
-          if (!cancelado) {
-            dispatch({ type: 'SET_TENANT_DATA', payload: { slugEstado: { slug, estado: 'sin-conexion' } } });
-          }
+          if (!cancelado) sinConexion();
         }
       })();
 
       return () => {
         cancelado = true;
+        clearTimeout(otraVuelta);
         if (temporizador) clearTimeout(temporizador);
         if (desuscribir) desuscribir();
       };
     }
 
+    // Link a medio corregir (ver slugDeLaUrl): en un instante vuelve con el slug.
+    if (slugNormal) return;
+
     // 4. Nadie logueado y sin slug: no hay nada que mostrar.
     dispatch({ type: 'SET_BUSINESSES', payload: [] });
-  }, [loading, esPlataforma, businessIdPropio, idsPropios, slug, user?.isBypass, dispatch]);
+    // `slugEstadoActual` se lee pero no dispara: cambia adentro de este mismo
+    // efecto y volvería a correrlo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, esPlataforma, businessIdPropio, idsPropios, slug, slugNormal, vuelta, user?.isBypass, dispatch]);
 
   // ── Subcolecciones del negocio activo ────────────────────────────────────
   // Se suscriben acá, en un solo lugar, y no dentro de cada hook: si cada
@@ -356,7 +428,9 @@ export default function BusinessSync() {
     const esBarbero = rol === 'admin';
     const esCliente = Boolean(uid) && !esStaffCompleto && !esBarbero;
 
-    const cb = (col) => (filas) => dispatch({ type: 'SET_TENANT_DATA', payload: { [col]: filas } });
+    // `escuchar()` ya descarta los vacíos que vienen del caché, así que cada
+    // llamada acá es una respuesta de verdad: la colección queda lista.
+    const cb = (col) => (filas) => dispatch({ type: 'SET_COLECCION', col, filas });
 
     const colecciones = esStaffCompleto ? COLECCIONES
       : esBarbero ? COLECCIONES.filter((c) => c !== 'appointments')
@@ -384,6 +458,12 @@ export default function BusinessSync() {
     // Al cambiar de negocio, vaciar antes de que lleguen los datos nuevos:
     // así no se ve por un instante el staff del tenant anterior.
     dispatch({ type: 'SET_TENANT_DATA', payload: VACIO });
+
+    // Sin consulta de agenda posible (anónimo, o barbero sin perfil vinculado)
+    // no hay nada que esperar: la agenda vacía ES la respuesta, y lo que falta
+    // lo explica la pantalla (useVinculoBarbero).
+    const pideAgenda = esStaffCompleto || (esBarbero && profId) || esCliente;
+    if (!pideAgenda) dispatch({ type: 'SET_COLECCION', col: 'appointments', filas: [] });
 
     return () => offs.forEach((off) => off());
   }, [businessId, esBypass, uid, rol, profId, esPlataforma, dispatch]);

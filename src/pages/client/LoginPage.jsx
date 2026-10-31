@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { isPlatformOwner, PLATFORM_OWNERS } from '../../config/platform';
 import { entraAlPanel } from '../../config/roles';
 import { navegadorEmbebido, comoAbrirlo } from '../../utils/navegadorEmbebido';
+import { recordarVuelta, leerVuelta, usarVuelta } from '../../utils/vueltaDelLogin';
 
 export default function LoginPage() {
   const [error, setError] = useState('');
@@ -13,8 +14,11 @@ export default function LoginPage() {
   // con Google. El formulario aparece solo si lo piden, para no complicarle la
   // pantalla al cliente que viene a reservar un turno.
   const [verFormulario, setVerFormulario] = useState(false);
-  const [cred, setCred] = useState({ email: '', password: '' });
-  const { loginWithGoogle, loginWithPassword, loginBypass } = useAuth();
+  const [cred, setCred] = useState({ email: '', password: '', nombre: '' });
+  // 'entrar' con una cuenta que ya existe, o 'crear' una de cliente.
+  const [modo, setModo] = useState('entrar');
+  const [aviso, setAviso] = useState('');
+  const { loginWithGoogle, loginWithPassword, registerWithPassword, resetPassword, loginBypass } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -24,14 +28,20 @@ export default function LoginPage() {
   // al barbero curioso sin entender qué pasó.
   // Se calcula una sola vez: el user agent no cambia mientras la página vive.
   const embebido = useMemo(() => navegadorEmbebido(), []);
-  const origen = location.state?.from;
+  // Si Google no pudo abrir su ventana y redirigió (pasa en iPhone), al volver
+  // la página arranca de cero y `location.state` ya no existe: sin la copia en
+  // sessionStorage el cliente volvía logueado a cualquier lado y no a su
+  // reserva. Ver utils/vueltaDelLogin.js.
+  const origen = location.state?.from || leerVuelta();
   const from = origen && origen !== '/' && origen !== '/login' ? origen : null;
+  if (location.state?.from) recordarVuelta(location.state.from);
   // "Reservar turno" solo si venía del link de una barbería. Si venía del
   // panel (cerró sesión, o le venció el token), es alguien del staff y el
   // título de reserva lo confunde.
   const vieneDeReserva = Boolean(from) && !/^\/(admin|super-admin|cuenta)(\/|$)/.test(from);
 
   const redirectAfterLogin = (user) => {
+    usarVuelta();
     if (user.isPlatformTeam || isPlatformOwner(user.email)) {
       navigate('/super-admin');
     } else if (entraAlPanel(user)) {
@@ -67,18 +77,23 @@ export default function LoginPage() {
     ev.preventDefault();
     if (!cred.email.trim() || !cred.password) return;
     setError('');
+    setAviso('');
     setEntrando(true);
-    const result = await loginWithPassword(cred.email, cred.password);
+    const result = modo === 'crear'
+      ? await registerWithPassword(cred.email, cred.password, cred.nombre)
+      : await loginWithPassword(cred.email, cred.password);
     setEntrando(false);
     if (result.success) return redirectAfterLogin(result.user);
-    // El usuario y contraseña son de las cuentas que damos nosotros (dueño y
-    // barberos). Un cliente que prueba por acá se choca con "no coinciden" y
-    // no tiene forma de saber que su camino es Google.
-    setError(
-      vieneDeReserva
-        ? `${result.error} Si venís a reservar un turno, entrá con Google: las cuentas con contraseña son del equipo de la barbería.`
-        : result.error
-    );
+    setError(result.error);
+  };
+
+  const handleOlvido = async () => {
+    setError('');
+    setAviso('');
+    if (!cred.email.trim()) { setError('Escribí tu mail arriba y volvé a tocar "Me olvidé la contraseña".'); return; }
+    const r = await resetPassword(cred.email);
+    if (r.success) setAviso(`Si hay una cuenta con ${cred.email.trim()}, te llegó un mail para elegir una contraseña nueva. Mirá también en spam.`);
+    else setError(r.error);
   };
 
   const handleBypass = (email) => {
@@ -119,6 +134,7 @@ export default function LoginPage() {
             <p className="text-sm" style={{ margin: '6px 0 0' }}>
               Estás viendo esto dentro de {typeof embebido === 'string' ? embebido : 'otra aplicación'},
               y ahí Google no deja iniciar sesión. {comoAbrirlo()}
+              {vieneDeReserva && ' O, sin salir de acá, entrá con tu mail (abajo).'}
             </p>
           </div>
         )}
@@ -150,24 +166,29 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {/* Los clientes entran SOLO con Google: las cuentas con contraseña las
-            damos nosotros al dueño y a los barberos. Cuando alguien llega acá
-            desde el link de una barbería, esto va chiquito y rotulado, para
-            que no se meta en un camino que no es el suyo. */}
+        {/* Con mail y contraseña entran el equipo (cuentas que damos nosotros) y
+            el CLIENTE que no puede o no quiere usar Google: el iPhone donde la
+            ventana de Google no abre, el navegador de Instagram, el que no usa
+            Gmail. El cliente que viene a reservar puede crearse la cuenta acá. */}
         {!verFormulario ? (
           <div style={{ textAlign: 'center', marginTop: 'var(--space-md)' }}>
             {vieneDeReserva && (
-              <p className="text-sm text-muted" style={{ marginBottom: 6 }}>
-                Los turnos se reservan con tu cuenta de Google.
-              </p>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ width: '100%', marginBottom: 8 }}
+                onClick={() => { setVerFormulario(true); setModo('crear'); setError(''); }}
+              >
+                ✉️ ¿Google no te deja? Entrá con tu mail
+              </button>
             )}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => { setVerFormulario(true); setError(''); }}
+              onClick={() => { setVerFormulario(true); setModo('entrar'); setError(''); }}
             >
               {vieneDeReserva
-                ? '¿Trabajás en la barbería? Entrá con tu usuario'
+                ? 'Ya tengo cuenta con mail y contraseña'
                 : 'Soy del equipo: tengo usuario y contraseña'}
             </button>
             {!vieneDeReserva && (
@@ -187,8 +208,33 @@ export default function LoginPage() {
                 textAlign: 'center',
               }}
             >
-              <span className="text-xs text-muted">CUENTA DEL EQUIPO DE LA BARBERÍA</span>
+              <span className="text-xs text-muted">
+                {modo === 'crear' ? 'CREAR CUENTA CON TU MAIL' : vieneDeReserva ? 'ENTRAR CON TU MAIL' : 'CUENTA DEL EQUIPO DE LA BARBERÍA'}
+              </span>
             </div>
+
+            {vieneDeReserva && (
+              <div className="tabs" style={{ marginBottom: 'var(--space-md)' }}>
+                <button type="button" className={`tab ${modo === 'crear' ? 'active' : ''}`} onClick={() => { setModo('crear'); setError(''); }}>
+                  Crear cuenta
+                </button>
+                <button type="button" className={`tab ${modo === 'entrar' ? 'active' : ''}`} onClick={() => { setModo('entrar'); setError(''); }}>
+                  Ya tengo cuenta
+                </button>
+              </div>
+            )}
+
+            {modo === 'crear' && (
+              <div className="form-group">
+                <label className="form-label">Tu nombre</label>
+                <input
+                  className="form-input"
+                  autoComplete="name"
+                  value={cred.nombre}
+                  onChange={(e) => setCred((c) => ({ ...c, nombre: e.target.value }))}
+                />
+              </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">Email</label>
@@ -207,11 +253,18 @@ export default function LoginPage() {
               <input
                 className="form-input"
                 type="password"
-                autoComplete="current-password"
+                autoComplete={modo === 'crear' ? 'new-password' : 'current-password'}
                 value={cred.password}
                 onChange={(e) => setCred((c) => ({ ...c, password: e.target.value }))}
               />
+              {modo === 'crear' && (
+                <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                  Al menos 8 caracteres, con una mayúscula y un número.
+                </p>
+              )}
             </div>
+
+            {aviso && <div className="notice mb-md">{aviso}</div>}
 
             <button
               type="submit"
@@ -219,12 +272,16 @@ export default function LoginPage() {
               disabled={entrando}
               style={{ width: '100%' }}
             >
-              {entrando ? 'Entrando…' : 'Entrar'}
+              {entrando ? 'Entrando…' : modo === 'crear' ? 'Crear cuenta y seguir' : 'Entrar'}
             </button>
 
-            <p className="text-xs text-muted" style={{ marginTop: 'var(--space-sm)', textAlign: 'center' }}>
-              ¿Te olvidaste la contraseña? Escribinos y te pasamos una nueva.
-            </p>
+            {modo === 'entrar' && (
+              <div style={{ textAlign: 'center', marginTop: 'var(--space-sm)' }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={handleOlvido}>
+                  Me olvidé la contraseña
+                </button>
+              </div>
+            )}
           </form>
         )}
 

@@ -3,6 +3,10 @@ import {
   signInWithPopup,
   getRedirectResult,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  updateProfile,
   signOut,
   onAuthStateChanged,
   getIdTokenResult,
@@ -100,6 +104,14 @@ function tocaReintentar(uid) {
     sessionStorage.setItem(clave, '1');
   } catch { /* sin sessionStorage se reintenta igual; no es crítico */ }
   return true;
+}
+
+/** La promesa, o un error si tarda más de `ms`. */
+function conReloj(promesa, ms) {
+  return Promise.race([
+    promesa,
+    new Promise((_, rechazar) => setTimeout(() => rechazar(new Error('tardó demasiado')), ms)),
+  ]);
 }
 
 function initialState() {
@@ -203,10 +215,14 @@ export function AuthProvider({ children }) {
         // rehidrataba SIN claims: el dueño de la plataforma pasaba a ser
         // "cliente", el panel quedaba en cero y solo se arreglaba cerrando y
         // abriendo sesión.
+        //
+        // Cada intento con su reloj: con la red colgada (no caída) la lectura
+        // del token no falla, se queda esperando, y toda la app espera con ella
+        // en "Cargando…" — la pantalla en blanco que se arreglaba cerrando.
         let claims = null;
         for (let intento = 0; intento < 3; intento++) {
           try {
-            ({ claims } = await getIdTokenResult(fbUser));
+            ({ claims } = await conReloj(getIdTokenResult(fbUser), 8000));
             break;
           } catch (err) {
             if (intento === 2) throw err;
@@ -214,14 +230,20 @@ export function AuthProvider({ children }) {
           }
         }
 
+        dispatch({ type: 'LOGIN', payload: buildUser(fbUser, claims) });
+
         // Red de seguridad: si el reclamo del login se cortó a mitad (se cerró
         // la pestaña, falló la red), sin esto la persona queda como cliente
         // para siempre y solo se arregla cerrando y abriendo sesión.
+        //
+        // Va DESPUÉS de dejar entrar, no antes: es una Cloud Function, y casi
+        // todos los que llegan acá son clientes que vienen a reservar y no
+        // tienen nada pendiente. Antes la app entera esperaba esa llamada (con
+        // la function fría, varios segundos de pantalla en blanco) para nada.
         if (!claims.platform && !claims.businessId && tocaReintentar(fbUser.uid)) {
-          claims = await reclamarPendientes(fbUser, claims);
+          const nuevos = await reclamarPendientes(fbUser, claims);
+          if (nuevos !== claims) dispatch({ type: 'LOGIN', payload: buildUser(fbUser, nuevos) });
         }
-
-        dispatch({ type: 'LOGIN', payload: buildUser(fbUser, claims) });
       } catch (err) {
         console.error('[auth] No se pudieron leer los claims:', err);
         dispatch({ type: 'LOGIN', payload: buildUser(fbUser) });
@@ -303,7 +325,7 @@ export function AuthProvider({ children }) {
       // protección de enumeración prendida, a propósito—, así que la salida se
       // nombra en el mensaje en vez de mandarlo a buscar una contraseña que
       // nunca existió.
-      const noEntra = 'El mail o la contraseña no coinciden. Si abriste tu cuenta con Google, entrá con el botón de arriba.';
+      const noEntra = 'El mail o la contraseña no coinciden. Si abriste tu cuenta con Google, entrá con el botón de arriba; si no tenés cuenta, tocá "Crear cuenta".';
       const mensajes = {
         'auth/invalid-credential': noEntra,
         'auth/wrong-password': noEntra,
@@ -323,6 +345,63 @@ export function AuthProvider({ children }) {
       // sirve a nadie para diagnosticar desde una captura. Es lo mismo que ya
       // hace el login con Google.
       return { success: false, error: mensajes[error.code] || `No se pudo iniciar sesión (${error.code || 'error desconocido'}).` };
+    }
+  };
+
+  /**
+   * Cuenta de CLIENTE con mail y contraseña, sin Google.
+   *
+   * Existe por el cliente que no puede entrar con Google: el iPhone donde la
+   * ventana de Google no abre o vuelve a cualquier lado, el navegador de
+   * Instagram donde Google directamente se niega, o el que no quiere usar su
+   * Gmail. Esto no abre ventanas ni redirige: funciona en cualquier navegador.
+   *
+   * No da ningún permiso: sin claims, es un cliente. Lo que pide un mail
+   * VERIFICADO (reclamar un permiso pendiente, atar una membresía cargada a
+   * mano) sigue pidiéndolo en el servidor, así que se manda el mail de
+   * verificación y mientras tanto reserva igual que cualquiera.
+   */
+  const registerWithPassword = async (email, password, nombre = '') => {
+    try {
+      const { user: fbUser } = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      if (nombre.trim()) {
+        try { await updateProfile(fbUser, { displayName: nombre.trim().slice(0, 60) }); } catch { /* el nombre se pide igual al reservar */ }
+      }
+      sendEmailVerification(fbUser).catch((err) => console.error('[auth] No se pudo mandar la verificación:', err?.code));
+      const user = buildUser(fbUser, {});
+      dispatch({ type: 'LOGIN', payload: user });
+      return { success: true, user };
+    } catch (error) {
+      console.error('[auth] Error al crear la cuenta:', error);
+      const mensajes = {
+        'auth/email-already-in-use': 'Ya hay una cuenta con ese mail. Tocá "Ya tengo cuenta" para entrar (o "Me olvidé la contraseña").',
+        'auth/invalid-email': 'Ese mail no parece válido.',
+        'auth/weak-password': 'La contraseña es muy corta: usá al menos 8 caracteres.',
+        'auth/password-does-not-meet-requirements': 'La contraseña necesita al menos 8 caracteres, con una mayúscula y un número.',
+        'auth/network-request-failed': 'Falló la conexión. Revisá tu internet.',
+        'auth/too-many-requests': 'Demasiados intentos. Esperá unos minutos.',
+        'auth/operation-not-allowed': 'El ingreso con mail todavía no está disponible. Probá con Google, o escribinos.',
+        'auth/admin-restricted-operation': 'Ahora no se pueden crear cuentas nuevas. Escribinos y lo resolvemos en el momento.',
+      };
+      return { success: false, error: mensajes[error.code] || `No se pudo crear la cuenta (${error.code || 'error desconocido'}).` };
+    }
+  };
+
+  /** Manda el mail para elegir una contraseña nueva. */
+  const resetPassword = async (email) => {
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      return { success: true };
+    } catch (error) {
+      // Con la protección de enumeración prendida, un mail que no existe NO da
+      // error (a propósito: si no, esto diría qué mails tienen cuenta).
+      const mensajes = {
+        'auth/invalid-email': 'Ese mail no parece válido.',
+        'auth/missing-email': 'Escribí tu mail arriba.',
+        'auth/network-request-failed': 'Falló la conexión. Revisá tu internet.',
+        'auth/too-many-requests': 'Demasiados intentos. Esperá unos minutos.',
+      };
+      return { success: false, error: mensajes[error.code] || `No se pudo mandar el mail (${error.code || 'error desconocido'}).` };
     }
   };
 
@@ -389,7 +468,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ ...state, loginWithGoogle, loginWithPassword, loginBypass, logout, refreshClaims, dispatch }}
+      value={{ ...state, loginWithGoogle, loginWithPassword, registerWithPassword, resetPassword, loginBypass, logout, refreshClaims, dispatch }}
     >
       {children}
     </AuthContext.Provider>

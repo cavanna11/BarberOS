@@ -10,8 +10,11 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import {
+  initializeFirestore, connectFirestoreEmulator, disableNetwork, enableNetwork,
+} from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
+import { navegadorEmbebido } from '../utils/navegadorEmbebido';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -50,7 +53,17 @@ if (!firebaseListo) {
 const app = firebaseListo ? initializeApp(firebaseConfig) : null;
 
 export const auth = app ? getAuth(app) : null;
-export const db = app ? getFirestore(app) : null;
+// Cómo viaja Firestore. Por defecto abre un canal de streaming (WebChannel) que
+// algunos navegadores y redes cortan sin avisar: el navegador de Instagram, los
+// datos móviles con proxy de la operadora. El canal queda "abierto" pero no trae
+// nada, los listeners no reciben ni datos ni error, y la app se queda mostrando
+// lo que tenía hasta que se cierra. Adentro de una app forzamos long polling,
+// que es HTTP común y pasa por todos lados; afuera, que lo detecte solo.
+const transporte = navegadorEmbebido()
+  ? { experimentalForceLongPolling: true }
+  : { experimentalAutoDetectLongPolling: true };
+
+export const db = app ? initializeFirestore(app, transporte) : null;
 export const functions = app ? getFunctions(app, 'southamerica-east1') : null;
 
 // Storage no se importa todavía a propósito: el SDK pesa y no hay ninguna
@@ -70,6 +83,54 @@ if (app && import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === 'true')
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
   connectFunctionsEmulator(functions, '127.0.0.1', 5001);
   console.info('[firebase] Usando emuladores locales.');
+}
+
+// ── Reconexión ─────────────────────────────────────────────────────────────
+// Firestore, cuando pierde el canal, se declara "offline" y reintenta con una
+// espera que crece hasta un minuto. Y el celular que volvió de estar bloqueado,
+// o que pasó de wifi a datos, suele quedar con un canal muerto que el SDK cree
+// vivo. En los dos casos los listeners no reciben ni datos ni error: para el
+// usuario la app "se trabó" y solo se arregla cerrándola.
+//
+// Apagar y prender la red del SDK cierra los canales, corta la espera y vuelve
+// a conectar todos los listeners en el acto, sin perder nada de lo que ya hay
+// en pantalla. Es lo mismo que hace cerrar y abrir la app, pero solo.
+let reconectando = null;
+let ultimaReconexion = 0;
+
+export function reconectarFirestore(motivo = '') {
+  if (!db) return Promise.resolve();
+  if (reconectando) return reconectando;
+  // Varios listeners colgados piden lo mismo a la vez: una sola reconexión.
+  if (Date.now() - ultimaReconexion < 2500) return Promise.resolve();
+  ultimaReconexion = Date.now();
+  console.warn('[firebase] Reconectando Firestore', motivo ? `(${motivo})` : '');
+  reconectando = disableNetwork(db)
+    .catch(() => {})
+    .then(() => enableNetwork(db))
+    .catch((err) => console.error('[firebase] No se pudo reconectar:', err))
+    .finally(() => { reconectando = null; });
+  return reconectando;
+}
+
+if (db && typeof window !== 'undefined') {
+  // Volvió la red.
+  window.addEventListener('online', () => reconectarFirestore('volvió la red'));
+
+  // Volvió a la app después de un rato. Con menos de 20 segundos afuera el canal
+  // casi siempre sigue vivo y reconectar sería gastar.
+  let ocultaDesde = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { ocultaDesde = Date.now(); return; }
+    if (ocultaDesde && Date.now() - ocultaDesde > 20000) reconectarFirestore('volvió a la app');
+    ocultaDesde = 0;
+  });
+
+  // Safari restaura la página desde su caché (atrás/adelante) con los canales
+  // muertos.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) reconectarFirestore('página restaurada');
+  });
 }
 
 export default app;

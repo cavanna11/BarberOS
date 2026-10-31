@@ -13,6 +13,16 @@ import { useCurrentBusiness, useResolvedBusiness } from './useCurrentBusiness';
 // Estos hooks son comodidad de UI, no seguridad.
 // ============================================================================
 
+/**
+ * ¿Ya contestaron estas subcolecciones? Para no confundir "todavía no llegó"
+ * con "no hay": un array vacío es las dos cosas.
+ */
+export function useColeccionesListas(...cols) {
+  const { state } = useBusiness();
+  const listas = state.listas || {};
+  return cols.every((c) => listas[c] === true);
+}
+
 /** Profesionales del negocio activo. */
 export function useProfessionals() {
   const { state } = useBusiness();

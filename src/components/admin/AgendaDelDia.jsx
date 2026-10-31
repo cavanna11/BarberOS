@@ -63,6 +63,8 @@ const pad = (n) => String(n).padStart(2, '0');
 const aHora = (min) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
 
 export default function AgendaDelDia({
+  // Mientras la agenda no contestó, el día no está "libre": no se sabe.
+  cargando = false,
   appointments,
   professionals,
   services,
@@ -222,7 +224,11 @@ export default function AgendaDelDia({
         )}
       </div>
 
-      {cerrado && delDia.length === 0 ? (
+      {cargando && delDia.length === 0 ? (
+        <div className="empty-state" style={{ padding: 'var(--space-xl)' }}>
+          <p>Cargando los turnos…</p>
+        </div>
+      ) : cerrado && delDia.length === 0 ? (
         <div className="empty-state" style={{ padding: 'var(--space-xl)' }}>
           <p>La barbería está cerrada este día.</p>
         </div>

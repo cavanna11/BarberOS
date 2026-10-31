@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react';
+import { leerVuelta, usarVuelta } from './utils/vueltaDelLogin';
+import { lazy, Suspense, useEffect } from 'react';
 import { importarConReintento } from './utils/versionNueva';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
@@ -121,7 +122,12 @@ function useNegocioDelSlug() {
   const { businessSlug } = useParams();
   const { state } = useBusiness();
   const { user, loading } = useAuth();
-  const business = (state.businesses || []).find((b) => b.slug === businessSlug);
+  // Por el slug, o por el id que resolvió el link: si las dos cosas no
+  // coincidieran (un link renombrado a medias), antes quedaba cargando para
+  // siempre con el negocio ya en la mano.
+  const idDelSlug = state.slugEstado?.slug === businessSlug ? state.slugEstado.businessId : null;
+  const business = (state.businesses || []).find((b) => b.slug === businessSlug)
+    || (idDelSlug ? (state.businesses || []).find((b) => b.id === idDelSlug) : undefined);
 
   // El link de la CUENTA de una cuenta con sucursales (no es ninguna de ellas).
   // Para el visitante lo resuelve BusinessSync leyendo /slugs; la plataforma
@@ -246,8 +252,19 @@ function PublicOnlyRoute({ children }) {
     if (entraAlPanel(user)) {
       return <Navigate to="/admin" replace />;
     }
+    // Un cliente que vuelve de la redirección de Google cae acá, ya logueado:
+    // se lo devuelve a su reserva en vez de mostrarle el login otra vez (ver
+    // utils/vueltaDelLogin.js).
+    const vuelta = leerVuelta();
+    if (vuelta) return <IrALaVuelta ruta={vuelta} />;
   }
   return children;
+}
+
+/** Navega a la ruta guardada y la borra (en un efecto: el render puede repetirse). */
+function IrALaVuelta({ ruta }) {
+  useEffect(() => { usarVuelta(); }, []);
+  return <Navigate to={ruta} replace />;
 }
 
 /**

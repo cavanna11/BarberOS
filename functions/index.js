@@ -1018,9 +1018,10 @@ exports.createAppointment = onCall(async (request) => {
       }
     }
 
-    // Alcanza con que EMPIECE dentro del horario (del barbero y del local): el
-    // último turno puede terminar después del cierre, como en el mostrador.
-    if (inicio < desde || inicio >= hasta) {
+    // El turno tiene que TERMINAR dentro del horario (del barbero y del local),
+    // con el cierre incluido: hasta las 19:00, el de 60 min de las 18:00 entra.
+    // Es la misma regla que el motor del front (ver availabilityEngine.js).
+    if (inicio < desde || fin > hasta) {
       return 'Ese horario está fuera del horario de atención.';
     }
 
