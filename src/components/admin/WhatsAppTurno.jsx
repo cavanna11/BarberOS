@@ -25,6 +25,8 @@ export default function WhatsAppTurno({ turno, business, servicio = null, compac
     // mensaje de agradecimiento es peor que no mandar link.
     linkResena: linkParaValorar(turno, business),
     linkGoogle: linkGoogle(business) || '',
+    // Mismo filtro de dominios: también termina en un link que toca el cliente.
+    linkMaps: linkGoogle({ googleReviewUrl: business?.mapsUrl }) || '',
   });
 
   const recordatorio = linkWhatsApp(turno?.clientPhone, mensajes.recordatorio);

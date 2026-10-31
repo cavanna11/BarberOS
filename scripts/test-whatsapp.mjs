@@ -104,5 +104,20 @@ chequear('y no queda una pregunta colgada sin links',
 chequear('el recordatorio NO lleva links de reseña (el turno todavía no pasó)',
   !mensajesDelTurno(TURNO_OK, { linkResena: LINK_R, linkGoogle: LINK_G }).recordatorio.includes('http'));
 
+// ── Franlook: su propio "gracias", solo Google Maps (31/10/2026) ──────────
+console.log('\nEl gracias de Franlook:');
+const OLIVOS = 'DH8aR5scn0wFOjTPURbl';
+const LINK_M = 'https://maps.app.goo.gl/77TD6oDhMhDn2KeP7';
+const fran = mensajesDelTurno(TURNO_OK, { businessId: OLIVOS, nombreNegocio: 'Franlook Olivos', linkResena: LINK_R, linkMaps: LINK_M }).gracias;
+chequear('el texto que pidieron, con la sucursal',
+  fran === `Hola Juan! Gracias por elegirnos en Franlook Olivos. ¿Nos dejás tu opinión en Google Maps? Nos ayuda un montón.\n\n${LINK_M}`, fran);
+chequear('sin el link de la app', !fran.includes(LINK_R), fran);
+const franG = mensajesDelTurno(TURNO_OK, { businessId: OLIVOS, nombreNegocio: 'Franlook Olivos', linkGoogle: LINK_G, linkMaps: LINK_M }).gracias;
+chequear('la ficha de reseñas gana sobre la de Cómo llegar', franG.includes(LINK_G) && !franG.includes(LINK_M), franG);
+const franSin = mensajesDelTurno(TURNO_OK, { businessId: OLIVOS, nombreNegocio: 'Franlook Olivos' }).gracias;
+chequear('sin link, no queda la pregunta colgada', !franSin.includes('opinión') && !franSin.includes('http'), franSin);
+chequear('otra barbería no cambia',
+  mensajesDelTurno(TURNO_OK, { nombreNegocio: 'La Barberia', linkGoogle: LINK_G }).gracias === soloGoogle);
+
 console.log(`\n${ok} pasaron, ${mal} fallaron\n`);
 process.exit(mal ? 1 : 0);

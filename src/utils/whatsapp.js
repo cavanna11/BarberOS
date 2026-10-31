@@ -114,6 +114,8 @@ export function mensajesDelTurno(turno, {
   linkResena = '',
   /** Link de la ficha de Google de la barbería. Vacío = no se ofrece. */
   linkGoogle = '',
+  /** Link de Google Maps del local ("Cómo llegar"). Respaldo de linkGoogle. */
+  linkMaps = '',
 } = {}) {
   const cliente = nombreDePila(turno?.clientName);
   const hola = cliente ? `Hola ${cliente}` : 'Hola';
@@ -161,11 +163,29 @@ export function mensajesDelTurno(turno, {
   if (businessId === ID_NEYTAN) {
     return { ...base, recordatorio: recordatorioNeytan(turno) };
   }
+
+  // Franlook pidió su propio "gracias": solo Google Maps, con el link de ESA
+  // sucursal. El nombre del negocio ya es "Franlook Olivos", etc. Si la
+  // sucursal no cargó la ficha de reseñas, va la de "Cómo llegar".
+  if (IDS_FRANLOOK.has(businessId)) {
+    const link = linkGoogle || linkMaps;
+    return {
+      ...base,
+      gracias:
+        `${hola}! Gracias por elegirnos${donde}. ` +
+        (link
+          ? `¿Nos dejás tu opinión en Google Maps? Nos ayuda un montón.\n\n${link}`
+          : `¡Te esperamos la próxima!`),
+    };
+  }
   return base;
 }
 
 /** Misma barbería que registra `paginas-exclusivas/index.js`. */
 const ID_NEYTAN = 'UgRVepKBCLf84xkgVgSX';
+
+/** Las tres sucursales de Franlook: Olivos, Florida y Vicente López. */
+const IDS_FRANLOOK = new Set(['DH8aR5scn0wFOjTPURbl', 'sTHM908zMu1vfG6KCOqo', 'qNl0FkZrWJksw8dB3khm']);
 
 const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
