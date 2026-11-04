@@ -1,8 +1,8 @@
-import { useEffect, useId, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useState } from 'react';
 import { useTenant } from '../../hooks/useTenantData';
-import { obtenerCampanas, obtenerTarjetasCompletas } from '../../lib/repository';
+import { obtenerCampanas, obtenerTarjetasCompletas, obtenerSubcoleccion } from '../../lib/repository';
 import { guardarCampana, reiniciarTarjeta } from '../../lib/functions';
-import { validarCampana, restoSinPremio, segmentosDelJuego, describirPremio, repartirProbabilidades, COLORES } from '../../utils/recompensas';
+import { validarCampana, restoSinPremio, segmentosDelJuego, describirPremio, normalizarPremio, repartirProbabilidades, COLORES } from '../../utils/recompensas';
 import { diasEnTexto } from '../../components/recompensas/movimiento';
 import Rueda from '../../components/recompensas/Rueda';
 import TarjetaFidelidad from '../../components/recompensas/TarjetaFidelidad';
@@ -22,6 +22,9 @@ import TarjetaFidelidad from '../../components/recompensas/TarjetaFidelidad';
 //
 // Las campañas son de ESTA barbería. En una cuenta con sucursales cada local
 // tiene las suyas, como los cupones: sus servicios y sus clientes son otros.
+
+// Los productos de la barbería, para los editores de premio ("10% en la cera").
+const ProductosDelEditor = createContext([]);
 
 const CAMPANAS = [
   { tipo: 'ruleta', icono: '🎡', nombre: 'Ruleta', desc: 'El cliente gira antes de confirmar su turno y se lleva un descuento. Genera ganas de reservar.' },
@@ -114,6 +117,18 @@ export default function RecompensasPage() {
       .catch((err) => { if (vigente) { setDatos({ businessId, campanas: {} }); setError(`No se pudieron leer las campañas: ${err.message}`); } });
     return () => { vigente = false; };
   }, [businessId, vuelta]);
+
+  // Los productos, una lectura al entrar (llevan foto: no van en la suscripción).
+  // Si falla, el editor ofrece solo servicios.
+  const [productos, setProductos] = useState([]);
+  useEffect(() => {
+    if (!businessId) return undefined;
+    let vigente = true;
+    obtenerSubcoleccion(businessId, 'productos')
+      .then((filas) => { if (vigente) setProductos(filas.filter((p) => p.isActive !== false)); })
+      .catch((err) => console.warn('[Recompensas] No se pudieron leer los productos:', err.message));
+    return () => { vigente = false; };
+  }, [businessId]);
 
   const cargando = datos.businessId !== businessId;
   const campanas = datos.campanas;
@@ -227,6 +242,7 @@ export default function RecompensasPage() {
       )}
 
       {editando && (
+        <ProductosDelEditor.Provider value={productos}>
         <EditorCampana
           key={editando.tipo}
           tipo={editando.tipo}
@@ -236,6 +252,7 @@ export default function RecompensasPage() {
           onCerrar={() => setEditando(null)}
           onGuardar={guardar}
         />
+        </ProductosDelEditor.Provider>
       )}
     </div>
   );
@@ -362,6 +379,21 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
   const ids = p.serviceIds || [];
   const alternar = (id) => cambiar({ serviceIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] });
   const idIconos = useId();
+  const idAlcance = useId();
+  const productos = useContext(ProductosDelEditor);
+  // Sobre qué se descuenta, a la vista: estaba adentro de un desplegable cerrado
+  // y un barbero cargó "10%" con el nombre "cera" creyendo que era en la cera.
+  const productoIds = p.productoIds || [];
+  const enProducto = p.alcance === 'producto' || productoIds.length > 0;
+  // Un nombre automático del producto anterior se va con él; uno escrito a mano
+  // se respeta.
+  const elegirProducto = (x) => {
+    const anterior = normalizarPremio({ ...p, nombre: '' }).premio.nombre;
+    cambiar({
+      alcance: 'producto', productoIds: [x.id], productoNombre: x.name, serviceIds: [],
+      nombre: !p.nombre || p.nombre === anterior || p.nombre === describirPremio({ ...p, productoIds: [], valor: Number(p.valor) || 0 }) ? '' : p.nombre,
+    });
+  };
 
   return (
     <fieldset className="editor-premio">
@@ -372,7 +404,7 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
           <select className="form-input" value={p.tipo || 'porcentaje'} onChange={(e) => cambiar({ tipo: e.target.value, valor: e.target.value === 'porcentaje' ? 10 : e.target.value === 'monto' ? 2000 : 0 })}>
             <option value="porcentaje">% de descuento</option>
             <option value="monto">$ de descuento</option>
-            <option value="gratis">Servicio gratis</option>
+            <option value="gratis">{enProducto ? 'Producto gratis' : 'Servicio gratis'}</option>
             <option value="personalizado">Otro regalo</option>
           </select>
         </label>
@@ -389,7 +421,7 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
             className="form-input"
             maxLength={40}
             value={p.nombre || ''}
-            placeholder={p.tipo === 'personalizado' ? 'Ej.: Café de regalo' : describirPremio({ ...p, valor: Number(p.valor) || 0 })}
+            placeholder={p.tipo === 'personalizado' ? 'Ej.: Café de regalo' : normalizarPremio({ ...p, nombre: '' }).premio.nombre}
             onChange={(e) => cambiar({ nombre: e.target.value })}
           />
         </label>
@@ -423,7 +455,36 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
           <input type="color" className="form-input color-input" value={p.color || '#e03d00'} onChange={(e) => cambiar({ color: e.target.value })} />
         </label>
       </div>
-      {p.tipo !== 'personalizado' && services.length > 0 && (
+      {p.tipo !== 'personalizado' && productos.length > 0 && (
+        <div className="form-group">
+          <span className="form-label" id={idAlcance}>¿De qué se descuenta?</span>
+          <div className="cupon-chips" role="group" aria-labelledby={idAlcance}>
+            <button type="button" className={`cupon-chip ${!enProducto ? 'activo' : ''}`} aria-pressed={!enProducto}
+              onClick={() => cambiar({ alcance: 'servicio', productoIds: [], productoNombre: '' })}>
+              Del servicio
+            </button>
+            <button type="button" className={`cupon-chip ${enProducto ? 'activo' : ''}`} aria-pressed={enProducto}
+              onClick={() => cambiar({ alcance: 'producto', serviceIds: [] })}>
+              De un producto
+            </button>
+          </div>
+          {enProducto && (
+            <>
+              <div className="cupon-chips" style={{ marginTop: 8 }} role="group" aria-label="Qué producto">
+                {productos.map((x) => (
+                  <button key={x.id} type="button" className={`cupon-chip ${productoIds.includes(x.id) ? 'activo' : ''}`} aria-pressed={productoIds.includes(x.id)} onClick={() => elegirProducto(x)}>
+                    {x.name}
+                  </button>
+                ))}
+              </div>
+              <p className="text-sm text-muted" style={{ margin: '6px 0 0' }}>
+                Se aplica a una unidad, y solo si el cliente suma ese producto a su turno. El corte se cobra entero.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+      {p.tipo !== 'personalizado' && !enProducto && services.length > 0 && (
         <details className="editor-servicios" open={ids.length > 0}>
           <summary className="text-sm">Para qué servicios vale: {ids.length ? `${ids.length} elegidos` : 'todos'}</summary>
           <div className="cupon-chips">
@@ -452,7 +513,7 @@ function EditorSorteo({ tipo, cfg, set, services }) {
   const agregar = () => set({ premios: [...premios, premioBase({ probabilidad: 5, color: COLORES[premios.length % COLORES.length] })] });
 
   // La vista previa se arma con lo que haya, aunque todavía no valide.
-  const normalizados = premios.map((p) => ({ ...p, valor: Number(p.valor) || 0, probabilidad: Number(p.probabilidad) || 0, nombre: p.nombre || describirPremio({ ...p, valor: Number(p.valor) || 0 }) }));
+  const normalizados = premios.map((p) => ({ ...p, valor: Number(p.valor) || 0, probabilidad: Number(p.probabilidad) || 0, nombre: p.nombre || normalizarPremio(p).premio.nombre }));
   const sumaPremios = (10000 - restoSinPremio(normalizados)) / 100;
   const sinPremio = restoSinPremio(normalizados) / 100;
 

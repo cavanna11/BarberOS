@@ -50,6 +50,13 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // Cada contexto exporta su Provider y su hook, a propósito: separarlos en
+      // dos archivos es ceremonia. El costo es que editar uno de estos tres
+      // archivos recarga la página entera en vez del componente.
+      'react-refresh/only-export-components': ['error', {
+        allowConstantExport: true,
+        allowExportNames: ['useAuth', 'useBooking', 'useBusiness'],
+      }],
     },
   },
 ])

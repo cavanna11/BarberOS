@@ -43,3 +43,7 @@ functions/node_modules
 
 # Configuración local de Claude Code
 .claude/settings.local.json
+
+# Proyecto de Remotion del video promocional: tiene su propio package.json
+# y sus renders pesan. Vive aparte del producto.
+video/

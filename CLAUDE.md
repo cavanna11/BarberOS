@@ -121,7 +121,10 @@ Google.
   datos (paso 5), y al volver sigue donde estaba. El staff también agenda a
   mano desde Citas (para el cliente que pide por WhatsApp).
 - El barbero (rol `admin`) edita su propia ficha y horarios, atiende su agenda
-  (confirmar / completar / no asistió / cancelar / agendar) y abre tickets.
+  (vino / no vino / cancelar / agendar) y abre tickets. Los turnos nacen
+  confirmados; "Vino" y "No vino" se habilitan desde el DÍA del turno (no desde
+  que termina), y a futuro solo se cancela. Los `pendiente` viejos se leen y se
+  operan como confirmados.
 - El cliente puede cancelar solo hasta `minCancelHours` antes (Configuración);
   después tiene que escribir a la barbería. Se hace cumplir en el front.
 - **Agenda del día** (`AgendaDelDia`): el inicio del panel, para dueño y
@@ -2624,6 +2627,22 @@ EXACTO y nadie queda en 0). Un premio de 0% muestra "Convertir en Sin premio",
 y si los premios se pasan de 100 hay un botón para acomodarlos. No se guarda
 nada nuevo: el servidor sigue derivando el sin premio como el resto.
 
+**Premios sobre un producto (03/11/2026).** Una barbería cargó "10%" con el nombre
+"cera para peinar" y le descontaba del corte: el nombre es solo un nombre, y "para
+qué vale" estaba en un desplegable cerrado. Ahora cada premio pregunta a la vista
+**¿De qué se descuenta?** (Del servicio / De un producto). Con `productoIds` el
+servicio se cobra entero y el descuento sale de **una** unidad (`descuentoProducto`
+en `calcularPremio`): "cera gratis" es una cera, aunque lleve tres. Si el producto no
+está en el turno no aplica, y la reserva ofrece "Sumar X y usar el premio". La venta
+guarda lo cobrado de verdad (`total` neto, `descuentoPremio`). `createAppointment` lee
+los productos ANTES que el premio. Los premios ya ganados con la configuración vieja
+son copias: siguen descontando del servicio.
+
+**Quién paga un premio.** Un corte gratis deja el turno en `price: 0`: el cliente no
+paga y la barbería absorbe el costo. El barbero ve "🎁 Premio: … — ya descontado" y en
+sus números ese corte suma $0 (`precioLista` queda en el turno). Hoy no hay un "cubierto
+por premios" como el de membresías.
+
 **Accesibilidad y movimiento:** los juegos son `role="dialog"` con foco
 atrapado, Escape (salvo girando) y el foco devuelto; el resultado toma el foco;
 cada casilla dice si está sellada (✓ además del color); `prefers-reduced-motion`
@@ -2636,14 +2655,35 @@ servicio — `react-hooks/preserve-manual-memoization` en un `useMemo` que nadie
 tocó. Se arregla con `Number(...)` antes de pasarlo.
 
 ```bash
-node scripts/test-recompensas.mjs             # 128 casos, sin emulador (y que las dos copias sean iguales)
-node scripts/test-recompensas-emulador.mjs    # 105 casos
+node scripts/test-recompensas.mjs             # 139 casos, sin emulador (y que las dos copias sean iguales)
+node scripts/test-recompensas-emulador.mjs    # 121 casos
 node scripts/sembrar-recompensas-emulador.mjs # escenario con las 7 prendidas para el browser
 ```
 
 Orden de despliegue: **Rules y Functions primero, front después** (un front
 nuevo contra un servidor viejo mandaría `premioId` y el servidor lo ignoraría:
 el cliente vería el descuento y se le cobraría el precio de lista).
+
+### Arreglos de la auditoría del 01/11/2026
+
+- **Mail sin confirmar** (`mailSinVerificar` en `functions/recompensas.js`): una
+  cuenta de "Entrá con tu mail" que no tocó el link reserva UN turno a futuro;
+  el segundo, la ruleta y la caja piden el mail confirmado. El error lleva
+  `details.motivo: 'mail-sin-verificar'` y `llamar()` (`lib/functions.js`)
+  recarga la cuenta, renueva el token y reintenta una vez.
+- **Cumpleaños**: el regalo se genera solo si el cliente tiene al menos un turno
+  `completada` reservado con SU cuenta en esa barbería (`vinoAlgunaVez`). Si no,
+  `misRecompensas` devuelve `cumple.esperaVisita` y "Tus premios" lo dice.
+- **Rasca**: `jugarRecompensa` marca `rascaJugada` en el sello del turno;
+  deshacer y rehacer "Vino" no la vuelve a dar.
+- **Reactivar** un turno cancelado toma el premio solo si sigue usable
+  (`premioUsableEn`): uno vencido no.
+- **Reprogramar**: el snapshot `premio` del turno lleva `venceEn` y las Rules
+  (`premioSigueVigente`) no dejan mover el turno a una fecha posterior. Los
+  turnos viejos sin ese campo quedan como estaban.
+- Slugs con `--` rechazados en el servidor; el "gracias" de Franlook se decide
+  por `grupoId`, no por la lista de sucursales; lint en 0 (los hooks de los
+  contextos en `allowExportNames`).
 
 ### "Se traba y hasta que no cerrás no vuelve" (30/10/2026)
 

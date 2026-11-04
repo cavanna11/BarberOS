@@ -217,6 +217,33 @@ ambos('servidor y web calculan igual', (m) => [
   m.calcularPremio({ tipo: 'gratis', serviceIds: ['a'] }, { precio: 14500, serviceId: 'b' }),
 ]);
 
+console.log('\nPremio sobre un producto:');
+{
+  const cera = { tipo: 'porcentaje', valor: 10, productoIds: ['cera'], productoNombre: 'Cera para peinar' };
+  const conCera = [{ productoId: 'cera', price: 8000, cantidad: 1 }];
+  let r = srv.calcularPremio(cera, { precio: 18000, serviceId: 'corte', productos: conCera });
+  chequear('10% en la cera: el corte queda entero', r.aplica && r.precioFinal === 18000 && r.descuento === 0, JSON.stringify(r));
+  chequear('…y se descuentan $800 de la cera', r.descuentoProducto === 800);
+  r = srv.calcularPremio(cera, { precio: 18000, serviceId: 'corte', productos: [] });
+  chequear('sin la cera en el turno no aplica (no descuenta del corte)', !r.aplica && r.motivo === 'producto' && r.precioFinal === 18000);
+  r = srv.calcularPremio({ ...cera, tipo: 'gratis' }, { precio: 18000, productos: [{ productoId: 'cera', price: 8000, cantidad: 3 }] });
+  chequear('cera gratis con 3 en el turno: UNA gratis', r.descuentoProducto === 8000, JSON.stringify(r));
+  r = srv.calcularPremio({ ...cera, tipo: 'monto', valor: 99999 }, { precio: 18000, productos: conCera });
+  chequear('un monto mayor al precio se recorta a la unidad', r.descuentoProducto === 8000);
+  r = srv.calcularPremio(cera, { precio: 18000, productos: [{ id: 'cera', price: 8000, cantidad: 1 }] });
+  chequear('también entiende los renglones del navegador (id)', r.descuentoProducto === 800);
+  r = srv.calcularPremio(cera, { precio: 18000, productos: [{ productoId: 'gel', price: 8000, cantidad: 1 }] });
+  chequear('otro producto no le sirve', !r.aplica);
+
+  const v = srv.validarCampana('caja', { premios: [{ tipo: 'porcentaje', valor: 10, probabilidad: 50, productoIds: ['cera'], productoNombre: 'Cera' }] });
+  chequear('se guarda con su producto y nombre automático', v.ok && v.config.premios[0].productoIds[0] === 'cera' && v.config.premios[0].nombre === '10% en Cera', JSON.stringify(v));
+  chequear('"De un producto" sin elegir cuál no se guarda',
+    !srv.validarCampana('caja', { premios: [{ tipo: 'porcentaje', valor: 10, probabilidad: 50, alcance: 'producto' }] }).ok);
+  const nombreMano = srv.validarCampana('caja', { premios: [{ tipo: 'gratis', probabilidad: 50, nombre: 'Regalo', productoIds: ['cera'], serviceIds: ['corte'], productoNombre: 'Cera' }] });
+  chequear('un nombre a mano se respeta, y producto y servicios no conviven', nombreMano.config.premios[0].nombre === 'Regalo' && nombreMano.config.premios[0].serviceIds.length === 0);
+  chequear('un premio de servicio no cambia de forma', !('productoIds' in srv.validarCampana('caja', { premios: [{ tipo: 'porcentaje', valor: 10, probabilidad: 50 }] }).config.premios[0]));
+}
+
 console.log('\nVencimiento:');
 const p = { estado: 'disponible', venceEn: '2026-11-10', tipo: 'gratis' };
 chequear('el día del vencimiento todavía vale', srv.estadoDelPremio(p, '2026-11-10') === 'disponible');

@@ -116,6 +116,10 @@ const franG = mensajesDelTurno(TURNO_OK, { businessId: OLIVOS, nombreNegocio: 'F
 chequear('la ficha de reseñas gana sobre la de Cómo llegar', franG.includes(LINK_G) && !franG.includes(LINK_M), franG);
 const franSin = mensajesDelTurno(TURNO_OK, { businessId: OLIVOS, nombreNegocio: 'Franlook Olivos' }).gracias;
 chequear('sin link, no queda la pregunta colgada', !franSin.includes('opinión') && !franSin.includes('http'), franSin);
+const franNueva = mensajesDelTurno(TURNO_OK, { businessId: 'sucursal-nueva', grupoId: OLIVOS, nombreNegocio: 'Franlook Centro', linkMaps: LINK_M }).gracias;
+chequear('una sucursal nueva de la cuenta también lo lleva', franNueva.includes('Google Maps') && franNueva.includes(LINK_M), franNueva);
+chequear('una barbería de otra cuenta no',
+  !mensajesDelTurno(TURNO_OK, { businessId: 'otra', grupoId: 'otra', nombreNegocio: 'X', linkMaps: LINK_M }).gracias.includes('Google Maps'));
 chequear('otra barbería no cambia',
   mensajesDelTurno(TURNO_OK, { nombreNegocio: 'La Barberia', linkGoogle: LINK_G }).gracias === soloGoogle);
 

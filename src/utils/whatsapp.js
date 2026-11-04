@@ -110,6 +110,8 @@ export function mensajesDelTurno(turno, {
   nombreNegocio = '',
   nombreServicio = '',
   businessId = '',
+  /** La cuenta con sucursales a la que pertenece (`grupoId`), si tiene. */
+  grupoId = '',
   /** Link para valorar ESTE turno en la app. Vacío = no se ofrece. */
   linkResena = '',
   /** Link de la ficha de Google de la barbería. Vacío = no se ofrece. */
@@ -167,7 +169,9 @@ export function mensajesDelTurno(turno, {
   // Franlook pidió su propio "gracias": solo Google Maps, con el link de ESA
   // sucursal. El nombre del negocio ya es "Franlook Olivos", etc. Si la
   // sucursal no cargó la ficha de reseñas, va la de "Cómo llegar".
-  if (IDS_FRANLOOK.has(businessId)) {
+  // Por la CUENTA y no por una lista de sucursales: la que abran mañana
+  // también lo lleva sin tocar el código.
+  if (grupoId === CUENTA_FRANLOOK || businessId === CUENTA_FRANLOOK) {
     const link = linkGoogle || linkMaps;
     return {
       ...base,
@@ -184,8 +188,8 @@ export function mensajesDelTurno(turno, {
 /** Misma barbería que registra `paginas-exclusivas/index.js`. */
 const ID_NEYTAN = 'UgRVepKBCLf84xkgVgSX';
 
-/** Las tres sucursales de Franlook: Olivos, Florida y Vicente López. */
-const IDS_FRANLOOK = new Set(['DH8aR5scn0wFOjTPURbl', 'sTHM908zMu1vfG6KCOqo', 'qNl0FkZrWJksw8dB3khm']);
+/** La cuenta de Franlook (el id de su principal, Olivos, que es su `grupoId`). */
+const CUENTA_FRANLOOK = 'DH8aR5scn0wFOjTPURbl';
 
 const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 

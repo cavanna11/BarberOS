@@ -361,13 +361,6 @@ export default function ProfessionalsPage() {
                     </div>
                   </td>
                   <td className="oculta-mobile">{prof.specialty}</td>
-                  <td className="oculta-mobile">
-                    {deOtra ? <span className="text-muted">—</span> : (
-                      avisos[prof.id]?.dispositivos
-                        ? <span className="badge badge-success" title="Recibe los avisos en el celular">🔔 Activados</span>
-                        : <span className="badge badge-neutral" title="No va a recibir avisos de turnos nuevos">— Sin activar</span>
-                    )}
-                  </td>
                   <td>
                     <span className="text-sm text-secondary">
                       {deOtra ? <span className="text-muted">—</span>
@@ -377,6 +370,13 @@ export default function ProfessionalsPage() {
                     </span>
                   </td>
                   <td className="oculta-mobile"><span className="text-sm">{deOtra ? '—' : days}</span></td>
+                  <td className="oculta-mobile">
+                    {deOtra ? <span className="text-muted">—</span> : (
+                      avisos[prof.id]?.dispositivos
+                        ? <span className="badge badge-success" title="Recibe los avisos en el celular">🔔 Activados</span>
+                        : <span className="badge badge-neutral" title="No va a recibir avisos de turnos nuevos">— Sin activar</span>
+                    )}
+                  </td>
                   <td>
                     <span className={`badge ${prof.isActive ? 'badge-success' : 'badge-neutral'}`}>
                       {prof.isActive ? 'Activo' : 'Inactivo'}

@@ -18,7 +18,9 @@ import { textoAdicionales, textoMetodoPago } from '../../utils/adicionales';
  */
 
 const ESTADO = {
-  pendiente:  { label: 'Pendiente',  clase: 'badge-warning' },
+  // Los turnos viejos que quedaron 'pendiente': para todo efecto están
+  // confirmados (ver accionesPropias), así que se leen igual.
+  pendiente:  { label: 'Confirmada', clase: 'badge-success' },
   confirmada: { label: 'Confirmada', clase: 'badge-success' },
   completada: { label: 'Completada', clase: 'badge-primary' },
   cancelada:  { label: 'Cancelada',  clase: 'badge-danger' },
@@ -153,7 +155,10 @@ export default function AgendaDelDia({
   // dashboard y la de la sección propia no se vayan separando.
   const accionesPropias = (a) => {
     if (a.status !== 'pendiente' && a.status !== 'confirmada') return null;
-    const termino = yaTermino(a);
+    // Desde el día del turno, no desde que terminó: el que llegó temprano o ya
+    // se fue se marca en el momento, sin volver a la hora. A futuro solo se
+    // cancela: "Vino" en un turno de la semana que viene sumaría un sello.
+    const esSuDia = a.appointmentDate <= toDateString(ahoraReal);
     return (
       <>
         {/* No hay "Confirmar" (22/10/2026). El turno nace confirmado: apretar
@@ -162,13 +167,13 @@ export default function AgendaDelDia({
             en la pantalla que más se abre en el día. Los turnos viejos que
             quedaron en 'pendiente' se siguen viendo y se siguen cerrando
             igual: nunca hubo diferencia de comportamiento entre los dos. */}
-        {termino && (
+        {esSuDia && (
           <>
             <button className="btn btn-sm btn-primary" onClick={() => onCambiarEstado(a, 'completada')}>Vino</button>
             <button className="btn btn-sm btn-outline" onClick={() => onCambiarEstado(a, 'no_asistio')}>No vino</button>
           </>
         )}
-        <button className="btn btn-sm btn-ghost" title="Cancelar el turno" onClick={() => onCambiarEstado(a, 'cancelada')}>✕</button>
+        <button className="btn btn-sm btn-ghost" onClick={() => onCambiarEstado(a, 'cancelada')}>Cancelar</button>
       </>
     );
   };

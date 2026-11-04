@@ -473,7 +473,9 @@ await db.doc(`businesses/${BIZ}`).update({ mpConectado: false, sena: { activa: f
 // Los cambios de estado son escrituras DIRECTAS del panel a Firestore, no
 // llamadas a una function: por eso esto lo hace un trigger. Hay que esperarlo.
 console.log('\nQué pasa con el uso cuando el turno cambia de estado:');
-const esperarA = async (fn, intentos = 25) => {
+// 75 × 400 ms = 30 s: con todas las suites seguidas, el primer disparo del
+// trigger carga el contenedor en frío y 10 s no alcanzaban (auditoría 01/11).
+const esperarA = async (fn, intentos = 75) => {
   for (let i = 0; i < intentos; i++) {
     if (await fn()) return true;
     await new Promise((res) => setTimeout(res, 400));

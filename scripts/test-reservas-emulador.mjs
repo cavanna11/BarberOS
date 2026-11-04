@@ -200,6 +200,36 @@ chequear('4º turno, rechazado por tope', r.error === 'RESOURCE_EXHAUSTED', JSON
 await db.doc(`businesses/${BID}/appointments/${tercero}`).update({ status: 'cancelada' });
 r = await reservar(c6, { ...base, appointmentDate: MARTES[2], startTime: '09:00' });
 chequear('cancelado uno, vuelve a poder reservar', r.ok?.status === 'created', JSON.stringify(r));
+
+titulo('Cuenta con contraseña y el mail sin confirmar (un solo turno):');
+// La cuenta que crea "Entrá con tu mail": sign_in_provider 'password' y
+// email_verified en false hasta que toca el link.
+async function conContrasena(email) {
+  try { await auth.deleteUser((await auth.getUserByEmail(email)).uid); } catch { /* no existía */ }
+  const res = await fetch(`${AUTH}/accounts:signUp?key=fake`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'Clave1234', returnSecureToken: true }),
+  });
+  const j = await res.json();
+  return { uid: j.localId, token: j.idToken };
+}
+const sinVer = await conContrasena('inventado1@x.com');
+const creadosSinVer = [];
+r = await reservar(sinVer, { ...base, appointmentDate: MARTES[3], startTime: '10:00' });
+creadosSinVer.push(r.ok?.id);
+chequear('el primer turno entra sin confirmar el mail', r.ok?.status === 'created', JSON.stringify(r));
+r = await reservar(sinVer, { ...base, appointmentDate: MARTES[2], startTime: '11:00' });
+chequear('el segundo pide confirmar el mail', r.error === 'FAILED_PRECONDITION' && /Confirmá tu mail/.test(r.mensaje), JSON.stringify(r));
+await auth.updateUser(sinVer.uid, { emailVerified: true });
+const relogin = await fetch(`${AUTH}/accounts:signInWithPassword?key=fake`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'inventado1@x.com', password: 'Clave1234', returnSecureToken: true }),
+});
+sinVer.token = (await relogin.json()).idToken;
+r = await reservar(sinVer, { ...base, appointmentDate: MARTES[2], startTime: '11:00' });
+creadosSinVer.push(r.ok?.id);
+chequear('confirmado el mail (token nuevo), el segundo entra', r.ok?.status === 'created', JSON.stringify(r));
+for (const id of creadosSinVer.filter(Boolean)) await db.doc(`businesses/${BID}/appointments/${id}`).delete();
 // Un turno viejo que quedó 'pendiente' porque nadie lo marcó no cuenta: ya pasó.
 for (const fecha of ['2020-01-07', '2020-01-14']) {
   await db.collection(`businesses/${BID}/appointments`).add({

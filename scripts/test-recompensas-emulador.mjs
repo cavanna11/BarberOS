@@ -204,6 +204,16 @@ await esperar('el dueño sigue pudiendo editar su negocio (otro campo)', escribi
 console.log('\nRuleta:');
 r = await llamar('jugarRecompensa', null, { businessId: BIZ, tipo: 'ruleta' });
 chequear('sin sesión no se juega', r.error === 'UNAUTHENTICATED', r.msg);
+{
+  // "Entrá con tu mail" sin tocar el link: sign_in_provider 'password'.
+  try { await auth.deleteUser((await auth.getUserByEmail('rec-inventado@x.com')).uid); } catch { /* no existía */ }
+  const alta = await fetch(`${AUTH}/accounts:signUp?key=fake`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'rec-inventado@x.com', password: 'Clave1234', returnSecureToken: true }),
+  }).then((x) => x.json());
+  r = await llamar('jugarRecompensa', { token: alta.idToken }, { businessId: BIZ, tipo: 'ruleta' });
+  chequear('con el mail sin confirmar no se juega la ruleta', r.error === 'FAILED_PRECONDITION' && /Confirmá tu mail/.test(r.msg), r.msg);
+}
 r = await llamar('jugarRecompensa', cli, { businessId: BIZ, tipo: 'ruleta' });
 const idRuleta = `ruleta_${cli.uid}_${hoyAR()}`;
 chequear('el cliente gira y gana (50/50, siempre hay premio)', r.ok?.gano === true && [0, 1].includes(r.ok.indice), JSON.stringify(r));
@@ -273,9 +283,40 @@ r = await reservar(cli3, { premioId: 'pGratis' });
 chequear('corte gratis: total $0', r.ok?.price === 0, JSON.stringify(r));
 const aptGratis = r.ok?.id;
 
+console.log('\nPremio sobre un producto:');
+await db.doc(`businesses/${BIZ}/productos/cera`).set({ id: 'cera', name: 'Cera', price: 8000, stock: 5, isActive: true });
+await ponerPremio('pCera', { userId: cli6.uid, tipo: 'porcentaje', valor: 10, nombre: '10% en Cera', productoIds: ['cera'], productoNombre: 'Cera' });
+r = await reservar(cli6, { premioId: 'pCera' });
+chequear('sin la cera en el turno se rechaza, y dice por qué', r.error === 'FAILED_PRECONDITION' && /es para Cera/.test(r.msg), r.msg);
+chequear('…y el premio sigue disponible', (await premio('pCera')).estado === 'disponible');
+r = await reservar(cli6, { premioId: 'pCera', productos: [{ id: 'cera', cantidad: 2 }] });
+chequear('corte $15.000 + 2 ceras $16.000 − 10% de UNA cera = $30.200', r.ok?.price === 30200, JSON.stringify(r));
+{
+  const t = await turno(r.ok?.id);
+  chequear('el turno dice de qué producto fue', t?.premio?.productoId === 'cera' && t.premio.descuento === 800 && t.productosTotal === 15200, JSON.stringify(t?.premio));
+  const v = (await db.doc(`businesses/${BIZ}/ventasProductos/${r.ok?.id}`).get()).data();
+  chequear('la venta registra lo cobrado de verdad', v?.total === 15200 && v.descuentoPremio === 800, JSON.stringify(v));
+  chequear('el stock baja por las dos unidades', (await db.doc(`businesses/${BIZ}/productos/cera`).get()).get('stock') === 3);
+  chequear('el premio queda reservado', (await premio('pCera')).estado === 'reservado');
+}
+{
+  await campana('cumpleanos', { premio: { tipo: 'gratis', productoIds: ['cera'], productoNombre: 'Cera' } }, false);
+  await campana('cumpleanos', { premio: { tipo: 'porcentaje', valor: 20 } }, false);
+  const c = (await db.doc(`businesses/${BIZ}/recompensas/cumpleanos`).get()).data();
+  chequear('pasar un premio de producto a servicio no deja el producto pegado', !c.config.premio.productoIds && c.config.premio.tipo === 'porcentaje', JSON.stringify(c.config.premio));
+  await db.doc(`businesses/${BIZ}/recompensas/cumpleanos`).delete();
+}
+
 console.log('\nRules — el turno con premio:');
 await esperar('el staff NO le cambia el precio a un turno con premio', escribir(dueno, `businesses/${BIZ}/appointments/${aptP10}`, { price: 15000 }), 'denegado');
 await esperar('el staff NO le cambia el servicio', escribir(dueno, `businesses/${BIZ}/appointments/${aptP10}`, { serviceId: 'barba' }), 'denegado');
+{
+  const fechaOriginal = (await turno(aptP10)).appointmentDate;
+  chequear('el snapshot del premio lleva su vencimiento', (await turno(aptP10))?.premio?.venceEn === enDias(30));
+  await esperar('el staff NO lo reprograma para después del vencimiento del premio', escribir(dueno, `businesses/${BIZ}/appointments/${aptP10}`, { appointmentDate: enDias(31) }), 'denegado');
+  await esperar('…pero SÍ a un día dentro de la vigencia', escribir(dueno, `businesses/${BIZ}/appointments/${aptP10}`, { appointmentDate: enDias(29) }), 'permitido');
+  await db.doc(`businesses/${BIZ}/appointments/${aptP10}`).update({ appointmentDate: fechaOriginal });
+}
 await esperar('el staff NO le saca el premio', quitarCampo(dueno, `businesses/${BIZ}/appointments/${aptP10}`, 'premio'), 'denegado');
 await esperar('el staff NO crea un turno con premio a mano', fetch(`${DOCS}/businesses/${BIZ}/appointments`, {
   method: 'POST', headers: cab(dueno),
@@ -401,6 +442,27 @@ r = await llamar('jugarRecompensa', cli7, { businessId: BIZ, tipo: 'rasca', ref:
 chequear('el cliente raspa y gana', r.ok?.gano === true && r.ok.premio?.nombre === '15% OFF', JSON.stringify(r));
 r = await llamar('jugarRecompensa', cli7, { businessId: BIZ, tipo: 'rasca', ref: tRasca });
 chequear('la misma tarjeta no se raspa dos veces', r.error === 'FAILED_PRECONDITION', r.msg);
+{
+  // El barbero deshace "Vino" y lo vuelve a marcar: la rasca ya raspada no vuelve.
+  const sello = () => db.doc(`businesses/${BIZ}/recompensasSellos/${tRasca}`).get().then((d) => d.data() || {});
+  await escribir(barbero, `businesses/${BIZ}/appointments/${tRasca}`, { status: 'confirmada' });
+  await hasta(sello, (x) => x.estado === 'anulado');
+  await atender(tRasca);
+  await hasta(sello, (x) => x.estado === 'activo');
+  const pr = await progreso(cli7.uid);
+  chequear('deshacer y rehacer "Vino" no devuelve la rasca ya raspada', !(pr.rascas || []).some((x) => x.ref === tRasca), JSON.stringify(pr.rascas));
+}
+{
+  // Sin raspar: deshacer y rehacer deja UNA tarjeta, no dos.
+  const tSin = await turnoDelCliente(cli7, enDias(-2), { startTime: '11:00', endTime: '11:30' });
+  await atender(tSin);
+  await hasta(() => progreso(cli7.uid), (x) => (x.rascas || []).some((y) => y.ref === tSin));
+  await escribir(barbero, `businesses/${BIZ}/appointments/${tSin}`, { status: 'confirmada' });
+  await hasta(() => progreso(cli7.uid), (x) => !(x.rascas || []).some((y) => y.ref === tSin));
+  await atender(tSin);
+  const pr = await hasta(() => progreso(cli7.uid), (x) => (x.rascas || []).some((y) => y.ref === tSin));
+  chequear('sin raspar, deshacer y rehacer deja una sola tarjeta', (pr.rascas || []).filter((y) => y.ref === tSin).length === 1, JSON.stringify(pr.rascas));
+}
 
 // ── 7. Racha ────────────────────────────────────────────────────────────────
 console.log('\nRacha:');
@@ -446,9 +508,28 @@ chequear('el cliente carga su cumpleaños (hoy)', r.ok?.ok === true, r.msg);
 r = await llamar('guardarCumpleanos', cli10, { businessId: BIZ, fecha: '01-01' });
 chequear('no se puede cambiar después (si no, cumpliría años cada mes)', r.error === 'ALREADY_EXISTS', r.msg);
 r = await llamar('misRecompensas', cli10, { businessId: BIZ });
-chequear('al abrir "Tus premios" aparece el regalo de cumpleaños', r.ok?.premios?.some((p) => p.campana === 'cumpleanos' && p.estado === 'disponible'), JSON.stringify(r.ok?.premios));
+chequear('sin ninguna visita, el regalo NO aparece (cuenta nueva que se pone "hoy")',
+  !r.ok?.premios?.some((p) => p.campana === 'cumpleanos') && r.ok?.cumple?.esperaVisita === true, JSON.stringify(r.ok?.cumple));
+{
+  const tCumple = await turnoDelCliente(cli10, enDias(-4), { startTime: '12:00', endTime: '12:30' });
+  await atender(tCumple);
+  await hasta(() => turno(tCumple), (t) => t?.status === 'completada');
+}
+r = await llamar('misRecompensas', cli10, { businessId: BIZ });
+chequear('después de venir una vez, al abrir "Tus premios" aparece el regalo de cumpleaños', r.ok?.premios?.some((p) => p.campana === 'cumpleanos' && p.estado === 'disponible'), JSON.stringify(r.ok?.premios));
 r = await llamar('misRecompensas', cli10, { businessId: BIZ });
 chequear('abrirlo de nuevo no genera un segundo regalo', r.ok?.premios?.filter((p) => p.campana === 'cumpleanos').length === 1);
+
+// ── 9b. Turno reactivado con un premio que venció mientras estaba cancelado ─
+console.log('\nReactivar con premio vencido:');
+await ponerPremio('pReact', { userId: cli9.uid, tipo: 'porcentaje', valor: 10, venceEn: enDias(-1) });
+{
+  const tR = await turnoDelCliente(cli9, enDias(3), { status: 'cancelada', startTime: '13:00', endTime: '13:30', premio: { id: 'pReact', nombre: 'pReact', tipo: 'porcentaje', valor: 10, descuento: 1500 } });
+  await escribir(dueno, `businesses/${BIZ}/appointments/${tR}`, { status: 'confirmada' });
+  await new Promise((res) => setTimeout(res, 4000));
+  const p = await premio('pReact');
+  chequear('el premio vencido NO se vuelve a tomar al reactivar', p?.estado === 'disponible' && !p.appointmentId, JSON.stringify(p));
+}
 
 // ── 10. Mis recompensas, vencidos y campañas apagadas ──────────────────────
 console.log('\nMis recompensas:');

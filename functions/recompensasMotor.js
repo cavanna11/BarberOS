@@ -129,12 +129,25 @@ function normalizarPremio(p, { conProbabilidad = false, indice = 0 } = {}) {
     ? [...new Set(d.serviceIds.map(String).filter(Boolean))].slice(0, 50)
     : [];
 
+  // Un premio sobre un PRODUCTO ("10% en la cera"). Es el otro destino posible:
+  // con `productoIds` no toca el servicio. Vale lo mismo que `serviceIds`, pero
+  // sobre la mercadería. Lo pidió una barbería que cargó "10%" con el nombre
+  // "cera para peinar" y le descontaba del corte: el nombre es solo un nombre.
+  const esDeProducto = tipo !== 'personalizado' && d.alcance === 'producto';
+  const productoIds = esDeProducto || (tipo !== 'personalizado' && Array.isArray(d.productoIds) && d.productoIds.length > 0)
+    ? [...new Set((d.productoIds || []).map(String).filter(Boolean))].slice(0, 20)
+    : [];
+  if (esDeProducto && productoIds.length === 0) errores.push('Elegí a qué producto se aplica.');
+  const productoNombre = productoIds.length ? String(d.productoNombre || '').trim().slice(0, 40) : '';
+
   const color = COLOR.test(String(d.color || '')) ? String(d.color).toLowerCase() : COLORES[indice % COLORES.length];
   // Un emoji puede ocupar hasta 8 unidades (los que llevan modificadores). Más
   // que eso ya no es un ícono, es texto.
   const icono = String(d.icono || '').trim().slice(0, 8) || '🎁';
 
-  const premio = { tipo: tipo || 'porcentaje', valor, nombre, serviceIds, color, icono };
+  const premio = { tipo: tipo || 'porcentaje', valor, nombre, serviceIds: productoIds.length ? [] : serviceIds, color, icono };
+  // Solo si los hay: un premio de servicio queda igual que siempre.
+  if (productoIds.length) { premio.productoIds = productoIds; premio.productoNombre = productoNombre; }
 
   if (conProbabilidad) {
     const prob = Number(d.probabilidad);
@@ -151,6 +164,11 @@ function normalizarPremio(p, { conProbabilidad = false, indice = 0 } = {}) {
 }
 
 function nombrePorDefecto(p) {
+  if (p.productoNombre) {
+    if (p.tipo === 'porcentaje') return `${p.valor}% en ${p.productoNombre}`.slice(0, 40);
+    if (p.tipo === 'monto') return `$${Number(p.valor || 0).toLocaleString('es-AR')} en ${p.productoNombre}`.slice(0, 40);
+    if (p.tipo === 'gratis') return `${p.productoNombre} gratis`.slice(0, 40);
+  }
   if (p.tipo === 'porcentaje') return `${p.valor}% OFF`;
   if (p.tipo === 'monto') return `$${Number(p.valor || 0).toLocaleString('es-AR')} OFF`;
   if (p.tipo === 'gratis') return 'Servicio gratis';
@@ -176,16 +194,46 @@ function describirPremio(p) {
  *
  * `serviceIds` vacío = sirve para cualquier servicio.
  */
-function calcularPremio(p, { precio = 0, serviceId = null } = {}) {
+function calcularPremio(p, { precio = 0, serviceId = null, productos = [] } = {}) {
   const base = Math.max(0, Math.round(Number(precio) || 0));
   if (!p || !TIPOS_PREMIO.includes(p.tipo)) {
     return { aplica: false, motivo: 'no-existe', descuento: 0, precioFinal: base };
   }
+
+  // Sobre un producto: el servicio queda entero y el descuento sale de UNA
+  // unidad (la más cara de las que entran). "Cera gratis" es una cera: con tres
+  // en el carrito no pueden salir las tres gratis. Si el producto no está en el
+  // turno, no aplica: no hay de qué descontar.
+  const delPremio = Array.isArray(p.productoIds) ? p.productoIds : [];
+  if (delPremio.length > 0) {
+    const renglones = (Array.isArray(productos) ? productos : [])
+      .filter((r) => delPremio.includes(r?.productoId ?? r?.id) && Number(r?.cantidad) > 0);
+    if (!renglones.length) {
+      return { aplica: false, motivo: 'producto', descuento: 0, descuentoProducto: 0, precioFinal: base };
+    }
+    const unidad = renglones.reduce((m, r) => (Number(r.price) > Number(m.price) ? r : m));
+    const precioUnidad = Math.max(0, Math.round(Number(unidad.price) || 0));
+    return {
+      aplica: true,
+      motivo: null,
+      descuento: 0,
+      descuentoProducto: descuentoSobre(p, precioUnidad),
+      productoId: unidad.productoId ?? unidad.id,
+      precioFinal: base,
+    };
+  }
+
   const servicios = Array.isArray(p.serviceIds) ? p.serviceIds : [];
   if (servicios.length > 0 && !servicios.includes(serviceId)) {
     return { aplica: false, motivo: 'servicio', descuento: 0, precioFinal: base };
   }
 
+  const descuento = descuentoSobre(p, base);
+  return { aplica: true, motivo: null, descuento, precioFinal: base - descuento };
+}
+
+/** Cuánto descuenta este premio sobre un precio: entero, nunca más que el precio. */
+function descuentoSobre(p, base) {
   let descuento = 0;
   if (p.tipo === 'porcentaje') {
     const pct = Math.min(100, Math.max(0, Number(p.valor) || 0));
@@ -195,8 +243,7 @@ function calcularPremio(p, { precio = 0, serviceId = null } = {}) {
   } else if (p.tipo === 'gratis') {
     descuento = base;
   }
-  descuento = Math.min(descuento, base);
-  return { aplica: true, motivo: null, descuento, precioFinal: base - descuento };
+  return Math.min(descuento, base);
 }
 
 /**

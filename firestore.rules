@@ -581,7 +581,19 @@ service cloud.firestore {
         return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['membresia', 'premio', 'happyHour'])
                && ((!('membresia' in resource.data) && !('premio' in resource.data))
                    || !request.resource.data.diff(resource.data).affectedKeys()
-                         .hasAny(['serviceId', 'price', 'precioLista', 'userId']));
+                         .hasAny(['serviceId', 'price', 'precioLista', 'userId']))
+               && premioSigueVigente();
+      }
+
+      // Reprogramar un turno con premio: sí, pero no a un día posterior al
+      // vencimiento del premio. Las fechas son 'YYYY-MM-DD', así que comparar
+      // los textos es comparar las fechas. Los turnos viejos sin `venceEn` en
+      // el snapshot quedan como estaban.
+      function premioSigueVigente() {
+        return !('premio' in resource.data)
+               || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['appointmentDate'])
+               || resource.data.premio.get('venceEn', null) == null
+               || request.resource.data.appointmentDate <= resource.data.premio.venceEn;
       }
 
       match /appointments/{aptId} {

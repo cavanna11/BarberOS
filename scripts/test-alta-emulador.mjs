@@ -100,6 +100,9 @@ chequear('un slug reservado del sistema, rechazado', r.error === 'ALREADY_EXISTS
 r = await llamar('crearBarberiaDePrueba', otro, { nombre: 'Rara', slug: 'Con Espacios!', telefono: '11 2345-6789' });
 chequear('un slug con formato inválido, rechazado', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
 
+r = await llamar('crearBarberiaDePrueba', otro, { nombre: 'Doble', slug: 'mi--barberia', telefono: '11 2345-6789' });
+chequear('un slug con dos guiones seguidos, rechazado (slugify lo colapsa y quedaría inalcanzable)', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
+
 r = await llamar('crearBarberiaDePrueba', otro, { nombre: 'Sin tel', slug: 'sin-tel', telefono: '123' });
 chequear('sin teléfono válido, rechazado', r.error === 'INVALID_ARGUMENT', JSON.stringify(r));
 

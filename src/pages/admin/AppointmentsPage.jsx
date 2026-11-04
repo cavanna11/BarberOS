@@ -17,7 +17,6 @@ import { useDatosDeSucursales } from '../../hooks/useDatosDeSucursales';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
-  { value: 'pendiente',  label: 'Pendiente' },
   { value: 'confirmada', label: 'Confirmada' },
   { value: 'completada', label: 'Completada' },
   { value: 'cancelada',  label: 'Cancelada' },
@@ -25,7 +24,7 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_BADGES = {
-  pendiente:  'badge-warning',
+  pendiente:  'badge-success',
   confirmada: 'badge-success',
   completada: 'badge-primary',
   cancelada:  'badge-danger',
@@ -33,7 +32,8 @@ const STATUS_BADGES = {
 };
 
 const STATUS_LABELS = {
-  pendiente:  'Pendiente',
+  // Los viejos que quedaron 'pendiente': se leen y se tratan como confirmados.
+  pendiente:  'Confirmada',
   confirmada: 'Confirmada',
   completada: 'Completada',
   cancelada:  'Cancelada',
@@ -41,14 +41,12 @@ const STATUS_LABELS = {
 };
 
 /**
- * Retorna true si el turno ya comenzó (la hora de inicio es ≤ ahora).
- * Solo se puede marcar como completada / no_asistio una vez que el turno arrancó.
+ * ¿Ya llegó el día del turno? Desde ahí se puede marcar si vino o no: el que
+ * llegó temprano se marca en el momento. A futuro no, porque "Vino" en un turno
+ * de la semana que viene sumaría un sello de la tarjeta de fidelidad.
  */
-function isAppointmentStarted(apt) {
-  const [y, mo, d]  = apt.appointmentDate.split('-').map(Number);
-  const [h, m]      = apt.startTime.split(':').map(Number);
-  const aptDateTime = new Date(y, mo - 1, d, h, m, 0);
-  return aptDateTime <= new Date();
+function yaEsSuDia(apt) {
+  return apt.appointmentDate <= toDateString(new Date());
 }
 
 /** Cómo se lee el estado de la seña en la tabla. */
@@ -129,7 +127,10 @@ export default function AppointmentsPage() {
     }
 
     if (filterProf)   result = result.filter(a => a.professionalId === filterProf);
-    if (filterStatus) result = result.filter(a => a.status === filterStatus);
+    if (filterStatus) {
+      result = result.filter(a => a.status === filterStatus
+        || (filterStatus === 'confirmada' && a.status === 'pendiente'));
+    }
 
     // Una fecha elegida a mano manda sobre las solapas.
     if (filterDate) {
@@ -225,29 +226,20 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
 
   // Los mismos botones para la tabla (escritorio) y las tarjetas (celular).
   const accionesDe = (apt) => {
-    const started = isAppointmentStarted(apt);
-    const blockedMsg = 'El turno todavía no comenzó';
+    const esSuDia = yaEsSuDia(apt);
     return (
       <div className="table-actions">
         {(apt.status === 'pendiente' || apt.status === 'confirmada') && (
           <>
             {/* Con palabras: el tilde y el fantasmita no se entendían, y
                 marcar si vino o no es lo que más se toca en el día. */}
-            <button
-              className="btn btn-sm btn-primary"
-              title={started ? 'El cliente vino y lo atendiste' : blockedMsg}
-              onClick={() => started && updateStatus(apt, 'completada')}
-              disabled={!started}
-              style={!started ? { opacity: 0.35, cursor: 'not-allowed' } : {}}
-            >Vino</button>
-            <button
-              className="btn btn-sm btn-outline"
-              title={started ? 'El cliente no se presentó' : blockedMsg}
-              onClick={() => started && updateStatus(apt, 'no_asistio')}
-              disabled={!started}
-              style={!started ? { opacity: 0.35, cursor: 'not-allowed' } : {}}
-            >No vino</button>
-            <button className="btn btn-ghost btn-sm" title="Cancelar el turno" onClick={() => handleCancel(apt)}>✕</button>
+            {esSuDia && (
+              <>
+                <button className="btn btn-sm btn-primary" title="El cliente vino y lo atendiste" onClick={() => updateStatus(apt, 'completada')}>Vino</button>
+                <button className="btn btn-sm btn-outline" title="El cliente no se presentó" onClick={() => updateStatus(apt, 'no_asistio')}>No vino</button>
+              </>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={() => handleCancel(apt)}>Cancelar</button>
           </>
         )}
         {apt.sena?.estado === 'pagada' && (

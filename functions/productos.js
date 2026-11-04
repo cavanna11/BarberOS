@@ -149,7 +149,9 @@ function registrarVenta(tx, db, businessId, aptId, renglones, datos) {
     id: aptId,
     appointmentId: aptId,
     items: renglones,
-    total: totalDe(renglones),
+    // Lo que de verdad se cobró: un premio sobre el producto baja el total.
+    total: totalDe(renglones) - (Number(datos.descuentoPremio) || 0),
+    ...(datos.descuentoPremio ? { descuentoPremio: Number(datos.descuentoPremio) } : {}),
     // La venta es del BARBERO del turno: es la pregunta que originó todo esto.
     professionalId: datos.professionalId || null,
     professionalName: datos.professionalName || null,

@@ -11,7 +11,7 @@
 // suyo y escalar. Ver functions/index.js.
 
 import { httpsCallable } from 'firebase/functions';
-import { functions } from './firebase';
+import { auth, functions } from './firebase';
 
 /**
  * Las Functions requieren plan Blaze. Mientras no estén desplegadas, llamarlas
@@ -35,7 +35,23 @@ async function llamar(nombre, datos, opciones) {
   try {
     const { data } = await httpsCallable(functions, nombre, opciones)(datos);
     return data;
-  } catch (err) {
+  } catch (primero) {
+    let err = primero;
+    // "Confirmá tu mail": si ya tocó el link, el token todavía dice que no (se
+    // renueva solo cada hora). Se recarga la cuenta y, si ya está verificada,
+    // se pide un token nuevo y se reintenta UNA vez.
+    if (err?.details?.motivo === 'mail-sin-verificar' && auth?.currentUser) {
+      try {
+        await auth.currentUser.reload();
+        if (auth.currentUser.emailVerified) {
+          await auth.currentUser.getIdToken(true);
+          const { data } = await httpsCallable(functions, nombre, opciones)(datos);
+          return data;
+        }
+      } catch (otro) {
+        err = otro;
+      }
+    }
     // Se conserva el código original: quien llama a veces necesita distinguir
     // (por ejemplo, tratar un not-found como "todavía no hay Blaze" y seguir).
     // Los rechazos de permiso que escribe una function ("Ese turno lo reservó

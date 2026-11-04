@@ -47,6 +47,7 @@ for (const [id, name, price] of [['corte', 'Corte', 18000], ['barba', 'Barba', 9
   await db.doc(`businesses/${BIZ}/services/${id}`).set({ id, name, price, durationMinutes: 30, isActive: true, displayOrder: 1 });
   await db.doc(`businesses/${BIZ}/professionalServices/lucas-${id}`).set({ id: `lucas-${id}`, professionalId: 'lucas', serviceId: id, customPrice: null, customDuration: null });
 }
+await db.doc(`businesses/${BIZ}/productos/cera`).set({ id: 'cera', name: 'Cera para peinar', price: 8000, stock: 10, isActive: true, displayOrder: 1 });
 await db.doc(`businesses/${BIZ}/professionals/lucas`).set({ id: 'lucas', name: 'Lucas Martínez', specialty: 'Barbero', isActive: true });
 for (const d of [0, 1, 2, 3, 4, 5, 6]) {
   await db.doc(`businesses/${BIZ}/schedules/lucas-${d}`).set({ id: `lucas-${d}`, professionalId: 'lucas', dayOfWeek: d, startTime: '09:00', endTime: '20:00', isActive: true });

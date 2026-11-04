@@ -19,6 +19,7 @@ export default function WhatsAppTurno({ turno, business, servicio = null, compac
     nombreNegocio: business?.name || '',
     nombreServicio: servicio?.name || '',
     businessId: business?.id || '',
+    grupoId: business?.grupoId || '',
     // Solo si el turno es de una cuenta de cliente de verdad: los que carga el
     // staff a mano llevan el `userId` del que los cargó, así que ese link le
     // abriría "Mis citas" vacío a alguien que nunca entró. Un link muerto en un

@@ -11,7 +11,7 @@ import { turnoConMembresia } from '../../utils/membresias';
 import { textoAdicionales } from '../../utils/adicionales';
 
 const STATUS_LABELS = {
-  pendiente: { label: 'Pendiente', className: 'badge-warning' },
+  pendiente: { label: 'Confirmada', className: 'badge-success' },
   confirmada: { label: 'Confirmada', className: 'badge-success' },
   completada: { label: 'Completada', className: 'badge-success' },
   cancelada: { label: 'Cancelada', className: 'badge-danger' },

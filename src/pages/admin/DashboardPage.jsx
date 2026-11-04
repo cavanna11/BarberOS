@@ -13,7 +13,7 @@ import HistorialIngresos from '../../components/admin/HistorialIngresos';
 import { cubiertoPorMembresiasEnTurnos } from '../../utils/membresias';
 
 const STATUS_BADGES = {
-  pendiente:  'badge-warning',
+  pendiente:  'badge-success',
   confirmada: 'badge-success',
   completada: 'badge-primary',
   cancelada:  'badge-danger',
@@ -21,7 +21,7 @@ const STATUS_BADGES = {
 };
 
 const STATUS_LABELS = {
-  pendiente:  'Pendiente',
+  pendiente:  'Confirmada',
   confirmada: 'Confirmada',
   completada: 'Completada',
   cancelada:  'Cancelada',
@@ -122,8 +122,8 @@ export default function DashboardPage() {
       ? appointments.filter(a => a.professionalId === user.professionalId)
       : [];
 
-  // Acciones sobre un turno desde la agenda: confirmar, completar, no asistió,
-  // cancelar. Completar y "no asistió" recién cuando el turno ya empezó.
+  // Acciones sobre un turno desde la agenda: vino, no vino, cancelar. Las dos
+  // primeras desde el día del turno.
   const cambiarEstado = (apt, status) => {
     if (status === 'cancelada' && !window.confirm('¿Cancelar este turno?')) return;
     updateAppointment(businessId, apt.id, { status }).catch((err) => {
@@ -197,7 +197,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-md">
             <span className="badge badge-warning" style={{ fontSize: 13, padding: '6px 12px' }}>
-              ⏳ {upcomingPending.length} pendiente{upcomingPending.length !== 1 ? 's' : ''}
+              ⏳ {upcomingPending.length} por atender
             </span>
             <button className="btn btn-outline" onClick={() => setAgendando(true)}>
               📅 Agendar turno
@@ -240,6 +240,10 @@ export default function DashboardPage() {
   // VISTA DUEÑO
   // ══════════════════════════════════════════════════════════════════════════
   const stats = calculateStats(visibleAppointments, professionals, services);
+  // Los turnos nacen confirmados: "Pendientes" contaba solo los viejos y quedaba
+  // en cero. Lo que importa es cuántos faltan atender.
+  const porAtender = visibleAppointments.filter((a) =>
+    (a.status === 'pendiente' || a.status === 'confirmada') && a.appointmentDate >= today).length;
 
   // El mes en curso, aparte del total histórico. El total de toda la vida sirve
   // una vez; lo que el dueño mira todos los días es cómo viene ESTE mes.
@@ -413,8 +417,8 @@ export default function DashboardPage() {
         </div>
         <div className="stat-card">
           <div className="stat-card-icon" style={{ background: 'var(--warning-light)', color: 'var(--warning)' }}>⏳</div>
-          <div className="stat-card-value">{stats.pendientes}</div>
-          <div className="stat-card-label">Pendientes</div>
+          <div className="stat-card-value">{porAtender}</div>
+          <div className="stat-card-label">Por atender</div>
         </div>
         <div className="stat-card">
           <div className="stat-card-icon" style={{ background: 'var(--danger-light)', color: 'var(--danger)' }}>↩️</div>

@@ -1214,6 +1214,12 @@ exports.createAppointment = onCall(async (request) => {
     // uno más) y lo que hace inútil el abuso.
     const hoy = hoyEnArgentina();
     const aFuturo = activos.filter((a) => a.appointmentDate >= hoy).length;
+    // Con mail sin confirmar, UN turno a futuro: el que entra por primera vez
+    // reserva sin frenarse, y el que fabrica cuentas con mails inventados no
+    // llena la agenda de a 3 por cuenta.
+    if (aFuturo >= 1 && recompensas.mailSinVerificar(request.auth.token)) {
+      throw recompensas.errorMailSinVerificar('reservar otro turno');
+    }
     if (aFuturo >= MAX_TURNOS_ACTIVOS) {
       throw new HttpsError(
         'resource-exhausted',
@@ -1310,6 +1316,15 @@ exports.createAppointment = onCall(async (request) => {
       }
     }
 
+    // Los productos. Se leen ACÁ, adentro de la transacción y antes de
+    // cualquier escritura: el stock es lo único de todo el turno que puede
+    // agotarse entre que el cliente lo ve y aprieta el botón, y leerlo afuera
+    // dejaría justo la ventana por la que la última cera se vende dos veces.
+    // Van antes que el premio porque un premio puede ser sobre uno de ellos.
+    renglonesProductos = await productosSrv.leerYValidar(
+      tx, db, businessId, productos, HttpsError
+    );
+
     // ── El premio ───────────────────────────────────────────────────────────
     // Misma razón que la membresía para ir acá: dos pestañas reservando con el
     // mismo premio leen "disponible" las dos si se chequea afuera. Y misma
@@ -1318,10 +1333,11 @@ exports.createAppointment = onCall(async (request) => {
     if (premioId) {
       premioPreparado = await recompensas.prepararPremio(tx, {
         businessId, premioId, uid: request.auth.uid, serviceId, precio, appointmentDate,
+        productos: renglonesProductos,
       });
       cobro = {
         precioLista: precio,
-        descuento: premioPreparado.calculo.descuento,
+        descuento: premioPreparado.calculo.descuento + (premioPreparado.calculo.descuentoProducto || 0),
         precioFinal: premioPreparado.calculo.precioFinal,
         cuponCodigo: null,
         cuponId: null,
@@ -1344,14 +1360,6 @@ exports.createAppointment = onCall(async (request) => {
       }
     }
 
-    // Los productos. Se leen ACÁ, adentro de la transacción y antes de
-    // cualquier escritura: el stock es lo único de todo el turno que puede
-    // agotarse entre que el cliente lo ve y aprieta el botón, y leerlo afuera
-    // dejaría justo la ventana por la que la última cera se vende dos veces.
-    renglonesProductos = await productosSrv.leerYValidar(
-      tx, db, businessId, productos, HttpsError
-    );
-
     // La seña sale del precio FINAL, nunca del de lista. Con el fijo hace falta
     // el recorte: una seña de $5.000 sobre un corte de $15.000 con 80% OFF
     // serían $5.000 de seña por un turno de $3.000 — se le estaría cobrando de
@@ -1371,7 +1379,9 @@ exports.createAppointment = onCall(async (request) => {
     // membresía cubre el SERVICIO y el cupón descuenta el SERVICIO. Una
     // membresía que además regalara la cera sería una barbería regalando
     // mercadería que compró.
-    const totalProductos = productosSrv.totalDe(renglonesProductos);
+    // La excepción es el premio sobre un producto: ese sí lo ganó el cliente.
+    const descuentoProducto = premioPreparado?.calculo.descuentoProducto || 0;
+    const totalProductos = productosSrv.totalDe(renglonesProductos) - descuentoProducto;
     if (totalProductos > 0) {
       cobro = { ...cobro, precioFinal: cobro.precioFinal + totalProductos, productosTotal: totalProductos };
     }
@@ -1506,6 +1516,7 @@ exports.createAppointment = onCall(async (request) => {
       clientName: String(clientName).slice(0, 120),
       userId: request.auth.uid,
       fecha: appointmentDate,
+      descuentoPremio: descuentoProducto,
     });
 
     if (premioPreparado) recompensas.reservarPremio(tx, premioPreparado, ref.id);
@@ -1843,8 +1854,8 @@ exports.crearBarberiaDePrueba = onCall(async (request) => {
   const nombreDueno = limpiar(request.data?.nombreDueno, 60);
 
   if (nombre.length < 2) throw new HttpsError('invalid-argument', 'Poné el nombre de la barbería.');
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug) || slug.length < 3) {
-    throw new HttpsError('invalid-argument', 'El link solo puede tener letras, números y guiones (mínimo 3).');
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug) || /--/.test(slug) || slug.length < 3) {
+    throw new HttpsError('invalid-argument', 'El link solo puede tener letras, números y guiones sueltos (mínimo 3).');
   }
   if (SLUGS_RESERVADOS.includes(slug)) {
     throw new HttpsError('already-exists', 'Ese link está reservado por el sistema. Probá con otro.');
@@ -2202,8 +2213,8 @@ exports.crearSucursal = onCall(async (request) => {
   const copiarServiciosDe = String(request.data?.copiarServiciosDe || '').trim();
 
   if (nombre.length < 2) throw new HttpsError('invalid-argument', 'Poné el nombre de la sucursal.');
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug) || slug.length < 3) {
-    throw new HttpsError('invalid-argument', 'El link solo puede tener letras, números y guiones (mínimo 3).');
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug) || /--/.test(slug) || slug.length < 3) {
+    throw new HttpsError('invalid-argument', 'El link solo puede tener letras, números y guiones sueltos (mínimo 3).');
   }
   if (SLUGS_RESERVADOS.includes(slug)) {
     throw new HttpsError('already-exists', 'Ese link está reservado por el sistema. Probá con otro.');

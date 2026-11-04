@@ -359,7 +359,8 @@ export function AuthProvider({ children }) {
    * No da ningún permiso: sin claims, es un cliente. Lo que pide un mail
    * VERIFICADO (reclamar un permiso pendiente, atar una membresía cargada a
    * mano) sigue pidiéndolo en el servidor, así que se manda el mail de
-   * verificación y mientras tanto reserva igual que cualquiera.
+   * verificación y mientras tanto reserva UN turno (el segundo pide el mail
+   * confirmado, y la ruleta y la caja también: ver `mailSinVerificar`).
    */
   const registerWithPassword = async (email, password, nombre = '') => {
     try {

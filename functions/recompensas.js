@@ -89,6 +89,22 @@ function exigirDueno(request, businessId) {
   throw new HttpsError('permission-denied', 'Solo el dueño de la barbería puede configurar las recompensas.');
 }
 
+/**
+ * Cuenta de mail + contraseña que todavía no confirmó el mail. Las de Google
+ * vienen verificadas, y las que crea la plataforma nacen verificadas. Sin esto,
+ * con mails inventados (a1@x.com, a2@x.com…) se fabrican cuentas sin límite.
+ */
+function mailSinVerificar(token = {}) {
+  return token.firebase?.sign_in_provider === 'password' && token.email_verified !== true;
+}
+
+/** El error lleva `motivo` en los detalles: el browser refresca el token y reintenta una vez. */
+function errorMailSinVerificar(para) {
+  return new HttpsError('failed-precondition',
+    `Confirmá tu mail para ${para}: te mandamos un link a tu casilla. Si ya lo tocaste, probá de nuevo.`,
+    { motivo: 'mail-sin-verificar' });
+}
+
 function exigirCliente(request, businessId) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
   const id = String(businessId || '').trim();
@@ -116,6 +132,9 @@ function documentoDelPremio({ id, businessId, uid, email = '', nombreCliente = '
     tipo: def.tipo,
     valor: Number(def.valor) || 0,
     serviceIds: Array.isArray(def.serviceIds) ? def.serviceIds : [],
+    ...(Array.isArray(def.productoIds) && def.productoIds.length
+      ? { productoIds: def.productoIds, productoNombre: def.productoNombre || '' }
+      : {}),
     icono: def.icono || '🎁',
     color: def.color || '#e03d00',
     estado: 'disponible',
@@ -137,6 +156,8 @@ function premioParaElCliente(p) {
     tipo: p.tipo,
     valor: p.valor,
     serviceIds: p.serviceIds || [],
+    productoIds: p.productoIds || [],
+    productoNombre: p.productoNombre || '',
     icono: p.icono,
     color: p.color,
     estado: motor.estadoDelPremio(p, hoy),
@@ -212,7 +233,10 @@ exports.guardarCampana = onCall(OPCIONES, async (request) => {
       actualizadoPor: request.auth.uid,
       ...(previa ? {} : { creadoEn: FieldValue.serverTimestamp(), stats: { entregados: 0, usados: 0, jugadas: 0 } }),
     };
-    tx.set(ref.campana(businessId, tipo), datos, { merge: true });
+    // `mergeFields` y no `merge`: con merge, los mapas se combinan, y pasar el
+    // premio de la tarjeta de un producto a un servicio dejaría pegado el
+    // `productoIds` viejo. La config se reemplaza entera; las stats no se tocan.
+    tx.set(ref.campana(businessId, tipo), datos, { mergeFields: Object.keys(datos) });
 
     // El espejo: presente = activa. Un `update` con la ruta con puntos crea el
     // mapa si no existía, y `delete()` saca solo esa clave.
@@ -294,12 +318,19 @@ exports.misRecompensas = onCall(OPCIONES, async (request) => {
 
   // El regalo de cumpleaños, si corresponde. En transacción y con id fijo por
   // año: dos pestañas abiertas el mismo día no generan dos regalos.
+  //
+  // Solo para quien ya vino al menos una vez a ESTA barbería: si no, una cuenta
+  // recién creada se pone "hoy" de cumpleaños y se lleva el regalo en el acto.
   const cfgCumple = campanas.cumpleanos;
   const md = cliente.cumple?.fecha;
+  let cumpleEsperaVisita = false;
   if (cfgCumple && md) {
     const v = motor.ventanaDeCumple(md, hoy, cfgCumple);
-    if (v.enVentana) {
-      const id = `cumple_${uid}_${v.anio}`;
+    const id = `cumple_${uid}_${v.anio}`;
+    const yaLoTiene = v.enVentana && premios.some((p) => p.id === id);
+    if (v.enVentana && !yaLoTiene && !(await vinoAlgunaVez(businessId, uid))) {
+      cumpleEsperaVisita = true;
+    } else if (v.enVentana && !yaLoTiene) {
       const nuevo = await db().runTransaction(async (tx) => {
         const ya = await tx.get(ref.premio(businessId, id));
         if (ya.exists) return null;
@@ -349,9 +380,21 @@ exports.misRecompensas = onCall(OPCIONES, async (request) => {
     } : null,
     rascas: campanas.rasca ? (cliente.rascas || []).map((r) => ({ ref: r.ref, fecha: r.fecha })) : [],
     puede,
-    cumple: { fecha: md || null },
+    cumple: { fecha: md || null, esperaVisita: cumpleEsperaVisita },
   };
 });
+
+/**
+ * ¿Tiene al menos un turno ATENDIDO en esta barbería? Una sola lectura por
+ * `userId` filtrada en memoria, como el tope de turnos de createAppointment
+ * (un where por uid + estado pediría un índice compuesto).
+ */
+async function vinoAlgunaVez(businessId, uid) {
+  const snap = await db().collection(`businesses/${businessId}/appointments`).where('userId', '==', uid).get();
+  // Solo los que reservó con SU cuenta: los que carga el staff llevan el uid
+  // del que los cargó, y le contarían una visita al barbero.
+  return snap.docs.some((d) => d.get('status') === 'completada' && d.get('origen') === 'cliente');
+}
 
 /**
  * El cliente carga su cumpleaños. UNA vez: si se pudiera cambiar, cualquiera
@@ -394,6 +437,9 @@ exports.jugarRecompensa = onCall(OPCIONES, async (request) => {
   const rascaRef = request.data?.ref ? String(request.data.ref) : null;
   if (!motor.JUEGOS_DE_SORTEO.includes(tipo)) throw new HttpsError('invalid-argument', 'Ese juego no existe.');
   if (tipo === 'rasca' && !rascaRef) throw new HttpsError('invalid-argument', 'Falta cuál tarjeta raspar.');
+  // La rasca sale de un turno atendido, que ya es una persona de verdad. La
+  // ruleta y la caja no piden nada más que la cuenta.
+  if (tipo !== 'rasca' && mailSinVerificar(request.auth.token)) throw errorMailSinVerificar('jugar');
   const hoy = hoyEnArgentina();
 
   const r = await db().runTransaction(async (tx) => {
@@ -447,6 +493,9 @@ exports.jugarRecompensa = onCall(OPCIONES, async (request) => {
       sumarStat(tx, businessId, tipo, 'entregados');
     }
     sumarStat(tx, businessId, tipo, 'jugadas');
+    // Queda anotado en el sello del turno: si el barbero deshace "Vino" y lo
+    // vuelve a marcar, esta tarjeta no se reparte de nuevo.
+    if (tipo === 'rasca') tx.set(ref.sello(businessId, rascaRef), { rascaJugada: true }, { merge: true });
     tx.set(cliSnap.ref, {
       userId: uid,
       email: String(request.auth.token.email || '').slice(0, 120),
@@ -480,7 +529,7 @@ exports.jugarRecompensa = onCall(OPCIONES, async (request) => {
  * La barbería correcta sale gratis: el premio se busca en la barbería del
  * turno, así que el de otra sucursal acá no existe.
  */
-async function prepararPremio(tx, { businessId, premioId, uid, serviceId, precio, appointmentDate }) {
+async function prepararPremio(tx, { businessId, premioId, uid, serviceId, precio, appointmentDate, productos = [] }) {
   const snap = await tx.get(ref.premio(businessId, String(premioId)));
   const noEsta = () => new HttpsError('failed-precondition', 'Ese premio ya no está disponible. Volvé a elegir.');
   if (!snap.exists) throw noEsta();
@@ -499,7 +548,10 @@ async function prepararPremio(tx, { businessId, premioId, uid, serviceId, precio
     throw new HttpsError('failed-precondition', mensajes[u.motivo] || 'Ese premio ya no está disponible.');
   }
 
-  const calculo = motor.calcularPremio(p, { precio, serviceId });
+  const calculo = motor.calcularPremio(p, { precio, serviceId, productos });
+  if (calculo.motivo === 'producto') {
+    throw new HttpsError('failed-precondition', `Tu premio "${p.nombre}" es para ${p.productoNombre || 'un producto'}: sumalo a tu turno o reservá sin el premio.`);
+  }
   if (!calculo.aplica) {
     throw new HttpsError('failed-precondition', `Tu premio "${p.nombre}" no vale para este servicio. Elegí otro servicio o reservá sin el premio.`);
   }
@@ -524,7 +576,11 @@ function snapshotDelPremio(preparado) {
     tipo: premio.tipo,
     valor: Number(premio.valor) || 0,
     campana: premio.campana || null,
-    descuento: calculo.descuento,
+    descuento: calculo.descuento + (calculo.descuentoProducto || 0),
+    ...(calculo.productoId ? { productoId: calculo.productoId, productoNombre: premio.productoNombre || '' } : {}),
+    // Lo miran las Rules: el turno se puede reprogramar, pero no a un día
+    // posterior al vencimiento (si no, un "gratis" que vence el 10 paga el 20).
+    venceEn: premio.venceEn || null,
   };
 }
 
@@ -591,14 +647,17 @@ async function seguirPremio(bizId, aptId, antes, ahora) {
     }
 
     if (VIVOS.includes(ahora.status)) {
-      if (antes.status === 'cancelada' && p.estado === 'disponible' && !p.appointmentId) {
+      // Con el MISMO criterio que la reserva: un premio que venció mientras el
+      // turno estaba cancelado, o que no llega a la fecha del turno, no se toma.
+      const sirve = motor.premioUsableEn(p, { fecha: ahora.appointmentDate, hoy }).usable;
+      if (antes.status === 'cancelada' && sirve && !p.appointmentId) {
         tx.update(premioRef, { estado: 'reservado', appointmentId: aptId, reservadoEn: FieldValue.serverTimestamp() });
       } else if (TERMINAN_EL_PREMIO.includes(antes.status) && esDeEste && p.estado === 'usado') {
         tx.update(premioRef, { estado: 'reservado', usadoEn: FieldValue.delete() });
         sumarStat(tx, bizId, p.campana, 'usados', -1);
       } else if (antes.status === 'cancelada') {
-        // Se reactivó un turno cuyo premio ya se usó en otro: el turno conserva
-        // el precio con descuento. Lo ve el dueño en los logs.
+        // Se reactivó un turno cuyo premio ya se usó en otro, o que venció: el
+        // turno conserva el precio con descuento. Lo ve el dueño en los logs.
         logger.warn('turno reactivado con un premio que ya no está libre', { bizId, aptId, premioId: p.id, estado: p.estado });
       }
     }
@@ -663,7 +722,9 @@ async function sumarVisita(bizId, aptId, apt) {
       }
     }
 
-    if (cfgRasca) {
+    // La rasca de este turno ya se raspó (el "vino" se deshizo y se rehízo):
+    // no se vuelve a dar. La marca la pone jugarRecompensa en el sello.
+    if (cfgRasca && selloSnap.get('rascaJugada') !== true) {
       const lista = (Array.isArray(cliente.rascas) ? cliente.rascas : []).filter((x) => x.ref !== aptId);
       // Tope de cinco sin raspar: el que no entra nunca no acumula una pila.
       // La fecha es la del TURNO ("por tu turno del 12/11"), no la del día en
@@ -681,6 +742,7 @@ async function sumarVisita(bizId, aptId, apt) {
       sumoFidelidad,
       ciclo: sumoFidelidad ? cicloDelSello : null,
       estado: 'activo',
+      ...(selloSnap.get('rascaJugada') === true ? { rascaJugada: true } : {}),
       creadoEn: FieldValue.serverTimestamp(),
     });
 
@@ -772,3 +834,5 @@ module.exports.reservarPremio = reservarPremio;
 module.exports.snapshotDelPremio = snapshotDelPremio;
 module.exports.happyHourDelTurno = happyHourDelTurno;
 module.exports.motor = motor;
+module.exports.mailSinVerificar = mailSinVerificar;
+module.exports.errorMailSinVerificar = errorMailSinVerificar;

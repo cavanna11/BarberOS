@@ -50,7 +50,7 @@ function FormCumple({ businessId, premio, onGuardado }) {
       <h2 className="recompensa-bloque-titulo">🎂 ¿Cuándo es tu cumpleaños?</h2>
       <p className="text-sm text-secondary">
         Para tu cumple te regalamos <strong>{premio ? premio.nombre || describirPremio(premio) : 'un premio'}</strong>.
-        Se carga una sola vez.
+        Se carga una sola vez, y el regalo es para quien ya vino al menos una vez.
       </p>
       <div className="cumple-campos">
         <label className="form-group">
@@ -276,7 +276,9 @@ export default function PremiosPage() {
                 {campanas.cumpleanos && r.cumple?.fecha && (
                   <li>
                     <span aria-hidden="true">🎂</span>
-                    <span>Tu cumpleaños: <strong>{fechaCorta(`2000-${r.cumple.fecha}`)}</strong>. Ese día te espera {campanas.cumpleanos.premio?.nombre || 'un regalo'}.</span>
+                    <span>Tu cumpleaños: <strong>{fechaCorta(`2000-${r.cumple.fecha}`)}</strong>. {r.cumple.esperaVisita
+                      ? <>Tu regalo ({campanas.cumpleanos.premio?.nombre || 'un regalo'}) aparece acá después de tu primera visita.</>
+                      : <>Ese día te espera {campanas.cumpleanos.premio?.nombre || 'un regalo'}.</>}</span>
                   </li>
                 )}
               </ul>

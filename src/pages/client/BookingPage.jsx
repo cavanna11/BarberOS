@@ -850,7 +850,7 @@ export default function BookingPage() {
   const precioBase = Number(finalPrice) || 0;
   const premioSel = misPremios.find((p) => p.id === premioElegido && p.estado === 'disponible') || null;
   const calcPremio = premioSel && !conMembresia && !cupon && premioUsableEn(premioSel, { fecha: date, hoy: hoyLocal }).usable
-    ? calcularPremio(premioSel, { precio: precioBase, serviceId })
+    ? calcularPremio(premioSel, { precio: precioBase, serviceId, productos: productosDetalle })
     : null;
   const conPremio = Boolean(calcPremio?.aplica);
   const cfgHappy = campanas.happyHour || null;
@@ -868,8 +868,10 @@ export default function BookingPage() {
     : happy && happy.descuento > 0
       ? { icono: '⏰', titulo: 'Happy hour', texto: `${cfgHappy.porcentaje}% menos` }
       : null;
+  // Un premio sobre un producto ("10% en la cera") no toca el servicio.
+  const descuentoProducto = conPremio ? Number(calcPremio.descuentoProducto) || 0 : 0;
   const precioSinRecargo = precioServicio
-    + totalAdicionales + totalAcompanante + totalProductos;
+    + totalAdicionales + totalAcompanante + totalProductos - descuentoProducto;
   // Recargo por tarjeta o QR: solo si la barbería lo cobra, si hay algo que
   // pagar y si NO paga todo online (ahí no paga nada en el local).
   const montoRecargo = Number(business?.recargoTarjeta) || 0;
@@ -1449,6 +1451,12 @@ export default function BookingPage() {
           precio={finalPrice}
           currency={business.currency}
           services={services}
+          productos={productosDetalle}
+          enVenta={productosDisponibles}
+          onSumarProducto={(productoId, premioId) => {
+            setProdElegidos((prev) => ({ ...prev, [productoId]: prev[productoId] || 1 }));
+            setPremioElegido(premioId);
+          }}
           bloqueadoPor={conMembresia ? 'tu membresía' : cupon ? `el cupón ${cupon.codigo}` : null}
         />
       )}
@@ -1541,7 +1549,7 @@ export default function BookingPage() {
           date={date}
           timeSlot={timeSlot}
           price={precioAPagar}
-          precioLista={(cupon || conPremio || happy) && !conMembresia ? finalPrice : null}
+          precioLista={descuentoProducto > 0 ? precioAPagar + descuentoProducto : (cupon || conPremio || happy) && !conMembresia ? finalPrice : null}
           conMembresia={conMembresia}
           beneficio={beneficio}
           adicionales={adicionalesElegidos}
