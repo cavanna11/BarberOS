@@ -17,6 +17,7 @@ import {
   setBusinessFrozen,
   recordPayment,
   updateBilling,
+  updateBusiness,
   upgradePlan,
   savePlatformConfig,
   guardarLinkDeCuenta,
@@ -27,6 +28,7 @@ import NewBusinessModal from './NewBusinessModal';
 import PlanAMedida from '../../components/super-admin/PlanAMedida';
 import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
 import TicketsPanel from './TicketsPanel';
+import { aplicarPago, hoyEnArgentina } from '../../utils/facturacion';
 import { olvidarSucursalEnPanel, elegirSucursalEnPanel } from '../../utils/sucursalEnPanel';
 
 // --- Professional SVG Icons ---
@@ -198,6 +200,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
   const [selectedBusiness, setSelectedBusiness] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [debtAmount, setDebtAmount] = useState('');
+  const [vencimientoEditado, setVencimientoEditado] = useState('');
   const [deleteName, setDeleteName] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -320,13 +323,16 @@ export default function SuperAdminDashboard({ seccion = null }) {
 
   const handleOpenPaymentModal = (biz) => {
     setSelectedBusiness(biz);
-    setPaymentAmount(String(biz.debt ?? 0));
+    // Sin deuda, lo que viene a pagar es el mes que vence: se propone el abono.
+    // Antes se proponía la deuda, o sea $0, justo el día que más se cobra.
+    setPaymentAmount(String(biz.debt > 0 ? biz.debt : (biz.monthlyFee ?? 0)));
     setModalType('payment');
   };
 
   const handleOpenDebtModal = (biz) => {
     setSelectedBusiness(biz);
     setDebtAmount(String(biz.debt ?? 0));
+    setVencimientoEditado(biz.nextBillingDate || '');
     setModalType('debt');
   };
 
@@ -371,7 +377,9 @@ export default function SuperAdminDashboard({ seccion = null }) {
 
   const handleRecordPayment = async () => {
     if (!paymentAmount || isNaN(paymentAmount)) return;
-    const todayStr = new Date().toISOString().split('T')[0];
+    // La fecha de Buenos Aires: con toISOString, un cobro anotado después de
+    // las 21 h quedaba con fecha de mañana.
+    const todayStr = hoyEnArgentina();
     try {
       await recordPayment(selectedBusiness.id, Number(paymentAmount), todayStr);
     } catch (err) {
@@ -400,7 +408,20 @@ export default function SuperAdminDashboard({ seccion = null }) {
   const handleEditDebt = async () => {
     if (debtAmount === '' || isNaN(debtAmount)) return;
     try {
-      await updateBilling(selectedBusiness.id, { debt: Number(debtAmount) });
+      const cambios = { debt: Number(debtAmount) };
+      const fechaValida = /^\d{4}-\d{2}-\d{2}$/.test(vencimientoEditado);
+      if (fechaValida && vencimientoEditado !== selectedBusiness.nextBillingDate) {
+        cambios.nextBillingDate = vencimientoEditado;
+      }
+      await updateBilling(selectedBusiness.id, cambios);
+      // El espejo que lee el cartel del dueño, para que no espere a las 3 AM.
+      if (cambios.nextBillingDate) {
+        await updateBusiness(
+          selectedBusiness.id,
+          { proximoVencimiento: cambios.nextBillingDate },
+          { esPlataforma: true },
+        );
+      }
     } catch (err) {
       console.error('[super-admin] No se pudo actualizar el saldo:', err);
       alert('No se pudo actualizar el saldo: ' + err.message);
@@ -1609,6 +1630,22 @@ export default function SuperAdminDashboard({ seccion = null }) {
                   autoFocus
                 />
               </div>
+              {(() => {
+                // Lo que va a pasar, antes de confirmar: cuánto queda debiendo
+                // y hasta cuándo queda cubierta la cuenta.
+                const r = aplicarPago(selectedBusiness, Number(paymentAmount) || 0);
+                const antes = selectedBusiness.nextBillingDate;
+                return (
+                  <p className="text-secondary" style={{ fontSize: 13, margin: 0 }}>
+                    Deuda después del pago: <strong>{formatPrice(r.debt)}</strong>.{' '}
+                    {r.mesesAdelantados > 0 ? (
+                      <>Próximo vencimiento: {fechaDMA(antes)} → <strong>{fechaDMA(r.nextBillingDate)}</strong>.</>
+                    ) : antes ? (
+                      <>El vencimiento queda en <strong>{fechaDMA(antes)}</strong>.</>
+                    ) : null}
+                  </p>
+                );
+              })()}
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setModalType(null)}>Cancelar</button>
@@ -1625,7 +1662,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
         <div className="modal-overlay" onClick={() => setModalType(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
             <div className="modal-header">
-              <h3>Modificar Saldo de Deuda</h3>
+              <h3>Modificar deuda y vencimiento</h3>
               <button className="modal-close" onClick={() => setModalType(null)}>✕</button>
             </div>
             <div className="modal-body">
@@ -1643,6 +1680,18 @@ export default function SuperAdminDashboard({ seccion = null }) {
                   required
                   autoFocus
                 />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Próximo vencimiento</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={vencimientoEditado}
+                  onChange={e => setVencimientoEditado(e.target.value)}
+                />
+                <span className="text-xs text-muted">
+                  El día siguiente a esta fecha se le suma el abono a la deuda y, si no pagó, se suspende.
+                </span>
               </div>
             </div>
             <div className="modal-footer">

@@ -51,6 +51,7 @@ import {
   normalizarHorarioEspecial,
 } from '../utils/ausencias';
 import { db, reconectarFirestore } from './firebase';
+import { aplicarPago } from '../utils/facturacion';
 
 // ── Helpers de rutas ───────────────────────────────────────────────────────
 const businessesCol = () => collection(db, 'businesses');
@@ -466,15 +467,27 @@ export async function updateBilling(businessId, cambios) {
   await setDoc(billingDoc(businessId), cambios, { merge: true });
 }
 
-/** Registra un cobro y descuenta de la deuda. Descongela si queda en cero. */
+/**
+ * Registra un cobro: cancela la deuda y, lo que sobra, paga meses por
+ * adelantado corriendo el vencimiento (ver `aplicarPago`). Descongela si la
+ * deuda queda en cero.
+ */
 export async function recordPayment(businessId, monto, fecha) {
   const actual = (await getBilling(businessId)) || {};
-  const nuevaDeuda = Math.max(0, (actual.debt || 0) - monto);
+  const { debt: nuevaDeuda, nextBillingDate, mesesAdelantados } = aplicarPago(actual, monto);
 
   await updateBilling(businessId, {
     debt: nuevaDeuda,
     lastPaymentDate: fecha,
+    ...(mesesAdelantados > 0 ? { nextBillingDate } : {}),
   });
+
+  // El espejo público de la fecha (lo que lee el cartel "se te vence el…" del
+  // dueño). Si no se actualiza acá, el barbero que acaba de pagar sigue viendo
+  // el aviso de vencimiento hasta la corrida de las 3 AM.
+  if (mesesAdelantados > 0) {
+    await updateDoc(businessDoc(businessId), { proximoVencimiento: nextBillingDate });
+  }
 
   // El cobro queda anotado aparte, como un asiento más del libro. Antes lo
   // único que sobrevivía era `lastPaymentDate`, que se pisa en cada cobro: la
@@ -484,7 +497,7 @@ export async function recordPayment(businessId, monto, fecha) {
   await registrarCobro({ businessId, monto, fecha });
 
   if (nuevaDeuda === 0) await setBusinessFrozen(businessId, false);
-  return nuevaDeuda;
+  return { debt: nuevaDeuda, nextBillingDate, mesesAdelantados };
 }
 
 // ============================================================================
