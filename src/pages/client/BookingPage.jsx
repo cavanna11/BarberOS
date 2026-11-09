@@ -850,7 +850,7 @@ export default function BookingPage() {
   const precioBase = Number(finalPrice) || 0;
   const premioSel = misPremios.find((p) => p.id === premioElegido && p.estado === 'disponible') || null;
   const calcPremio = premioSel && !conMembresia && !cupon && premioUsableEn(premioSel, { fecha: date, hoy: hoyLocal }).usable
-    ? calcularPremio(premioSel, { precio: precioBase, serviceId, productos: productosDetalle })
+    ? calcularPremio(premioSel, { precio: precioBase, serviceId, productos: productosDetalle, adicionales: adicionalesElegidos })
     : null;
   const conPremio = Boolean(calcPremio?.aplica);
   const cfgHappy = campanas.happyHour || null;
@@ -869,7 +869,11 @@ export default function BookingPage() {
       ? { icono: '⏰', titulo: 'Happy hour', texto: `${cfgHappy.porcentaje}% menos` }
       : null;
   // Un premio sobre un producto ("10% en la cera") no toca el servicio.
-  const descuentoProducto = conPremio ? Number(calcPremio.descuentoProducto) || 0 : 0;
+  // Y uno sobre un adicional ("Lavado gratis") tampoco: sale del adicional. Va
+  // en la misma cuenta que el del producto, porque se muestran igual.
+  const descuentoProducto = conPremio
+    ? (Number(calcPremio.descuentoProducto) || 0) + (Number(calcPremio.descuentoAdicional) || 0)
+    : 0;
   const precioSinRecargo = precioServicio
     + totalAdicionales + totalAcompanante + totalProductos - descuentoProducto;
   // Recargo por tarjeta o QR: solo si la barbería lo cobra, si hay algo que
@@ -1455,6 +1459,12 @@ export default function BookingPage() {
           enVenta={productosDisponibles}
           onSumarProducto={(productoId, premioId) => {
             setProdElegidos((prev) => ({ ...prev, [productoId]: prev[productoId] || 1 }));
+            setPremioElegido(premioId);
+          }}
+          adicionales={adicionalesElegidos}
+          adicionalesEnVenta={adicionalesDisponibles}
+          onSumarAdicional={(adicionalId, premioId) => {
+            setExtras((prev) => (prev.includes(adicionalId) ? prev : [...prev, adicionalId]));
             setPremioElegido(premioId);
           }}
           bloqueadoPor={conMembresia ? 'tu membresía' : cupon ? `el cupón ${cupon.codigo}` : null}

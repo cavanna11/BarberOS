@@ -483,6 +483,21 @@ const esperarA = async (fn, intentos = 75) => {
   return false;
 };
 
+// Calentar el trigger ANTES de los casos. En la auditoría del 09/11 fallaron
+// los 4 de esta sección en la primera pasada y pasaron solos al re-correrla:
+// el primer disparo, con el contenedor en frío, tardó más de 30 s. Este turno
+// descartable se espera hasta 90 s y no cuenta como caso.
+await cupon('CALENTAR', { valor: 10 });
+await limpiarTurnos();
+{
+  const t = await reservar(cliente2, { cuponCodigo: 'CALENTAR' });
+  if (t.ok?.id) {
+    await db.doc(`businesses/${BIZ}/appointments/${t.ok.id}`).update({ status: 'completada' });
+    const listo = await esperarA(async () => (await db.doc(`businesses/${BIZ}/cupones/CALENTAR`).get()).get('usosConfirmados') === 1, 225);
+    if (!listo) console.log('  (el trigger no contestó en 90 s: lo que sigue puede fallar por eso)');
+  }
+}
+
 await cupon('SEGUIR', { valor: 20 });
 await limpiarTurnos();
 r = await reservar(nuevito, { cuponCodigo: 'SEGUIR' });

@@ -1334,10 +1334,13 @@ exports.createAppointment = onCall(async (request) => {
       premioPreparado = await recompensas.prepararPremio(tx, {
         businessId, premioId, uid: request.auth.uid, serviceId, precio, appointmentDate,
         productos: renglonesProductos,
+        adicionales: extras,
       });
       cobro = {
         precioLista: precio,
-        descuento: premioPreparado.calculo.descuento + (premioPreparado.calculo.descuentoProducto || 0),
+        descuento: premioPreparado.calculo.descuento
+          + (premioPreparado.calculo.descuentoProducto || 0)
+          + (premioPreparado.calculo.descuentoAdicional || 0),
         precioFinal: premioPreparado.calculo.precioFinal,
         cuponCodigo: null,
         cuponId: null,
@@ -1371,7 +1374,9 @@ exports.createAppointment = onCall(async (request) => {
     if (usoMembresia) cobro = { precioLista: precio, descuento: 0, precioFinal: 0, cuponCodigo: null, cuponId: null };
     // Los adicionales se pagan siempre (la membresía cubre el servicio, no los
     // extras) y el cupón no los toca: descuenta el servicio.
-    if (totalExtras > 0) cobro = { ...cobro, precioFinal: cobro.precioFinal + totalExtras, adicionalesTotal: totalExtras };
+    // La excepción es el premio sobre un adicional ("Lavado gratis"): sale de ahí.
+    const extrasACobrar = totalExtras - (premioPreparado?.calculo.descuentoAdicional || 0);
+    if (extrasACobrar > 0) cobro = { ...cobro, precioFinal: cobro.precioFinal + extrasACobrar, adicionalesTotal: extrasACobrar };
     // Lo mismo con el servicio del acompañante: se paga siempre. La membresía
     // y el cupón son del titular y cubren SU servicio, no el de otra persona.
     if (acomp && acomp.price > 0) cobro = { ...cobro, precioFinal: cobro.precioFinal + acomp.price, acompananteTotal: acomp.price };
@@ -2657,6 +2662,10 @@ exports.cambiarProfesional = onCall(async (request) => {
     // y en pantalla no se entendia por que.
     const reviewRef = db.doc(`businesses/${businessId}/reviews/${appointmentId}`);
     const review = await tx.get(reviewRef);
+    // Igual con la venta: solo se mueve si EXISTE. Con un `set` + merge, un
+    // turno sin productos quedaba con una venta fantasma de dos campos.
+    const ventaRef = db.doc(`businesses/${businessId}/ventasProductos/${appointmentId}`);
+    const venta = await tx.get(ventaRef);
 
     tx.update(aptRef, {
       professionalId: nuevoProfId,
@@ -2671,10 +2680,12 @@ exports.cambiarProfesional = onCall(async (request) => {
     // Lo que cuelga del turno y guarda el barbero por su cuenta. Si no se
     // mueve, la venta de la cera se la lleva el que no la vendió y la reseña
     // le queda al que no atendió.
-    tx.set(db.doc(`businesses/${businessId}/ventasProductos/${appointmentId}`), {
-      professionalId: nuevoProfId,
-      professionalName: nuevoProf.name || '',
-    }, { merge: true });
+    if (venta.exists) {
+      tx.update(ventaRef, {
+        professionalId: nuevoProfId,
+        professionalName: nuevoProf.name || '',
+      });
+    }
 
     if (review.exists) tx.update(reviewRef, { professionalId: nuevoProfId });
   });

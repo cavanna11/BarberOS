@@ -549,6 +549,49 @@ chequear('ruleta apagada: no se juega más', r.error === 'FAILED_PRECONDITION', 
 r = await reservar(cli, { premioId: idRuleta, appointmentDate: enDias(5) });
 chequear('…pero el premio que ya ganó sigue valiendo', typeof r.ok?.price === 'number' && r.ok.price < 15000, JSON.stringify(r));
 
+// ── Auditoría 09/11/2026 ───────────────────────────────────────────────────
+console.log('\nPremio sobre un adicional (Franlook):');
+{
+  await db.doc(`businesses/${BIZ}/services/lavado`).set({ id: 'lavado', name: 'Lavado', price: 3000, durationMinutes: 0, isActive: true, adicional: true });
+  const cliL = await usuario('rec-lavado@gmail.com', null);
+  await ponerPremio('pLavado', { userId: cliL.uid, tipo: 'gratis', nombre: 'Lavado gratis', adicionalIds: ['lavado'], adicionalNombre: 'Lavado' });
+  r = await reservar(cliL, { premioId: 'pLavado', appointmentDate: enDias(6) });
+  chequear('sin el lavado en el turno se rechaza, y dice por qué', r.error === 'FAILED_PRECONDITION' && /es para Lavado/.test(r.msg), r.msg);
+  r = await reservar(cliL, { premioId: 'pLavado', adicionales: ['lavado'], appointmentDate: enDias(6) });
+  chequear('corte $15.000 + lavado gratis = $15.000 (el corte se cobra entero)', r.ok?.price === 15000, JSON.stringify(r));
+  const t = await turno(r.ok?.id);
+  chequear('el turno dice que el premio fue el lavado', t?.premio?.adicionalId === 'lavado' && t.premio.descuento === 3000, JSON.stringify(t?.premio));
+}
+
+console.log('\nEl staff no juega:');
+{
+  await llamar('guardarCampana', dueno, { businessId: BIZ, tipo: 'ruleta', activa: true });
+  r = await llamar('jugarRecompensa', barbero, { businessId: BIZ, tipo: 'ruleta' });
+  chequear('el barbero no juega la ruleta de su barbería', r.error === 'PERMISSION_DENIED', r.msg);
+  r = await llamar('jugarRecompensa', dueno, { businessId: BIZ, tipo: 'ruleta' });
+  chequear('el dueño tampoco', r.error === 'PERMISSION_DENIED', r.msg);
+  r = await llamar('jugarRecompensa', duenoOtra, { businessId: BIZ, tipo: 'ruleta' });
+  chequear('el dueño de OTRA barbería sí (ahí es un cliente)', r.ok || /Ya jugaste/.test(r.msg || ''), JSON.stringify(r));
+}
+
+console.log('\nLos premios grandes, solo para quien ya vino:');
+{
+  // Una ruleta donde solo hay "gratis": un cliente nuevo no puede ganarlo nunca.
+  // 99,99% gratis y 0,01% sin premio (la ruleta pide al menos dos porciones).
+  r = await campana('ruleta', { premios: [{ tipo: 'gratis', probabilidad: 99.99, nombre: 'Corte gratis' }], frecuenciaDias: 1, diasVencimiento: 30 });
+  chequear('se guarda (con la opción prendida por defecto)', r.ok?.activa === true, r.msg);
+  const nuevo = await usuario('rec-nuevo-ruleta@gmail.com', null);
+  r = await llamar('jugarRecompensa', nuevo, { businessId: BIZ, tipo: 'ruleta' });
+  chequear('un cliente que nunca vino no gana el corte gratis', r.ok && r.ok.gano === false, JSON.stringify(r));
+  // Y uno que ya vino sí.
+  const habitual = await usuario('rec-habitual@gmail.com', null);
+  r = await reservar(habitual, { appointmentDate: enDias(-1 + 1) });
+  if (r.ok?.id) await db.doc(`businesses/${BIZ}/appointments/${r.ok.id}`).update({ status: 'completada' });
+  r = await llamar('jugarRecompensa', habitual, { businessId: BIZ, tipo: 'ruleta' });
+  chequear('el que ya vino sí puede ganarlo', r.ok?.gano === true, JSON.stringify(r));
+  await llamar('guardarCampana', dueno, { businessId: BIZ, tipo: 'ruleta', activa: false });
+}
+
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron.`);
 if (fallaron) {
   console.log('\nFallaron:\n  - ' + fallas.join('\n  - '));

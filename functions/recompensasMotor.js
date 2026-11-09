@@ -140,14 +140,39 @@ function normalizarPremio(p, { conProbabilidad = false, indice = 0 } = {}) {
   if (esDeProducto && productoIds.length === 0) errores.push('Elegí a qué producto se aplica.');
   const productoNombre = productoIds.length ? String(d.productoNombre || '').trim().slice(0, 40) : '';
 
+  // Sobre un ADICIONAL ("Lavado gratis", "Cejas gratis"). Lo trajo Franlook:
+  // cargó esos premios como "100% del servicio" y cada uno regalaba un corte
+  // entero de $20.000. El adicional se paga aparte del corte, así que el
+  // descuento sale de ahí y el corte se cobra entero.
+  const esDeAdicional = tipo !== 'personalizado' && !productoIds.length && d.alcance === 'adicional';
+  const adicionalIds = esDeAdicional || (tipo !== 'personalizado' && !productoIds.length && Array.isArray(d.adicionalIds) && d.adicionalIds.length > 0)
+    ? [...new Set((d.adicionalIds || []).map(String).filter(Boolean))].slice(0, 20)
+    : [];
+  if (esDeAdicional && adicionalIds.length === 0) errores.push('Elegí a qué adicional se aplica.');
+  const adicionalNombre = adicionalIds.length ? String(d.adicionalNombre || '').trim().slice(0, 40) : '';
+
+  // Tope en pesos del descuento ("50%, hasta $5.000"). Opcional: sin él, manda
+  // el porcentaje. No aplica a un monto fijo (ya es un tope) ni al personalizado.
+  let valorMaximo = null;
+  if ((tipo === 'porcentaje' || tipo === 'gratis') && d.valorMaximo !== undefined && d.valorMaximo !== null && d.valorMaximo !== '') {
+    const vm = Number(d.valorMaximo);
+    if (!Number.isFinite(vm) || vm < 1 || vm > 10000000) {
+      errores.push('El tope del descuento tiene que ser un monto mayor a cero (o dejalo vacío).');
+    } else {
+      valorMaximo = Math.round(vm);
+    }
+  }
+
   const color = COLOR.test(String(d.color || '')) ? String(d.color).toLowerCase() : COLORES[indice % COLORES.length];
   // Un emoji puede ocupar hasta 8 unidades (los que llevan modificadores). Más
   // que eso ya no es un ícono, es texto.
   const icono = String(d.icono || '').trim().slice(0, 8) || '🎁';
 
-  const premio = { tipo: tipo || 'porcentaje', valor, nombre, serviceIds: productoIds.length ? [] : serviceIds, color, icono };
+  const premio = { tipo: tipo || 'porcentaje', valor, nombre, serviceIds: productoIds.length || adicionalIds.length ? [] : serviceIds, color, icono };
   // Solo si los hay: un premio de servicio queda igual que siempre.
   if (productoIds.length) { premio.productoIds = productoIds; premio.productoNombre = productoNombre; }
+  if (adicionalIds.length) { premio.adicionalIds = adicionalIds; premio.adicionalNombre = adicionalNombre; }
+  if (valorMaximo) premio.valorMaximo = valorMaximo;
 
   if (conProbabilidad) {
     const prob = Number(d.probabilidad);
@@ -164,10 +189,11 @@ function normalizarPremio(p, { conProbabilidad = false, indice = 0 } = {}) {
 }
 
 function nombrePorDefecto(p) {
-  if (p.productoNombre) {
-    if (p.tipo === 'porcentaje') return `${p.valor}% en ${p.productoNombre}`.slice(0, 40);
-    if (p.tipo === 'monto') return `$${Number(p.valor || 0).toLocaleString('es-AR')} en ${p.productoNombre}`.slice(0, 40);
-    if (p.tipo === 'gratis') return `${p.productoNombre} gratis`.slice(0, 40);
+  const destino = p.productoNombre || p.adicionalNombre;
+  if (destino) {
+    if (p.tipo === 'porcentaje') return `${p.valor}% en ${destino}`.slice(0, 40);
+    if (p.tipo === 'monto') return `$${Number(p.valor || 0).toLocaleString('es-AR')} en ${destino}`.slice(0, 40);
+    if (p.tipo === 'gratis') return `${destino} gratis`.slice(0, 40);
   }
   if (p.tipo === 'porcentaje') return `${p.valor}% OFF`;
   if (p.tipo === 'monto') return `$${Number(p.valor || 0).toLocaleString('es-AR')} OFF`;
@@ -194,7 +220,7 @@ function describirPremio(p) {
  *
  * `serviceIds` vacío = sirve para cualquier servicio.
  */
-function calcularPremio(p, { precio = 0, serviceId = null, productos = [] } = {}) {
+function calcularPremio(p, { precio = 0, serviceId = null, productos = [], adicionales = [] } = {}) {
   const base = Math.max(0, Math.round(Number(precio) || 0));
   if (!p || !TIPOS_PREMIO.includes(p.tipo)) {
     return { aplica: false, motivo: 'no-existe', descuento: 0, precioFinal: base };
@@ -223,6 +249,27 @@ function calcularPremio(p, { precio = 0, serviceId = null, productos = [] } = {}
     };
   }
 
+  // Sobre un adicional: igual que el producto, pero el renglón es un adicional
+  // del turno (`[{ id, price }]`). El servicio se cobra entero.
+  const delAdicional = Array.isArray(p.adicionalIds) ? p.adicionalIds : [];
+  if (delAdicional.length > 0) {
+    const elegidos = (Array.isArray(adicionales) ? adicionales : [])
+      .filter((a) => delAdicional.includes(a?.id ?? a?.serviceId));
+    if (!elegidos.length) {
+      return { aplica: false, motivo: 'adicional', descuento: 0, descuentoAdicional: 0, precioFinal: base };
+    }
+    const uno = elegidos.reduce((m, a) => (Number(a.price) > Number(m.price) ? a : m));
+    const precioAdicional = Math.max(0, Math.round(Number(uno.price) || 0));
+    return {
+      aplica: true,
+      motivo: null,
+      descuento: 0,
+      descuentoAdicional: descuentoSobre(p, precioAdicional),
+      adicionalId: uno.id ?? uno.serviceId,
+      precioFinal: base,
+    };
+  }
+
   const servicios = Array.isArray(p.serviceIds) ? p.serviceIds : [];
   if (servicios.length > 0 && !servicios.includes(serviceId)) {
     return { aplica: false, motivo: 'servicio', descuento: 0, precioFinal: base };
@@ -243,7 +290,24 @@ function descuentoSobre(p, base) {
   } else if (p.tipo === 'gratis') {
     descuento = base;
   }
+  // El tope en pesos, si lo tiene ("50%, hasta $5.000").
+  const tope = Number(p.valorMaximo);
+  if (Number.isFinite(tope) && tope > 0) descuento = Math.min(descuento, Math.round(tope));
   return Math.min(descuento, base);
+}
+
+/**
+ * ¿Este premio regala el servicio ENTERO, sea cual sea? (100% o "gratis", sin
+ * servicios elegidos, sin tope y sin ser de un producto o adicional). Es lo que
+ * el editor pide confirmar: es la configuración que le regaló ocho cortes a
+ * Franlook con premios que se llamaban "Café" y "Lavado".
+ */
+function regalaCualquierServicio(p) {
+  if (!p || (p.tipo !== 'gratis' && !(p.tipo === 'porcentaje' && Number(p.valor) >= 100))) return false;
+  if ((p.productoIds || []).length || (p.adicionalIds || []).length) return false;
+  if (p.alcance === 'producto' || p.alcance === 'adicional') return false;
+  if ((p.serviceIds || []).length) return false;
+  return !(Number(p.valorMaximo) > 0);
 }
 
 /**
@@ -416,8 +480,36 @@ function validarJuego(tipo, c, errores) {
     const f = entero(c.frecuenciaDias, 1, 365, tipo === 'ruleta' ? 30 : 7);
     if (!f.ok) errores.push('Cada cuántos días se puede jugar: de 1 a 365.');
     config.frecuenciaDias = f.valor;
+    // Los premios que regalan el servicio entero salen solo para quien ya vino
+    // alguna vez. Prendido salvo que el dueño lo apague a propósito: con la
+    // ruleta abierta a cualquiera, cada cuenta de Google nueva era un corte
+    // gratis (auditoría del 09/11/2026, tres casos en Franlook).
+    config.grandesSoloConVisita = c.grandesSoloConVisita !== false;
   }
   return config;
+}
+
+/**
+ * ¿Este premio regala el servicio entero? (gratis o 100%, sobre el servicio y
+ * sin tope). Son los que solo salen para quien ya vino (`grandesSoloConVisita`).
+ */
+function esPremioGrande(p) {
+  if (!p) return false;
+  if ((p.productoIds || []).length || (p.adicionalIds || []).length) return false;
+  const entero = p.tipo === 'gratis' || (p.tipo === 'porcentaje' && Number(p.valor) >= 100);
+  return entero && !(Number(p.valorMaximo) > 0);
+}
+
+/**
+ * Los premios con los que se sortea para ESTE cliente. Si no vino nunca y la
+ * campaña lo pide, los grandes van con probabilidad 0: su parte pasa a "sin
+ * premio". La lista conserva el largo y el orden, así el índice que sale
+ * sigue apuntando a la misma porción de la ruleta.
+ */
+function premiosParaSortear(premios, { vino = false, soloConVisita = true } = {}) {
+  const lista = Array.isArray(premios) ? premios : [];
+  if (vino || !soloConVisita) return lista;
+  return lista.map((p) => (esPremioGrande(p) ? { ...p, probabilidad: 0 } : p));
 }
 
 /**
@@ -691,6 +783,9 @@ module.exports = {
   normalizarPremio,
   describirPremio,
   calcularPremio,
+  regalaCualquierServicio,
+  esPremioGrande,
+  premiosParaSortear,
   estadoDelPremio,
   premioUsableEn,
   sortear,

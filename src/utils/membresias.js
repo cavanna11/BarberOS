@@ -18,7 +18,7 @@ export const ESTADOS_MEMBRESIA = {
   pausada: { label: 'Pausada', clase: 'badge-warning' },
   pago_rechazado: { label: 'Pago rechazado', clase: 'badge-danger' },
   cancelada: { label: 'Cancelada', clase: 'badge-neutral' },
-  vencida: { label: 'Vencida', clase: 'badge-neutral' },
+  vencida: { label: 'Vencida', clase: 'badge-danger' },
   reemplazada: { label: 'Cambió de plan', clase: 'badge-neutral' },
 };
 
@@ -109,6 +109,39 @@ export function resumenDeMembresias(membresias = [], mes) {
     bajas,
     porPlan: [...porPlan.entries()].map(([nombre, cantidad]) => ({ nombre, cantidad })).sort((a, b) => b.cantidad - a.cantidad),
   };
+}
+
+/**
+ * Las membresías que piden que el dueño haga algo: las que VENCIERON sin
+ * renovarse (en los últimos `dias`) y las cargadas a mano que vencen en los
+ * próximos `diasAviso`. Lo trajo Franlook: cuatro membresías vencidas el 31/10
+ * que el panel escondía (la lista muestra solo las vigentes), así que nadie
+ * las renovó ni las dio de baja.
+ *
+ * Una vencida NO cuenta si el mismo cliente ya tiene otra vigente: es una que
+ * se reemplazó o se volvió a cargar, no una que se perdió.
+ * Las de Mercado Pago no se avisan "por vencer": se renuevan solas.
+ */
+const VIGENTES = ['activa', 'pausada', 'pendiente', 'pago_rechazado'];
+export function membresiasARenovar(membresias = [], hoy, { dias = 45, diasAviso = 5 } = {}) {
+  const sumar = (f, n) => {
+    const d = new Date(`${f}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const desde = sumar(hoy, -dias);
+  const hasta = sumar(hoy, diasAviso);
+  const clave = (m) => String(m.clienteUid || m.clienteEmail || m.id).toLowerCase();
+  const conVigente = new Set(membresias.filter((m) => VIGENTES.includes(m.estado)).map(clave));
+  const finDe = (m) => m.periodoActual?.hasta || null;
+
+  const vencidas = membresias.filter((m) => m.estado === 'vencida'
+    && !conVigente.has(clave(m))
+    && (!finDe(m) || finDe(m) >= desde));
+  const porVencer = membresias.filter((m) => m.estado === 'activa'
+    && !m.mp?.preapprovalId
+    && finDe(m) && finDe(m) >= hoy && finDe(m) <= hasta);
+  return { vencidas, porVencer };
 }
 
 /** Las fechas del historial llegan como Timestamp de Firestore o como Date. */

@@ -1854,7 +1854,7 @@ costarle la ficha al negocio. Es la misma regla que ya regía en la pantalla de
 después de valorar.
 
 ```bash
-node scripts/test-whatsapp.mjs   # 32 casos (9 nuevos), sin emulador
+node scripts/test-whatsapp.mjs   # 39 casos, sin emulador
 ```
 
 ### "No encontramos este negocio" en un link que existe (24/10/2026)
@@ -1970,7 +1970,7 @@ compañero. (En la práctica el peluquero ni ve los turnos de otro: las Rules le
 filtran la agenda. El límite está igual, del lado del servidor.)
 
 ```bash
-node scripts/test-reservas-emulador.mjs   # 140 casos (21 nuevos de esto)
+node scripts/test-reservas-emulador.mjs   # 146 casos
 ```
 
 Dos trampas que costaron una corrida cada una, las dos ya documentadas en este
@@ -2121,9 +2121,39 @@ WhatsApp. A los 0 días y pasada la fecha cambia el texto.
   cartel que está siempre deja de leerse.
 
 ```bash
-node scripts/test-billing-emulador.mjs      # 20 casos (6 nuevos)
-node scripts/auditar-rules-emulador.mjs     # 142 (el dueño no corre la fecha)
+node scripts/test-billing-emulador.mjs      # 20 casos
+node scripts/auditar-rules-emulador.mjs     # 155 (el dueño no corre la fecha)
+node scripts/test-facturacion.mjs           # 14 casos, sin emulador: el pago del abono
 ```
+
+**El pago del día del vencimiento se perdía (09/11/2026).** `runBilling` es mes vencido:
+recién el día DESPUÉS del vencimiento suma el abono y corre la fecha. Quien pagaba ese día
+(o antes) pagaba con deuda 0: `recordPayment` restaba de una deuda que no existía, la fecha
+no se movía y a las 3 AM se le cargaba el mes ya pagado y se congelaba (le pasó a Neytan).
+Ahora `aplicarPago` (`utils/facturacion.js`) cancela primero la deuda y lo que sobra paga
+meses por adelantado, un mes por abono entero (sin deuda y con un monto menor, igual cubre
+el mes que vence), con tope de 12. Corre `nextBillingDate` y el espejo `proximoVencimiento`.
+El modal de cobro muestra cómo quedan deuda y vencimiento antes de confirmar, propone el
+abono si no hay deuda, y "Modificar deuda y vencimiento" deja corregir la fecha a mano. La
+fecha del cobro es la de Buenos Aires, no UTC. No va en una transacción: son escrituras del
+browser de la plataforma, con un solo administrador cobrando.
+
+### Membresías vencidas sin renovar y turnos sin cerrar (09/11/2026)
+
+- **Membresías:** la lista escondía las vencidas junto con las viejas, así que nadie
+  renovaba ni daba de baja las de Franlook. `membresiasARenovar` (`utils/membresias.js`)
+  devuelve las vencidas de los últimos 45 días cuyo cliente no tiene otra vigente, y las
+  manuales que vencen en 5 días. Resumen las avisa en rojo; Clientes las muestra primero
+  con "Sin renovar" aunque no se tilde "Ver vencidas". Se renuevan con "Registrar pago
+  del mes", que ya aceptaba una vencida.
+- **Turnos de días pasados sin cerrar:** el inicio del panel avisa cuántos hay ("hasta
+  entonces no cuentan en la caja ni suman en la tarjeta") y Citas tiene la solapa "Sin
+  cerrar" (`/admin/citas?sinCerrar=1`), que solo aparece si hay.
+- **Reasignar un turno** ya no crea una venta de productos fantasma: la mueve solo si existe.
+- **Seña sin Mercado Pago:** sin MP no se cobra aunque diga "obligatoria" (el servidor exige
+  `mpConectado`). Configuración ahora lo dice, en vez de esconder la opción.
+- `functions/`: override de `rimraf ^6.1.4` (lo trae google-gax, no se usa en ejecución)
+  → 0 vulnerabilidades. `test-cupones-emulador` calienta el trigger antes de la sección 9.
 
 ### "Mañana trabajo de 10 a 13": el horario especial de un día (16/10/2026)
 
@@ -2507,7 +2537,7 @@ que son de alguien que atiende, no del mostrador.
 
 ```bash
 node scripts/auditar-rules-emulador.mjs   # 141 casos (15 nuevos de esto)
-node scripts/test-claims-emulador.mjs     # 83 casos (6 nuevos)
+node scripts/test-claims-emulador.mjs     # 88 casos
 ```
 
 Los 15 de Rules son mitad y mitad a propósito: cinco de lo que SÍ puede y diez
@@ -2643,6 +2673,29 @@ paga y la barbería absorbe el costo. El barbero ve "🎁 Premio: … — ya des
 sus números ese corte suma $0 (`precioLista` queda en el turno). Hoy no hay un "cubierto
 por premios" como el de membresías.
 
+**Lo que dejó la auditoría del 09/11/2026.** Franlook cargó "Lavado gratis", "Café
+gratis" y "Cejas gratis" como 100% del servicio: cada uno regalaba un corte de $20.000
+(8 cortes, $160.000). Ahora:
+
+- **Premio sobre un adicional** (`adicionalIds`, `adicionalNombre`, `alcance: 'adicional'`):
+  descuenta UN adicional del turno (`descuentoAdicional` en `calcularPremio`), el corte
+  se cobra entero, y si el adicional no está, la reserva ofrece "Sumar Lavado y usar el
+  premio". `createAppointment` le pasa `extras` a `prepararPremio` y resta el descuento
+  de `adicionalesTotal`. El editor tiene "¿De qué se descuenta?" con tres opciones, y
+  si el NOMBRE del premio nombra un adicional mientras descuenta del corte, lo avisa con
+  el botón para corregirlo.
+- **Tope opcional** `valorMaximo` en pesos para porcentaje y gratis ("50%, hasta $5.000").
+- **Confirmación a mano** en el editor si algún premio regala el servicio entero, sea
+  cual sea (`regalaCualquierServicio`): sin tildar "Sí, quiero regalar el servicio
+  entero", no se guarda. Es solo del editor: el servidor no lo exige.
+- **Los premios grandes solo para quien ya vino** (`grandesSoloConVisita`, prendido
+  salvo que se apague): en ruleta y caja, un cliente sin ningún turno atendido sortea con
+  los "gratis/100% sin tope" en probabilidad 0 (`premiosParaSortear`; la lista conserva
+  el orden, así el índice sigue apuntando a la porción). Los tres ganadores nuevos de
+  Franlook habían creado la cuenta el mismo minuto en que jugaron.
+- **El staff no juega** (`esStaffDe`: dueño, peluquero o mostrador de esa barbería o de
+  su cuenta). La plataforma sí, para probar.
+
 **Accesibilidad y movimiento:** los juegos son `role="dialog"` con foco
 atrapado, Escape (salvo girando) y el foco devuelto; el resultado toma el foco;
 cada casilla dice si está sellada (✓ además del color); `prefers-reduced-motion`
@@ -2655,8 +2708,8 @@ servicio — `react-hooks/preserve-manual-memoization` en un `useMemo` que nadie
 tocó. Se arregla con `Number(...)` antes de pasarlo.
 
 ```bash
-node scripts/test-recompensas.mjs             # 139 casos, sin emulador (y que las dos copias sean iguales)
-node scripts/test-recompensas-emulador.mjs    # 121 casos
+node scripts/test-recompensas.mjs             # 168 casos, sin emulador (y que las dos copias sean iguales)
+node scripts/test-recompensas-emulador.mjs    # 130 casos (el trigger en frío puede tumbar ~6 en la 1.ª pasada)
 node scripts/sembrar-recompensas-emulador.mjs # escenario con las 7 prendidas para el browser
 ```
 

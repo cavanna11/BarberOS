@@ -49,6 +49,11 @@ function yaEsSuDia(apt) {
   return apt.appointmentDate <= toDateString(new Date());
 }
 
+/** Un turno de un día que ya pasó y que nadie marcó como Vino / No vino. */
+function sinCerrar(apt, hoy) {
+  return (apt.status === 'pendiente' || apt.status === 'confirmada') && apt.appointmentDate < hoy;
+}
+
 /** Cómo se lee el estado de la seña en la tabla. */
 function etiquetaSena(apt, moneda) {
   const s = apt.sena;
@@ -101,7 +106,8 @@ export default function AppointmentsPage() {
   // Arranca en los de hoy: es lo que se mira noventa veces al día. Antes la
   // lista venía toda junta, por orden de carga, y había que ir buscando cuál
   // era de hoy entre los de la semana que viene.
-  const [rango, setRango] = useState('hoy');
+  // Con `?sinCerrar=1` (el aviso del inicio) arranca en los pasados sin marcar.
+  const [rango, setRango] = useState(() => (new URLSearchParams(window.location.search).has('sinCerrar') ? 'sinCerrar' : 'hoy'));
   const hoy = toDateString(new Date());
 
   // De dónde salen las filas. Con una sola sucursal (el caso normal) es el
@@ -139,6 +145,8 @@ export default function AppointmentsPage() {
       result = result.filter(a => a.appointmentDate === hoy);
     } else if (rango === 'proximos') {
       result = result.filter(a => a.appointmentDate > hoy);
+    } else if (rango === 'sinCerrar') {
+      result = result.filter((a) => sinCerrar(a, hoy));
     }
 
     // Los de hoy y los que vienen, del primero al último (es el orden en que
@@ -158,6 +166,7 @@ export default function AppointmentsPage() {
     return {
       hoy: vivos.filter(a => a.appointmentDate === hoy).length,
       proximos: vivos.filter(a => a.appointmentDate > hoy).length,
+      sinCerrar: mios.filter((a) => sinCerrar(a, hoy)).length,
     };
   }, [turnos, isOwner, profIdPropio, hoy]);
 
@@ -289,6 +298,8 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
           { id: 'hoy', label: 'Hoy', badge: cuantos.hoy },
           { id: 'proximos', label: 'Próximos', badge: cuantos.proximos },
           { id: 'todos', label: 'Todos', badge: null },
+          // Solo aparece si hay: los de días pasados que nadie marcó.
+          ...(cuantos.sinCerrar > 0 ? [{ id: 'sinCerrar', label: 'Sin cerrar', badge: cuantos.sinCerrar }] : []),
         ].map((s) => (
           <button
             key={s.id}

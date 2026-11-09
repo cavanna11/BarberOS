@@ -97,6 +97,26 @@ function WalkinModal({ onClose, onConfirm }) {
 }
 
 // ─── Componente principal ──────────────────────────────────────────────────
+/**
+ * "Tenés N turnos de días pasados sin cerrar". Mientras un turno no se marca
+ * Vino / No vino, no suma el sello de la tarjeta, el premio reservado no pasa a
+ * usado y la caja no lo cuenta. La auditoría del 09/11 encontró 51 en Volcado.
+ */
+function TurnosSinCerrar({ appointments, today }) {
+  const viejos = appointments.filter((a) =>
+    (a.status === 'pendiente' || a.status === 'confirmada') && a.appointmentDate < today);
+  if (!viejos.length) return null;
+  const conPremio = viejos.filter((a) => a.premio).length;
+  return (
+    <div className="notice notice-warn" style={{ marginBottom: 'var(--space-md)' }} role="status">
+      🗂️ Tenés <strong>{viejos.length}</strong> {viejos.length === 1 ? 'turno' : 'turnos'} de días pasados sin cerrar
+      {conPremio > 0 && <> ({conPremio} con premio)</>}. Marcá si vino o no vino: hasta entonces no
+      cuentan en la caja ni suman en la tarjeta de fidelidad.{' '}
+      <Link to="/admin/citas?sinCerrar=1">Verlos</Link>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const { appointments, professionals, services, professionalServices, business, businessId } = useTenant();
@@ -209,6 +229,8 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+
+        {turnosListos && <TurnosSinCerrar appointments={visibleAppointments} today={today} />}
 
         {agendando && <NuevoTurnoModal onClose={() => setAgendando(false)} />}
 
@@ -366,6 +388,8 @@ export default function DashboardPage() {
         <h1>Dashboard</h1>
         <span className="badge badge-primary">📅 {formatDate(today)}</span>
       </div>
+
+      {turnosListos && <TurnosSinCerrar appointments={visibleAppointments} today={today} />}
 
       {/* Stats Grid */}
       <div className="stats-grid">

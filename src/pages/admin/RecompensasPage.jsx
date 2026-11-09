@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useId, useState } from 'react';
 import { useTenant } from '../../hooks/useTenantData';
 import { obtenerCampanas, obtenerTarjetasCompletas, obtenerSubcoleccion } from '../../lib/repository';
 import { guardarCampana, reiniciarTarjeta } from '../../lib/functions';
-import { validarCampana, restoSinPremio, segmentosDelJuego, describirPremio, normalizarPremio, repartirProbabilidades, COLORES } from '../../utils/recompensas';
+import { validarCampana, restoSinPremio, segmentosDelJuego, describirPremio, normalizarPremio, repartirProbabilidades, regalaCualquierServicio, COLORES } from '../../utils/recompensas';
 import { diasEnTexto } from '../../components/recompensas/movimiento';
 import Rueda from '../../components/recompensas/Rueda';
 import TarjetaFidelidad from '../../components/recompensas/TarjetaFidelidad';
@@ -25,6 +25,18 @@ import TarjetaFidelidad from '../../components/recompensas/TarjetaFidelidad';
 
 // Los productos de la barbería, para los editores de premio ("10% en la cera").
 const ProductosDelEditor = createContext([]);
+// Los adicionales (lavado, cejas, café): un premio puede ser sobre uno de ellos.
+const AdicionalesDelEditor = createContext([]);
+
+/** Todos los premios de una configuración, sea cual sea la campaña. */
+function premiosDeLaConfig(cfg) {
+  if (!cfg) return [];
+  return [
+    ...(Array.isArray(cfg.premios) ? cfg.premios : []),
+    ...(cfg.premio ? [cfg.premio] : []),
+    ...(Array.isArray(cfg.niveles) ? cfg.niveles.map((n) => n?.premio).filter(Boolean) : []),
+  ];
+}
 
 const CAMPANAS = [
   { tipo: 'ruleta', icono: '🎡', nombre: 'Ruleta', desc: 'El cliente gira antes de confirmar su turno y se lleva un descuento. Genera ganas de reservar.' },
@@ -136,6 +148,7 @@ export default function RecompensasPage() {
 
   if (!business) return null;
   const serviciosReservables = services.filter((s) => s.isActive !== false && !s.adicional);
+  const adicionales = services.filter((s) => s.isActive !== false && s.adicional);
 
   const activar = async (tipo, activa) => {
     const c = campanas[tipo];
@@ -243,6 +256,7 @@ export default function RecompensasPage() {
 
       {editando && (
         <ProductosDelEditor.Provider value={productos}>
+        <AdicionalesDelEditor.Provider value={adicionales}>
         <EditorCampana
           key={editando.tipo}
           tipo={editando.tipo}
@@ -252,6 +266,7 @@ export default function RecompensasPage() {
           onCerrar={() => setEditando(null)}
           onGuardar={guardar}
         />
+        </AdicionalesDelEditor.Provider>
         </ProductosDelEditor.Provider>
       )}
     </div>
@@ -310,8 +325,15 @@ function EditorCampana({ tipo, inicial, activa, services, onCerrar, onGuardar })
   // que allá se acepta.
   const v = validarCampana(tipo, cfg);
 
+  // Un premio que regala el servicio ENTERO, el que sea, se confirma a mano.
+  // Es la configuración que le regaló ocho cortes de $20.000 a Franlook con
+  // premios que se llamaban "Café", "Lavado" y "Cejas".
+  const regalanTodo = v.ok ? premiosDeLaConfig(v.config).filter(regalaCualquierServicio) : [];
+  const [confirmaRegalo, setConfirmaRegalo] = useState(false);
+  const falta = regalanTodo.length > 0 && !confirmaRegalo;
+
   const enviar = async (prender) => {
-    if (!v.ok) return;
+    if (!v.ok || falta) return;
     setGuardando(true);
     setError('');
     try {
@@ -351,15 +373,29 @@ function EditorCampana({ tipo, inicial, activa, services, onCerrar, onGuardar })
               <ul>{v.errores.map((e) => <li key={e}>{e}</li>)}</ul>
             </div>
           )}
+          {regalanTodo.length > 0 && (
+            <div className="notice notice-warn" role="status">
+              <strong>
+                {regalanTodo.length === 1 ? 'Este premio regala' : 'Estos premios regalan'} el servicio entero, sea cual sea:
+              </strong>{' '}
+              {regalanTodo.map((p) => `"${p.nombre}"`).join(', ')}. El cliente que lo gane no paga el corte.
+              Si querías regalar un lavado, un café o las cejas, cambiá &quot;¿De qué se descuenta?&quot; a
+              {' '}<em>De un adicional</em> o el tipo a <em>Otro regalo</em>.
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                <input type="checkbox" checked={confirmaRegalo} onChange={(e) => setConfirmaRegalo(e.target.checked)} />
+                Sí, quiero regalar el servicio entero.
+              </label>
+            </div>
+          )}
           {error && <div className="notice notice-danger" role="alert">{error}</div>}
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onCerrar}>Cancelar</button>
-          <button type="button" className="btn btn-outline" disabled={!v.ok || guardando} onClick={() => enviar(activa)}>
+          <button type="button" className="btn btn-outline" disabled={!v.ok || falta || guardando} onClick={() => enviar(activa)}>
             {guardando ? 'Guardando…' : activa ? 'Guardar cambios' : 'Guardar sin activar'}
           </button>
           {!activa && (
-            <button type="button" className="btn btn-primary" disabled={!v.ok || guardando} onClick={() => enviar(true)}>
+            <button type="button" className="btn btn-primary" disabled={!v.ok || falta || guardando} onClick={() => enviar(true)}>
               Guardar y activar
             </button>
           )}
@@ -385,6 +421,22 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
   // y un barbero cargó "10%" con el nombre "cera" creyendo que era en la cera.
   const productoIds = p.productoIds || [];
   const enProducto = p.alcance === 'producto' || productoIds.length > 0;
+  const adicionales = useContext(AdicionalesDelEditor);
+  const adicionalIds = p.adicionalIds || [];
+  const enAdicional = !enProducto && (p.alcance === 'adicional' || adicionalIds.length > 0);
+  const enServicio = !enProducto && !enAdicional;
+  const elegirAdicional = (x) => {
+    const anterior = normalizarPremio({ ...p, nombre: '' }).premio.nombre;
+    cambiar({
+      alcance: 'adicional', adicionalIds: [x.id], adicionalNombre: x.name, serviceIds: [], productoIds: [], productoNombre: '',
+      nombre: !p.nombre || p.nombre === anterior ? '' : p.nombre,
+    });
+  };
+  // El nombre dice "lavado" pero el premio descuenta el corte: es exactamente
+  // el error de Franlook. Se avisa al lado, con el botón para corregirlo.
+  const nombreSugiere = enServicio && p.tipo !== 'personalizado' && p.nombre
+    ? adicionales.find((a) => a.name && String(p.nombre).toLowerCase().includes(String(a.name).toLowerCase().split(' ')[0]))
+    : null;
   // Un nombre automático del producto anterior se va con él; uno escrito a mano
   // se respeta.
   const elegirProducto = (x) => {
@@ -455,19 +507,49 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
           <input type="color" className="form-input color-input" value={p.color || '#e03d00'} onChange={(e) => cambiar({ color: e.target.value })} />
         </label>
       </div>
-      {p.tipo !== 'personalizado' && productos.length > 0 && (
+      {p.tipo !== 'personalizado' && (productos.length > 0 || adicionales.length > 0) && (
         <div className="form-group">
           <span className="form-label" id={idAlcance}>¿De qué se descuenta?</span>
           <div className="cupon-chips" role="group" aria-labelledby={idAlcance}>
-            <button type="button" className={`cupon-chip ${!enProducto ? 'activo' : ''}`} aria-pressed={!enProducto}
-              onClick={() => cambiar({ alcance: 'servicio', productoIds: [], productoNombre: '' })}>
+            <button type="button" className={`cupon-chip ${enServicio ? 'activo' : ''}`} aria-pressed={enServicio}
+              onClick={() => cambiar({ alcance: 'servicio', productoIds: [], productoNombre: '', adicionalIds: [], adicionalNombre: '' })}>
               Del servicio
             </button>
-            <button type="button" className={`cupon-chip ${enProducto ? 'activo' : ''}`} aria-pressed={enProducto}
-              onClick={() => cambiar({ alcance: 'producto', serviceIds: [] })}>
-              De un producto
-            </button>
+            {adicionales.length > 0 && (
+              <button type="button" className={`cupon-chip ${enAdicional ? 'activo' : ''}`} aria-pressed={enAdicional}
+                onClick={() => cambiar({ alcance: 'adicional', serviceIds: [], productoIds: [], productoNombre: '' })}>
+                De un adicional
+              </button>
+            )}
+            {productos.length > 0 && (
+              <button type="button" className={`cupon-chip ${enProducto ? 'activo' : ''}`} aria-pressed={enProducto}
+                onClick={() => cambiar({ alcance: 'producto', serviceIds: [], adicionalIds: [], adicionalNombre: '' })}>
+                De un producto
+              </button>
+            )}
           </div>
+          {enAdicional && (
+            <>
+              <div className="cupon-chips" style={{ marginTop: 8 }} role="group" aria-label="Qué adicional">
+                {adicionales.map((x) => (
+                  <button key={x.id} type="button" className={`cupon-chip ${adicionalIds.includes(x.id) ? 'activo' : ''}`} aria-pressed={adicionalIds.includes(x.id)} onClick={() => elegirAdicional(x)}>
+                    {x.name}
+                  </button>
+                ))}
+              </div>
+              <p className="text-sm text-muted" style={{ margin: '6px 0 0' }}>
+                Se aplica solo si el cliente suma ese adicional a su turno (al reservar se le ofrece). El corte se cobra entero.
+              </p>
+            </>
+          )}
+          {nombreSugiere && (
+            <div className="notice notice-warn" style={{ marginTop: 8 }}>
+              Se llama &quot;{p.nombre}&quot;, pero así como está descuenta del <strong>corte</strong>, no de {nombreSugiere.name}.{' '}
+              <button type="button" className="btn btn-sm btn-outline" onClick={() => elegirAdicional(nombreSugiere)}>
+                Aplicarlo a {nombreSugiere.name}
+              </button>
+            </div>
+          )}
           {enProducto && (
             <>
               <div className="cupon-chips" style={{ marginTop: 8 }} role="group" aria-label="Qué producto">
@@ -484,7 +566,13 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
           )}
         </div>
       )}
-      {p.tipo !== 'personalizado' && !enProducto && services.length > 0 && (
+      {(p.tipo === 'porcentaje' || p.tipo === 'gratis' || !p.tipo) && (
+        <label className="form-group angosto">
+          <span className="form-label">Tope del descuento $ <span className="text-muted">(opcional)</span></span>
+          <input type="number" inputMode="numeric" min="0" className="form-input" placeholder="Sin tope" value={p.valorMaximo ?? ''} onChange={(e) => cambiar({ valorMaximo: e.target.value === '' ? null : e.target.value })} />
+        </label>
+      )}
+      {p.tipo !== 'personalizado' && enServicio && services.length > 0 && (
         <details className="editor-servicios" open={ids.length > 0}>
           <summary className="text-sm">Para qué servicios vale: {ids.length ? `${ids.length} elegidos` : 'todos'}</summary>
           <div className="cupon-chips">
@@ -637,6 +725,15 @@ function EditorSorteo({ tipo, cfg, set, services }) {
           <input type="number" min="1" max="365" className="form-input" value={cfg.diasVencimiento ?? ''} onChange={(e) => set({ diasVencimiento: e.target.value })} />
         </label>
       </div>
+      {tipo !== 'rasca' && (
+        <label className="text-sm" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 8 }}>
+          <input type="checkbox" checked={cfg.grandesSoloConVisita !== false} onChange={(e) => set({ grandesSoloConVisita: e.target.checked })} />
+          <span>
+            Los premios que regalan el servicio entero salen solo para clientes que ya vinieron.
+            <span className="text-muted"> Un cliente nuevo igual puede ganar los demás. Sin esto, cualquiera que se cree una cuenta puede llevarse un corte gratis.</span>
+          </span>
+        </label>
+      )}
       {tipo === 'rasca' && <p className="text-sm text-secondary">Se gana una tarjeta para raspar por cada turno que marcás como atendido.</p>}
       {tipo === 'ruleta' && <p className="text-sm text-secondary">Aparece justo antes de confirmar la reserva, nunca después de pagar.</p>}
     </>

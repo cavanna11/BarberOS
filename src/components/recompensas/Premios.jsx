@@ -61,23 +61,32 @@ export function TarjetaPremio({ premio, services, onUsar }) {
  *
  * Es una vista previa; el que decide es `createAppointment`.
  */
-export function PremioEnReserva({ premios = [], elegido, onElegir, serviceId, fecha, hoy, precio, currency, bloqueadoPor = null, services, productos = [], enVenta = [], onSumarProducto }) {
+export function PremioEnReserva({ premios = [], elegido, onElegir, serviceId, fecha, hoy, precio, currency, bloqueadoPor = null, services, productos = [], enVenta = [], onSumarProducto, adicionales = [], adicionalesEnVenta = [], onSumarAdicional }) {
   const disponibles = premios.filter((p) => p.estado === 'disponible');
   if (!disponibles.length) return null;
 
   const filas = disponibles.map((p) => {
     const uso = premioUsableEn(p, { fecha, hoy });
-    const calculo = calcularPremio(p, { precio, serviceId, productos });
-    // Un premio sobre un producto que no está en el turno: se ofrece sumarlo.
+    const calculo = calcularPremio(p, { precio, serviceId, productos, adicionales });
+    // Un premio sobre un producto o un adicional que no está en el turno: se
+    // ofrece sumarlo.
     const paraSumar = calculo.motivo === 'producto'
       ? enVenta.find((x) => (p.productoIds || []).includes(x.id)) || null
+      : null;
+    const adicionalParaSumar = calculo.motivo === 'adicional'
+      ? adicionalesEnVenta.find((x) => (p.adicionalIds || []).includes(x.id)) || null
       : null;
     let motivo = null;
     if (!uso.usable && uso.motivo === 'vence-antes') motivo = `Vale para turnos hasta el ${fechaCorta(p.venceEn)}`;
     else if (!uso.usable) motivo = 'No disponible';
     else if (calculo.motivo === 'producto') motivo = paraSumar ? `Es para ${p.productoNombre || paraSumar.name}, y no está en tu turno.` : `Es para ${p.productoNombre || 'un producto'}, que ahora no está disponible.`;
+    else if (calculo.motivo === 'adicional') motivo = adicionalParaSumar ? `Es para ${p.adicionalNombre || adicionalParaSumar.name}, y no está en tu turno.` : `Es para ${p.adicionalNombre || 'un adicional'}, que ahora no está disponible.`;
     else if (!calculo.aplica) motivo = paraQueServicios(p, services);
-    return { p, calculo, motivo, paraSumar: uso.usable ? paraSumar : null };
+    return {
+      p, calculo, motivo,
+      paraSumar: uso.usable ? paraSumar : null,
+      adicionalParaSumar: uso.usable ? adicionalParaSumar : null,
+    };
   });
 
   return (
@@ -95,7 +104,7 @@ export function PremioEnReserva({ premios = [], elegido, onElegir, serviceId, fe
           <div className="text-sm text-secondary">Lo guardás para otra vez. El servicio: {formatPrice(precio, currency)}</div>
         </span>
       </label>
-      {filas.map(({ p, calculo, motivo, paraSumar }) => (
+      {filas.map(({ p, calculo, motivo, paraSumar, adicionalParaSumar }) => (
         <label key={p.id} className={`pago-opcion ${motivo ? 'deshabilitada' : ''}`}>
           <input
             type="radio"
@@ -113,11 +122,18 @@ export function PremioEnReserva({ premios = [], elegido, onElegir, serviceId, fe
                   ? 'Te lo dan en la barbería ese día.'
                   : calculo.productoId
                     ? <>{p.productoNombre || 'El producto'}: {formatPrice(calculo.descuentoProducto, currency)} menos</>
-                    : <>El servicio: <span className="cupon-tachado">{formatPrice(precio, currency)}</span> {formatPrice(calculo.precioFinal, currency)}</>}
+                    : calculo.adicionalId
+                      ? <>{p.adicionalNombre || 'El adicional'}: {formatPrice(calculo.descuentoAdicional, currency)} menos</>
+                      : <>El servicio: <span className="cupon-tachado">{formatPrice(precio, currency)}</span> {formatPrice(calculo.precioFinal, currency)}</>}
             </div>
             {paraSumar && !bloqueadoPor && (
               <button type="button" className="btn btn-sm btn-outline" style={{ marginTop: 6 }} onClick={() => onSumarProducto?.(paraSumar.id, p.id)}>
                 Sumar {paraSumar.name} y usar el premio
+              </button>
+            )}
+            {adicionalParaSumar && !bloqueadoPor && (
+              <button type="button" className="btn btn-sm btn-outline" style={{ marginTop: 6 }} onClick={() => onSumarAdicional?.(adicionalParaSumar.id, p.id)}>
+                Sumar {adicionalParaSumar.name} y usar el premio
               </button>
             )}
           </span>

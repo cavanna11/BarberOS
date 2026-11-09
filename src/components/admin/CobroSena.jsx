@@ -94,6 +94,16 @@ export default function CobroSena({ business, form, editar }) {
 
       {!conectado ? (
         <>
+          {/* Quedó configurada de antes (o se desconectó la cuenta): sin Mercado
+              Pago no se cobra nada, aunque diga "obligatoria". Que se sepa,
+              para que nadie crea que está asegurando los turnos. */}
+          {sena.activa && (
+            <div className="notice notice-warn" style={{ marginBottom: 'var(--space-md)' }}>
+              Tenés la seña {sena.modo === 'obligatoria' ? 'obligatoria ' : ''}activada, pero sin Mercado Pago
+              conectado <strong>no se cobra</strong>: tus clientes reservan sin dejar seña. Conectá tu cuenta
+              para que empiece a pedirse.
+            </div>
+          )}
           <button className="btn btn-primary" onClick={conectar} disabled={yendo}>
             {yendo ? 'Abriendo Mercado Pago…' : 'Conectar con Mercado Pago'}
           </button>

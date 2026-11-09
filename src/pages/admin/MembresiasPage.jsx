@@ -7,7 +7,7 @@ import { mesActual, mesDe, nombreDeMes } from '../../utils/ingresos';
 import {
   ESTADOS_MEMBRESIA, ESTADOS_USO, ORIGENES_USO,
   resumenDeMembresias, cobradoPorMembresias, consumidoPorMembresias,
-  usosAgrupados, filtrarUsos, fechaCorta, fechaLarga, usoVivo,
+  usosAgrupados, filtrarUsos, fechaCorta, fechaLarga, usoVivo, membresiasARenovar,
 } from '../../utils/membresias';
 import { obtenerPlanesMembresia, obtenerDatosDeMembresias, obtenerPeriodosDeMembresia, updateBusiness } from '../../lib/repository';
 import {
@@ -197,6 +197,7 @@ function Resumen({ datos, moneda, nombreProf, nombreSuc, esMultiSucursal }) {
   const porSucursal = useMemo(() => usosAgrupados(delMes, 'sucursalId'), [delMes]);
   const aRevisar = datos.usos.filter((u) => u.requiereRevision && usoVivo(u)).length;
   const conPagoRechazado = datos.membresias.filter((m) => m.estado === 'pago_rechazado').length;
+  const { vencidas, porVencer } = useMemo(() => membresiasARenovar(datos.membresias, hoyLocal()), [datos.membresias]);
 
   return (
     <>
@@ -222,6 +223,24 @@ function Resumen({ datos, moneda, nombreProf, nombreSuc, esMultiSucursal }) {
           <div className="stat-card-change positive">{consumido.count} usos, a precio de lista</div>
         </div>
       </div>
+
+      {(vencidas.length > 0 || porVencer.length > 0) && (
+        <div className="notice notice-danger" role="status">
+          {vencidas.length > 0 && (
+            <div>
+              ⏰ <strong>{vencidas.length}</strong> {vencidas.length === 1 ? 'membresía venció' : 'membresías vencieron'} sin renovarse:{' '}
+              {vencidas.map((m) => m.clienteNombre || m.clienteEmail).join(', ')}.
+              Si pagaron, registrá el pago desde Clientes; si no, avisales o dejalas vencidas.
+            </div>
+          )}
+          {porVencer.length > 0 && (
+            <div>
+              📅 <strong>{porVencer.length}</strong> {porVencer.length === 1 ? 'vence' : 'vencen'} en los próximos días:{' '}
+              {porVencer.map((m) => `${m.clienteNombre || m.clienteEmail} (${fechaCorta(m.periodoActual.hasta)})`).join(', ')}.
+            </div>
+          )}
+        </div>
+      )}
 
       {(aRevisar > 0 || conPagoRechazado > 0) && (
         <div className="notice notice-warn">
@@ -278,13 +297,20 @@ function Clientes({ datos, planes, cuentaId, moneda, mpConectado, nombreProf, no
   const [cargar, setCargar] = useState(null); // null | {} | { reemplaza: membresia }
   const [detalle, setDetalle] = useState(null);
 
+  // Las vencidas SIN renovar se muestran siempre (primero y en rojo): antes se
+  // escondían junto con las viejas y nadie se enteraba de que había que cobrar.
+  const aRenovar = useMemo(
+    () => new Set(membresiasARenovar(datos.membresias, hoyLocal()).vencidas.map((m) => m.id)),
+    [datos.membresias]
+  );
   const lista = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     return datos.membresias
-      .filter((m) => verFinalizadas || !['vencida', 'reemplazada'].includes(m.estado))
+      .filter((m) => verFinalizadas || aRenovar.has(m.id) || !['vencida', 'reemplazada'].includes(m.estado))
       .filter((m) => !q || `${m.clienteNombre} ${m.clienteEmail} ${m.clienteTelefono}`.toLowerCase().includes(q))
-      .sort((a, b) => String(a.clienteNombre).localeCompare(String(b.clienteNombre)));
-  }, [datos.membresias, busqueda, verFinalizadas]);
+      .sort((a, b) => (aRenovar.has(b.id) - aRenovar.has(a.id))
+        || String(a.clienteNombre).localeCompare(String(b.clienteNombre)));
+  }, [datos.membresias, busqueda, verFinalizadas, aRenovar]);
 
   const usadosDelMes = (m) => {
     const p = m.periodoActual;
@@ -329,6 +355,7 @@ function Clientes({ datos, planes, cuentaId, moneda, mpConectado, nombreProf, no
               </span>
               <span className="membresia-fila-estado">
                 <Estado estado={m.estado} />
+                {aRenovar.has(m.id) && <span className="text-xs" style={{ color: 'var(--danger)' }}>Sin renovar</span>}
                 {m.mp?.preapprovalId && <span className="text-xs text-muted">Mercado Pago</span>}
               </span>
             </button>

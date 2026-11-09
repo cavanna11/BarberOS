@@ -105,6 +105,17 @@ function errorMailSinVerificar(para) {
     { motivo: 'mail-sin-verificar' });
 }
 
+/**
+ * ¿El que llama es staff de esta barbería (o de su cuenta)? Dueño, peluquero o
+ * mostrador: lo dicen sus claims. La plataforma no cuenta (prueba los juegos).
+ */
+function esStaffDe(token, businessId) {
+  if (!token || !token.role) return false;
+  if (!['owner', 'admin', 'cajero'].includes(token.role)) return false;
+  if (token.businessId === businessId) return true;
+  return Array.isArray(token.businessIds) && token.businessIds.includes(businessId);
+}
+
 function exigirCliente(request, businessId) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
   const id = String(businessId || '').trim();
@@ -135,6 +146,10 @@ function documentoDelPremio({ id, businessId, uid, email = '', nombreCliente = '
     ...(Array.isArray(def.productoIds) && def.productoIds.length
       ? { productoIds: def.productoIds, productoNombre: def.productoNombre || '' }
       : {}),
+    ...(Array.isArray(def.adicionalIds) && def.adicionalIds.length
+      ? { adicionalIds: def.adicionalIds, adicionalNombre: def.adicionalNombre || '' }
+      : {}),
+    ...(Number(def.valorMaximo) > 0 ? { valorMaximo: Number(def.valorMaximo) } : {}),
     icono: def.icono || '🎁',
     color: def.color || '#e03d00',
     estado: 'disponible',
@@ -158,6 +173,9 @@ function premioParaElCliente(p) {
     serviceIds: p.serviceIds || [],
     productoIds: p.productoIds || [],
     productoNombre: p.productoNombre || '',
+    adicionalIds: p.adicionalIds || [],
+    adicionalNombre: p.adicionalNombre || '',
+    valorMaximo: Number(p.valorMaximo) > 0 ? Number(p.valorMaximo) : null,
     icono: p.icono,
     color: p.color,
     estado: motor.estadoDelPremio(p, hoy),
@@ -440,7 +458,16 @@ exports.jugarRecompensa = onCall(OPCIONES, async (request) => {
   // La rasca sale de un turno atendido, que ya es una persona de verdad. La
   // ruleta y la caja no piden nada más que la cuenta.
   if (tipo !== 'rasca' && mailSinVerificar(request.auth.token)) throw errorMailSinVerificar('jugar');
+  // El staff no juega en su propia barbería (ni en las sucursales de su
+  // cuenta): los premios son para los clientes. La auditoría encontró a un
+  // barbero de Volcado con un "Corte gratis" ganado en su propia ruleta.
+  if (esStaffDe(request.auth.token, businessId)) {
+    throw new HttpsError('permission-denied', 'Los juegos son para los clientes: el equipo de la barbería no participa.');
+  }
   const hoy = hoyEnArgentina();
+  // Si ya vino alguna vez (para los premios grandes; ver premiosParaSortear).
+  // Afuera de la transacción: es una consulta, y no cambia en estos segundos.
+  const vino = tipo === 'rasca' ? true : await vinoAlgunaVez(businessId, uid);
 
   const r = await db().runTransaction(async (tx) => {
     const [bizSnap, campSnap, cliSnap] = await Promise.all([
@@ -479,7 +506,8 @@ exports.jugarRecompensa = onCall(OPCIONES, async (request) => {
     if (premioSnap.exists) throw new HttpsError('already-exists', 'Este juego ya se jugó.');
 
     // Las lecturas terminaron: de acá en adelante, solo escrituras.
-    const indice = motor.sortear(cfg.premios, randomInt(0, 10000) / 10000);
+    const paraSortear = motor.premiosParaSortear(cfg.premios, { vino, soloConVisita: cfg.grandesSoloConVisita !== false });
+    const indice = motor.sortear(paraSortear, randomInt(0, 10000) / 10000);
     const segmentos = motor.segmentosDelJuego(cfg);
     let premio = null;
     if (indice >= 0) {
@@ -529,7 +557,7 @@ exports.jugarRecompensa = onCall(OPCIONES, async (request) => {
  * La barbería correcta sale gratis: el premio se busca en la barbería del
  * turno, así que el de otra sucursal acá no existe.
  */
-async function prepararPremio(tx, { businessId, premioId, uid, serviceId, precio, appointmentDate, productos = [] }) {
+async function prepararPremio(tx, { businessId, premioId, uid, serviceId, precio, appointmentDate, productos = [], adicionales = [] }) {
   const snap = await tx.get(ref.premio(businessId, String(premioId)));
   const noEsta = () => new HttpsError('failed-precondition', 'Ese premio ya no está disponible. Volvé a elegir.');
   if (!snap.exists) throw noEsta();
@@ -548,9 +576,12 @@ async function prepararPremio(tx, { businessId, premioId, uid, serviceId, precio
     throw new HttpsError('failed-precondition', mensajes[u.motivo] || 'Ese premio ya no está disponible.');
   }
 
-  const calculo = motor.calcularPremio(p, { precio, serviceId, productos });
+  const calculo = motor.calcularPremio(p, { precio, serviceId, productos, adicionales });
   if (calculo.motivo === 'producto') {
     throw new HttpsError('failed-precondition', `Tu premio "${p.nombre}" es para ${p.productoNombre || 'un producto'}: sumalo a tu turno o reservá sin el premio.`);
+  }
+  if (calculo.motivo === 'adicional') {
+    throw new HttpsError('failed-precondition', `Tu premio "${p.nombre}" es para ${p.adicionalNombre || 'un adicional'}: sumalo a tu turno o reservá sin el premio.`);
   }
   if (!calculo.aplica) {
     throw new HttpsError('failed-precondition', `Tu premio "${p.nombre}" no vale para este servicio. Elegí otro servicio o reservá sin el premio.`);
@@ -576,8 +607,9 @@ function snapshotDelPremio(preparado) {
     tipo: premio.tipo,
     valor: Number(premio.valor) || 0,
     campana: premio.campana || null,
-    descuento: calculo.descuento + (calculo.descuentoProducto || 0),
+    descuento: calculo.descuento + (calculo.descuentoProducto || 0) + (calculo.descuentoAdicional || 0),
     ...(calculo.productoId ? { productoId: calculo.productoId, productoNombre: premio.productoNombre || '' } : {}),
+    ...(calculo.adicionalId ? { adicionalId: calculo.adicionalId, adicionalNombre: premio.adicionalNombre || '' } : {}),
     // Lo miran las Rules: el turno se puede reprogramar, pero no a un día
     // posterior al vencimiento (si no, un "gratis" que vence el 10 paga el 20).
     venceEn: premio.venceEn || null,

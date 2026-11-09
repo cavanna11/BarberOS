@@ -22,6 +22,7 @@ export function fechaCorta(f) {
 /** Para qué servicios vale un premio (o el happy hour), en palabras. */
 export function paraQueServicios(premio, services = []) {
   if (premio?.productoIds?.length) return `Para ${premio.productoNombre || 'un producto'}`;
+  if (premio?.adicionalIds?.length) return `Para ${premio.adicionalNombre || 'un adicional'}`;
   const ids = premio?.serviceIds || [];
   if (!ids.length) return 'Para cualquier servicio';
   const nombres = ids.map((id) => services.find((s) => s.id === id)?.name).filter(Boolean);

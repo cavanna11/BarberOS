@@ -244,6 +244,65 @@ console.log('\nPremio sobre un producto:');
   chequear('un premio de servicio no cambia de forma', !('productoIds' in srv.validarCampana('caja', { premios: [{ tipo: 'porcentaje', valor: 10, probabilidad: 50 }] }).config.premios[0]));
 }
 
+console.log('\nPremio sobre un adicional (Franlook, 09/11/2026):');
+{
+  const lavado = { tipo: 'gratis', adicionalIds: ['lavado'], adicionalNombre: 'Lavado' };
+  const conLavado = [{ id: 'lavado', price: 3000 }];
+  let r = srv.calcularPremio(lavado, { precio: 20000, serviceId: 'corte', adicionales: conLavado });
+  chequear('lavado gratis: el corte se cobra entero', r.aplica && r.precioFinal === 20000 && r.descuento === 0, JSON.stringify(r));
+  chequear('…y se descuenta el lavado', r.descuentoAdicional === 3000 && r.adicionalId === 'lavado');
+  r = srv.calcularPremio(lavado, { precio: 20000, serviceId: 'corte', adicionales: [] });
+  chequear('sin el lavado en el turno no aplica (y no toca el corte)', !r.aplica && r.motivo === 'adicional' && r.precioFinal === 20000);
+  r = srv.calcularPremio({ ...lavado, tipo: 'porcentaje', valor: 50 }, { precio: 20000, adicionales: [{ id: 'lavado', price: 3000 }, { id: 'cejas', price: 2000 }] });
+  chequear('50% en el lavado con otros adicionales: solo el lavado', r.descuentoAdicional === 1500);
+  const v = srv.validarCampana('ruleta', { premios: [{ tipo: 'gratis', probabilidad: 20, alcance: 'adicional', adicionalIds: ['lavado'], adicionalNombre: 'Lavado' }] });
+  chequear('se guarda con su adicional y nombre automático', v.ok && v.config.premios[0].adicionalIds[0] === 'lavado' && v.config.premios[0].nombre === 'Lavado gratis', JSON.stringify(v));
+  chequear('"De un adicional" sin elegir cuál no se guarda',
+    !srv.validarCampana('ruleta', { premios: [{ tipo: 'gratis', probabilidad: 20, alcance: 'adicional' }] }).ok);
+  chequear('un premio de servicio no lleva adicionalIds', !('adicionalIds' in srv.validarCampana('ruleta', { premios: [{ tipo: 'porcentaje', valor: 10, probabilidad: 50 }] }).config.premios[0]));
+  ambos('servidor y web calculan igual el adicional', (m) => [m.calcularPremio(lavado, { precio: 20000, adicionales: conLavado })]);
+}
+
+console.log('\nTope del descuento:');
+{
+  let r = srv.calcularPremio({ tipo: 'porcentaje', valor: 100, valorMaximo: 5000 }, { precio: 20000 });
+  chequear('100% con tope $5.000 descuenta $5.000', r.descuento === 5000 && r.precioFinal === 15000, JSON.stringify(r));
+  r = srv.calcularPremio({ tipo: 'gratis', valorMaximo: 50000 }, { precio: 20000 });
+  chequear('un tope mayor al precio no cambia nada', r.precioFinal === 0);
+  const v = srv.validarCampana('ruleta', { premios: [{ tipo: 'porcentaje', valor: 50, probabilidad: 10, valorMaximo: '4000' }] });
+  chequear('el tope se guarda como número', v.ok && v.config.premios[0].valorMaximo === 4000, JSON.stringify(v));
+  chequear('un tope en 0 no se guarda', !srv.validarCampana('ruleta', { premios: [{ tipo: 'porcentaje', valor: 50, probabilidad: 10, valorMaximo: 0 }] }).ok);
+  chequear('vacío = sin tope', !('valorMaximo' in srv.validarCampana('ruleta', { premios: [{ tipo: 'porcentaje', valor: 50, probabilidad: 10, valorMaximo: '' }] }).config.premios[0]));
+}
+
+console.log('\nRegala el servicio entero (lo que se confirma en el editor):');
+chequear('100% sin servicios elegidos: sí', srv.regalaCualquierServicio({ tipo: 'porcentaje', valor: 100, serviceIds: [] }));
+chequear('gratis sin servicios elegidos: sí', srv.regalaCualquierServicio({ tipo: 'gratis' }));
+chequear('100% sobre un servicio puntual: no', !srv.regalaCualquierServicio({ tipo: 'porcentaje', valor: 100, serviceIds: ['corte'] }));
+chequear('gratis sobre un adicional: no', !srv.regalaCualquierServicio({ tipo: 'gratis', adicionalIds: ['lavado'] }));
+chequear('gratis con tope: no', !srv.regalaCualquierServicio({ tipo: 'gratis', valorMaximo: 5000 }));
+chequear('50%: no', !srv.regalaCualquierServicio({ tipo: 'porcentaje', valor: 50 }));
+chequear('otro regalo: no', !srv.regalaCualquierServicio({ tipo: 'personalizado', nombre: 'Café' }));
+
+console.log('\nPremios grandes solo para quien ya vino:');
+{
+  const premios = [
+    { tipo: 'porcentaje', valor: 10, probabilidad: 30 },
+    { tipo: 'gratis', probabilidad: 10 },
+    { tipo: 'porcentaje', valor: 100, probabilidad: 10, valorMaximo: 5000 },
+  ];
+  const nuevo = srv.premiosParaSortear(premios, { vino: false });
+  chequear('para un cliente nuevo el gratis va en 0', nuevo[1].probabilidad === 0 && nuevo[0].probabilidad === 30);
+  chequear('…el 100% con tope no es grande y queda', nuevo[2].probabilidad === 10);
+  chequear('…y la lista conserva largo y orden', nuevo.length === 3);
+  chequear('con el ticket que antes daba el gratis, ahora no sale nada grande', srv.sortear(nuevo, 0.35) !== 1);
+  chequear('el que ya vino sortea con todo', srv.premiosParaSortear(premios, { vino: true })[1].probabilidad === 10);
+  chequear('con la opción apagada, todos sortean con todo', srv.premiosParaSortear(premios, { vino: false, soloConVisita: false })[1].probabilidad === 10);
+  chequear('la opción nace prendida', srv.validarCampana('ruleta', { premios: [{ tipo: 'gratis', probabilidad: 10 }] }).config.grandesSoloConVisita === true);
+  chequear('y se puede apagar', srv.validarCampana('ruleta', { premios: [{ tipo: 'gratis', probabilidad: 10 }], grandesSoloConVisita: false }).config.grandesSoloConVisita === false);
+  chequear('lavado gratis (adicional) no es grande', !srv.esPremioGrande({ tipo: 'gratis', adicionalIds: ['lavado'] }));
+}
+
 console.log('\nVencimiento:');
 const p = { estado: 'disponible', venceEn: '2026-11-10', tipo: 'gratis' };
 chequear('el día del vencimiento todavía vale', srv.estadoDelPremio(p, '2026-11-10') === 'disponible');
