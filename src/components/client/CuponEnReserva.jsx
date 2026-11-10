@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { validarCupon } from '../../lib/functions';
-import { normalizarCodigo, MENSAJE_AL_CLIENTE } from '../../utils/cupon';
+import { normalizarCodigo, MENSAJE_AL_CLIENTE, textoDeDias } from '../../utils/cupon';
 import { formatPrice } from '../../utils/dateUtils';
 
 // ============================================================================
@@ -20,8 +20,10 @@ import { formatPrice } from '../../utils/dateUtils';
 // vez de romperse — y por eso el aviso de abajo dice "podés reservar igual".
 
 export default function CuponEnReserva({
-  businessId, serviceId, professionalId, precio, currency,
+  businessId, serviceId, professionalId, fecha, precio, currency,
   cupon, onCupon, codigoDelLink,
+  // El cupón ya se aceptó, pero vale otros días y el cliente cambió la fecha.
+  cuponFueraDeDia = null,
 }) {
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState('');
@@ -38,17 +40,24 @@ export default function CuponEnReserva({
     setError('');
     setProbando(true);
     try {
-      const r = await validarCupon({ businessId, codigo: limpio, serviceId, professionalId });
+      const r = await validarCupon({ businessId, codigo: limpio, serviceId, professionalId, appointmentDate: fecha });
       if (r.valido) {
-        onCupon({ codigo: r.codigo, tipo: r.tipo, valor: r.valor, descuento: r.descuento, precioFinal: r.precioFinal });
+        onCupon({
+          codigo: r.codigo, tipo: r.tipo, valor: r.valor, descuento: r.descuento,
+          precioFinal: r.precioFinal, dias: r.dias || [],
+        });
         setTexto('');
       } else {
         onCupon(null);
         // El que vino por el link no escribió nada: culparlo de un código malo
         // sería raro. Se le dice que la promo ya no está y que siga.
-        setError(desdeElLink
-          ? 'Este descuento ya no está disponible, pero podés reservar tu turno normalmente.'
-          : r.mensaje || MENSAJE_AL_CLIENTE);
+        // Salvo que sea por el día: ahí el código sirve, y con cambiar la
+        // fecha le entra. Eso sí se le cuenta, venga de donde venga.
+        setError(r.dias?.length
+          ? r.mensaje
+          : desdeElLink
+            ? 'Este descuento ya no está disponible, pero podés reservar tu turno normalmente.'
+            : r.mensaje || MENSAJE_AL_CLIENTE);
         if (desdeElLink) setAbierto(true);
       }
     } catch (err) {
@@ -66,12 +75,12 @@ export default function CuponEnReserva({
   // depende del precio de ESE servicio).
   useEffect(() => {
     if (!codigoDelLink || !businessId || !serviceId) return;
-    const clave = `${codigoDelLink}|${serviceId}|${professionalId}`;
+    const clave = `${codigoDelLink}|${serviceId}|${professionalId}|${fecha}`;
     if (intentado.current === clave) return;
     intentado.current = clave;
     probar(codigoDelLink, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codigoDelLink, businessId, serviceId, professionalId]);
+  }, [codigoDelLink, businessId, serviceId, professionalId, fecha]);
 
   if (cupon) {
     return (
@@ -88,6 +97,25 @@ export default function CuponEnReserva({
           <span>Total</span>
           <span>{formatPrice(cupon.precioFinal, currency)}</span>
         </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm cupon-quitar"
+          onClick={() => { onCupon(null); setError(''); intentado.current = 'quitado'; }}
+        >
+          Quitar cupón
+        </button>
+      </div>
+    );
+  }
+
+  if (cuponFueraDeDia) {
+    return (
+      <div className="cupon-caja">
+        <p className="cupon-error">
+          Tu cupón <strong>{cuponFueraDeDia.codigo}</strong> vale solo para turnos{' '}
+          {textoDeDias(cuponFueraDeDia.dias)}. Volvé y elegí uno de esos días para usarlo,
+          o reservá este turno sin descuento.
+        </p>
         <button
           type="button"
           className="btn btn-ghost btn-sm cupon-quitar"

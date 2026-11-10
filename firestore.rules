@@ -771,7 +771,10 @@ service cloud.firestore {
                && (d.tipo != 'porcentaje' || d.valor <= 100)
                && d.activo is bool
                && d.get('maxUsos', 0) is number
-               && d.get('maxUsosPorCliente', 0) is number;
+               && d.get('maxUsosPorCliente', 0) is number
+               // Días de la semana en que vale (0 = Lunes … 6 = Domingo).
+               && d.get('dias', []) is list
+               && d.get('dias', []).size() <= 7;
       }
 
       match /reviews/{aptId} {

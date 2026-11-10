@@ -3133,11 +3133,19 @@ node scripts/test-estado-negocio.mjs       # qué pantalla ve el que abre el lin
 ```
 
 Hoy: claims 83, reservas 140, facturación 20, rules 155, alta 22, mercadopago 16,
-seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 74 + 71,
+seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 83 (emulador) + 105,
 turnos fijos 28, whatsapp 32, preview 24, intervalo 96, ausencias 97, orden 30.
 productos 54.
 estado del negocio 19.
 Todo en verde (1175).
+
+**Cupones por día de la semana** (pedido de Franlook, 09/11/2026): `cupon.dias`
+= [0..6], 0 = Lunes (la convención de horarios y happy hour), vacío = todos.
+Cuenta el día del TURNO. `evaluarCupon` lo chequea ÚLTIMO (motivo `DIA`) y es
+el único rechazo que `validarCupon` le explica al cliente (`mensajeDeDia`, con
+`dias`), sin sumar intento fallido. En la reserva, `cuponElegido` es lo que
+aceptó el servidor y `cupon` se deriva con `cuponValeElDia(…, date)`: si vuelve
+y cambia a un día que no vale, se suelta solo. Espejo en `src/utils/cupon.js`.
 
 Las suites se pueden correr DOS VECES seguidas sin reiniciar el emulador. Si una
 falla recién en la segunda, es que deja datos: `test-planes` creaba sucursales

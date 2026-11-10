@@ -6,6 +6,7 @@ import {
 import {
   normalizarCodigo, codigoValido, calcularDescuento, describirCupon,
   estadoDelCupon, linkDelCupon, mensajeParaCompartir,
+  NOMBRES_DIAS, diasDelCupon, textoDeDias,
 } from '../../utils/cupon';
 import { formatPrice } from '../../utils/dateUtils';
 import QrDelCupon from '../../components/admin/QrDelCupon';
@@ -35,6 +36,8 @@ const VACIO = {
   hasta: '',
   serviciosIds: [],
   profesionalesIds: [],
+  // Días de la semana del turno (0 = Lunes … 6 = Domingo). Vacío = todos.
+  dias: [],
   soloPrimeraVisita: false,
   maxUsos: 0,
   maxUsosPorCliente: 0,
@@ -108,6 +111,7 @@ export default function CuponesPage() {
         hasta: datos.hasta || null,
         serviciosIds: datos.serviciosIds || [],
         profesionalesIds: datos.profesionalesIds || [],
+        dias: diasDelCupon(datos),
         soloPrimeraVisita: datos.soloPrimeraVisita === true,
         maxUsos: Number(datos.maxUsos) || 0,
         maxUsosPorCliente: Number(datos.maxUsosPorCliente) || 0,
@@ -200,7 +204,8 @@ function FormularioCupon({ valor, services, professionals, precioMuestra, curren
   const [f, setF] = useState(valor);
   const [masCondiciones, setMasCondiciones] = useState(
     Boolean(valor.desde || valor.hasta || valor.maxUsos || valor.maxUsosPorCliente
-            || valor.soloPrimeraVisita || valor.serviciosIds?.length || valor.profesionalesIds?.length)
+            || valor.soloPrimeraVisita || valor.serviciosIds?.length || valor.profesionalesIds?.length
+            || valor.dias?.length)
   );
   const [guardando, setGuardando] = useState(false);
   const set = (patch) => setF((x) => ({ ...x, ...patch }));
@@ -289,6 +294,34 @@ function FormularioCupon({ valor, services, professionals, precioMuestra, curren
               <label className="form-label">Hasta</label>
               <input type="datetime-local" className="form-input" value={f.hasta || ''} onChange={(e) => set({ hasta: e.target.value })} />
             </div>
+          </div>
+
+          <div className="form-group">
+            <span className="form-label" id="cupon-dias">Días en que vale</span>
+            <p className="text-sm text-muted" style={{ marginBottom: 6 }}>
+              Cuenta el día del turno, no el día en que reservan. Sin tildar ninguno, vale todos los días.
+            </p>
+            <div className="cupon-chips" role="group" aria-labelledby="cupon-dias">
+              {NOMBRES_DIAS.map((n, i) => {
+                const marcado = (f.dias || []).includes(i);
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`cupon-chip ${marcado ? 'activo' : ''}`}
+                    aria-pressed={marcado}
+                    onClick={() => alternar('dias', i)}
+                  >
+                    {n.charAt(0).toUpperCase() + n.slice(1)}
+                  </button>
+                );
+              })}
+            </div>
+            {diasDelCupon(f).length > 0 && (
+              <p className="text-sm text-secondary" style={{ marginTop: 6 }}>
+                Vale para turnos {textoDeDias(f.dias)}.
+              </p>
+            )}
           </div>
 
           <div className="cupon-form-grid">
@@ -388,6 +421,7 @@ function TarjetaCupon({ cupon, slug, nombre, currency, services, professionals, 
     cupon.maxUsosPorCliente > 0 && `${cupon.maxUsosPorCliente} por cliente`,
     cupon.serviciosIds?.length > 0 && `solo ${nombresDe(cupon.serviciosIds, services)}`,
     cupon.profesionalesIds?.length > 0 && `solo con ${nombresDe(cupon.profesionalesIds, professionals)}`,
+    diasDelCupon(cupon).length > 0 && `turnos ${textoDeDias(cupon.dias)}`,
     cupon.hasta && `hasta el ${new Date(cupon.hasta).toLocaleDateString('es-AR')}`,
   ].filter(Boolean);
 

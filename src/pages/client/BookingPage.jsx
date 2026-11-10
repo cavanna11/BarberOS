@@ -14,7 +14,7 @@ import ElegirSucursal from '../../components/client/ElegirSucursal';
 import { useSucursalesPublicas, recordarSucursal, olvidarSucursal } from '../../hooks/useSucursalesPublicas';
 import { guardarPendiente, leerPendiente, borrarPendiente } from '../../utils/reservaPendiente';
 import CuponEnReserva from '../../components/client/CuponEnReserva';
-import { recordarCupon, cuponRecordado, olvidarCupon, describirCupon } from '../../utils/cupon';
+import { recordarCupon, cuponRecordado, olvidarCupon, describirCupon, cuponValeElDia } from '../../utils/cupon';
 import MembresiaEnReserva from '../../components/client/MembresiaEnReserva';
 import { coberturaDelServicio } from '../../utils/membresias';
 import { obtenerSubcoleccion } from '../../lib/repository';
@@ -679,7 +679,11 @@ export default function BookingPage() {
   // query string no sobrevive al login ni al viaje a Mercado Pago, y el estado
   // de React tampoco (esa navegación desmonta la app entera).
   const [params, setParams] = useSearchParams();
-  const [cupon, setCupon] = useState(null);
+  // El cupón que el servidor aceptó. El que cuenta es `cupon` (más abajo): si
+  // vale solo algunos días y el cliente volvió y cambió la fecha, se suelta
+  // solo, sin un setState en un efecto — y vuelve si elige otra vez un día que
+  // sirve.
+  const [cuponElegido, setCupon] = useState(null);
   // Los adicionales que sumó al servicio (ids). Se vacían si cambia de servicio
   // en el paso 2 (ver abajo), no a mitad del flujo.
   const [extras, setExtras] = useState([]);
@@ -848,6 +852,7 @@ export default function BookingPage() {
   // le pasa tal cual a una función importada, el compilador de React supone
   // que lo puede mutar y deja de memoizar todo lo que depende del servicio.
   const precioBase = Number(finalPrice) || 0;
+  const cupon = cuponElegido && cuponValeElDia(cuponElegido, date) ? cuponElegido : null;
   const premioSel = misPremios.find((p) => p.id === premioElegido && p.estado === 'disponible') || null;
   const calcPremio = premioSel && !conMembresia && !cupon && premioUsableEn(premioSel, { fecha: date, hoy: hoyLocal }).usable
     ? calcularPremio(premioSel, { precio: precioBase, serviceId, productos: productosDetalle, adicionales: adicionalesElegidos })
@@ -1581,7 +1586,9 @@ export default function BookingPage() {
           professionalId={professionalId}
           precio={finalPrice}
           currency={business.currency}
+          fecha={date}
           cupon={cupon}
+          cuponFueraDeDia={cuponElegido && !cupon ? cuponElegido : null}
           onCupon={setCupon}
           codigoDelLink={codigoGuardado}
         />

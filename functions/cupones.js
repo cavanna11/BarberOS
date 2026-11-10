@@ -95,7 +95,56 @@ const MOTIVOS = {
   NO_ES_PRIMERA: 'no-es-primera-visita',
   SERVICIO: 'servicio-no-incluido',
   PROFESIONAL: 'profesional-no-incluido',
+  DIA: 'dia-no-incluido',
 };
+
+// ── Días de la semana ───────────────────────────────────────────────────────
+// `cupon.dias` = [0..6] con 0 = Lunes … 6 = Domingo, la convención de los
+// horarios y del happy hour (NO la de JS). Vacío o ausente = todos los días.
+// Cuenta el día del TURNO, no el día en que se reserva: "vale lunes a
+// miércoles" es para llenar los días tranquilos, y el que reserva un domingo
+// para el martes está haciendo justamente eso.
+
+const NOMBRES_DIAS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
+/** 'YYYY-MM-DD' → 0 = Lunes … 6 = Domingo. Al mediodía UTC para que no se corra. */
+function diaDeLaSemana(fechaISO) {
+  const d = new Date(`${fechaISO}T12:00:00Z`).getUTCDay();
+  return d === 0 ? 6 : d - 1;
+}
+
+/** Los días del cupón, limpios y ordenados. [] = todos. */
+function diasDelCupon(cupon) {
+  const dias = Array.isArray(cupon?.dias) ? cupon.dias : [];
+  const limpios = [...new Set(dias.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b);
+  return limpios.length === 7 ? [] : limpios;
+}
+
+/**
+ * 'de lunes a miércoles', 'lunes, miércoles y viernes', 'los sábados'.
+ * Tres o más seguidos van como rango, que se lee de un vistazo.
+ */
+function textoDeDias(dias) {
+  const d = diasDelCupon({ dias });
+  if (d.length === 0) return 'todos los días';
+  if (d.length === 1) return d[0] === 5 || d[0] === 6 ? `los ${NOMBRES_DIAS[d[0]]}s` : `los ${NOMBRES_DIAS[d[0]]}`;
+  const seguidos = d.every((x, i) => i === 0 || x === d[i - 1] + 1);
+  if (seguidos && d.length >= 3) return `de ${NOMBRES_DIAS[d[0]]} a ${NOMBRES_DIAS[d[d.length - 1]]}`;
+  const nombres = d.map((x) => NOMBRES_DIAS[x]);
+  return `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
+}
+
+/**
+ * Lo que se le dice al cliente cuando el cupón no vale ESE día.
+ *
+ * Es la única excepción al mensaje genérico, y a propósito: el que tiene el
+ * código de verdad y eligió un jueves necesita saber que con cambiar el día le
+ * sirve. Decir "no es válido" lo manda a reservar sin descuento o a quejarse.
+ * Lo que se filtra (que el código existe) ya está en la historia de Instagram.
+ */
+function mensajeDeDia(cupon) {
+  return `Este cupón vale solo para turnos ${textoDeDias(cupon?.dias)}. Elegí uno de esos días para usarlo.`;
+}
 
 /** Lo que se le dice al cliente, pase lo que pase. */
 const MENSAJE_AL_CLIENTE = 'El código no es válido o ya no está disponible.';
@@ -117,6 +166,9 @@ function evaluarCupon(cupon, ctx = {}) {
     usosDelCliente = 0,
     tieneTurnosPrevios = false,
     ahora = new Date(),
+    // El día del turno, 'YYYY-MM-DD'. Sin fecha, un cupón con días no aplica:
+    // no se puede saber si cae en uno de ellos.
+    fecha = null,
   } = ctx;
 
   if (!cupon) return { aplica: false, motivo: MOTIVOS.NO_EXISTE };
@@ -158,6 +210,14 @@ function evaluarCupon(cupon, ctx = {}) {
     return { aplica: false, motivo: MOTIVOS.NO_ES_PRIMERA };
   }
 
+  // El día va ÚLTIMO a propósito: es el único motivo que se le cuenta al
+  // cliente (ver `mensajeDeDia`), y solo tiene sentido decirle "cambiá el día"
+  // si con eso de verdad le sirve.
+  const dias = diasDelCupon(cupon);
+  if (dias.length > 0 && !(fecha && dias.includes(diaDeLaSemana(fecha)))) {
+    return { aplica: false, motivo: MOTIVOS.DIA };
+  }
+
   return { aplica: true, motivo: null };
 }
 
@@ -186,5 +246,9 @@ module.exports = {
   aplicarCupon,
   MOTIVOS,
   MENSAJE_AL_CLIENTE,
+  diaDeLaSemana,
+  diasDelCupon,
+  textoDeDias,
+  mensajeDeDia,
   CODIGO_OK,
 };

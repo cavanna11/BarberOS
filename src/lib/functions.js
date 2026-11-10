@@ -305,8 +305,8 @@ export function deleteBusiness({ businessId, confirmName }) {
  * Es una VISTA PREVIA. El descuento que se cobra lo recalcula
  * `createAppointment` sobre el precio del documento del servicio.
  */
-export function validarCupon({ businessId, codigo, serviceId, professionalId }) {
-  return llamar('validarCupon', { businessId, codigo, serviceId, professionalId });
+export function validarCupon({ businessId, codigo, serviceId, professionalId, appointmentDate = null }) {
+  return llamar('validarCupon', { businessId, codigo, serviceId, professionalId, appointmentDate });
 }
 
 /**

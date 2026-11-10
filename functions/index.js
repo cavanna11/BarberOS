@@ -794,7 +794,11 @@ exports.validarCupon = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
   }
-  const { businessId, codigo, serviceId = null, professionalId = null } = request.data || {};
+  const {
+    businessId, codigo, serviceId = null, professionalId = null,
+    // El día del turno: un cupón puede valer solo algunos días de la semana.
+    appointmentDate = null,
+  } = request.data || {};
   if (!businessId || !codigo) {
     throw new HttpsError('invalid-argument', 'Faltan datos.');
   }
@@ -811,7 +815,19 @@ exports.validarCupon = onCall(async (request) => {
   const precio = srvSnap?.exists ? Number(srvSnap.data().price) || 0 : 0;
 
   const { cupon, ctx } = await leerContextoDelCupon({ businessId, codigo, uid });
-  const r = cupones.aplicarCupon(cupon, precio, { ...ctx, serviceId, professionalId });
+  const fecha = typeof appointmentDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(appointmentDate)
+    ? appointmentDate : null;
+  const r = cupones.aplicarCupon(cupon, precio, { ...ctx, serviceId, professionalId, fecha });
+
+  // El cupón existe y sirve, pero no ese día: se le dice cuáles, y no cuenta
+  // como intento fallido (no está probando códigos, está eligiendo fecha).
+  if (r.motivo === cupones.MOTIVOS.DIA) {
+    return {
+      valido: false,
+      mensaje: cupones.mensajeDeDia(cupon),
+      dias: cupones.diasDelCupon(cupon),
+    };
+  }
 
   if (!r.aplica) {
     await anotarIntentoFallido(freno.ref, freno.reiniciar);
@@ -827,6 +843,8 @@ exports.validarCupon = onCall(async (request) => {
     descuento: r.descuento,
     precioLista: precio,
     precioFinal: r.precioFinal,
+    // Para que la reserva lo suelte sola si el cliente vuelve y cambia de día.
+    dias: cupones.diasDelCupon(cupon),
   };
 });
 
@@ -1293,7 +1311,7 @@ exports.createAppointment = onCall(async (request) => {
         turnosPrevios: propios.docs.some((d) => ESTADOS_DE_CLIENTE.includes(d.get('status'))),
       });
       const r = cupones.aplicarCupon(leido.cupon, precio, {
-        ...leido.ctx, serviceId, professionalId: profElegido.id,
+        ...leido.ctx, serviceId, professionalId: profElegido.id, fecha: appointmentDate,
       });
 
       // Un cupón que dejó de servir NO rompe la reserva: se sigue sin él y el

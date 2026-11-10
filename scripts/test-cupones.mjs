@@ -214,6 +214,49 @@ web.olvidarCupon('biz-1');
 chequear('se olvida al usarlo', web.cuponRecordado('biz-1') === null);
 chequear('olvidar uno no toca el otro', web.cuponRecordado('biz-2') === 'OTRO10');
 
+
+// ── 8. Días de la semana ───────────────────────────────────────────────────
+// Lo pidió Franlook: un cupón para llenar lunes a miércoles. Cuenta el día del
+// TURNO. 09/11/2026 es lunes; 12/11 jueves; 15/11 domingo.
+console.log('\nDías de la semana:');
+const LMM = { activo: true, tipo: 'porcentaje', valor: 20, dias: [0, 1, 2] };
+const evDia = (c, fecha) => srv.evaluarCupon(c, { ahora: AHORA, fecha });
+chequear('lunes 09/11 = 0', srv.diaDeLaSemana('2026-11-09') === 0);
+chequear('domingo 15/11 = 6', srv.diaDeLaSemana('2026-11-15') === 6);
+chequear('vale un lunes', evDia(LMM, '2026-11-09').aplica === true);
+chequear('vale un miércoles', evDia(LMM, '2026-11-11').aplica === true);
+chequear('no vale un jueves, con motivo día', evDia(LMM, '2026-11-12').motivo === srv.MOTIVOS.DIA);
+chequear('no vale un domingo', evDia(LMM, '2026-11-15').aplica === false);
+chequear('sin fecha, un cupón con días no aplica', evDia(LMM, null).aplica === false);
+chequear('sin días vale cualquier día', evDia({ ...LMM, dias: [] }, '2026-11-15').aplica === true);
+chequear('sin el campo vale cualquier día', evDia({ activo: true, tipo: 'fijo', valor: 100 }, '2026-11-14').aplica === true);
+chequear('los 7 tildados = todos', srv.diasDelCupon({ dias: [0, 1, 2, 3, 4, 5, 6] }).length === 0);
+chequear('basura en dias se ignora', JSON.stringify(srv.diasDelCupon({ dias: [2, '1', 9, -1, 2, 'x'] })) === '[1,2]');
+chequear('el día va último: agotado gana sobre el día',
+  evDia({ ...LMM, maxUsos: 1, usos: 1 }, '2026-11-12').motivo === srv.MOTIVOS.AGOTADO);
+chequear('aplicarCupon descuenta en día válido',
+  srv.aplicarCupon(LMM, 10000, { ahora: AHORA, fecha: '2026-11-10' }).precioFinal === 8000);
+chequear('aplicarCupon cobra lista en día inválido',
+  srv.aplicarCupon(LMM, 10000, { ahora: AHORA, fecha: '2026-11-13' }).precioFinal === 10000);
+chequear('texto rango', srv.textoDeDias([0, 1, 2]) === 'de lunes a miércoles', srv.textoDeDias([0, 1, 2]));
+chequear('texto salteado', srv.textoDeDias([0, 2, 4]) === 'lunes, miércoles y viernes', srv.textoDeDias([0, 2, 4]));
+chequear('texto dos', srv.textoDeDias([5, 6]) === 'sábado y domingo', srv.textoDeDias([5, 6]));
+chequear('texto uno', srv.textoDeDias([5]) === 'los sábados' && srv.textoDeDias([1]) === 'los martes');
+chequear('mensaje al cliente nombra los días', srv.mensajeDeDia(LMM).includes('de lunes a miércoles'));
+// El espejo del front tiene que decir lo mismo.
+for (const d of [[0, 1, 2], [0, 2, 4], [5, 6], [5], [], [3, 3, 9]]) {
+  chequear(`espejo textoDeDias ${JSON.stringify(d)}`, web.textoDeDias(d) === srv.textoDeDias(d));
+}
+for (const f of ['2026-11-09', '2026-11-12', '2026-11-15', '2027-03-01']) {
+  chequear(`espejo diaDeLaSemana ${f}`, web.diaDeLaSemana(f) === srv.diaDeLaSemana(f));
+}
+chequear('front: cuponValeElDia lunes', web.cuponValeElDia(LMM, '2026-11-09') === true);
+chequear('front: cuponValeElDia jueves', web.cuponValeElDia(LMM, '2026-11-12') === false);
+chequear('front: sin días vale siempre', web.cuponValeElDia({ dias: [] }, '2026-11-12') === true);
+chequear('el mensaje para compartir dice los días',
+  web.mensajeParaCompartir({ ...LMM, codigo: 'TRANQUI' }, 'Franlook', 'https://x').includes('Válido para turnos de lunes a miércoles.'));
+chequear('sin días el mensaje no cambia',
+  !web.mensajeParaCompartir({ ...LMM, dias: [], codigo: 'X20' }, 'F', 'https://x').includes('Válido'));
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron`);
 if (fallas.length) console.log('Fallaron:\n  - ' + fallas.join('\n  - '));
 console.log('');

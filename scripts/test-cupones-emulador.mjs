@@ -592,6 +592,42 @@ const muerto = await db.doc(`businesses/${BIZ}/appointments/${idMuerto}`).get();
 chequear('el turno que nunca se pagó queda cancelado', muerto.get('status') === 'cancelada', muerto.get('status'));
 chequear('y el uso del cupón vuelve a estar disponible', ok, String(c.get('usos')));
 
+
+// ── 11. Cupón que vale solo algunos días ───────────────────────────────────
+// Cuenta el día del TURNO. Se arma con el día de la semana de pasado mañana
+// (vale) y se prueba contra el de dentro de 3 días (no vale).
+console.log('\nDías de la semana:');
+const { diaDeLaSemana } = await import('../functions/cupones.js').then((m) => m.default || m);
+const diaSi = enDias(2);
+const diaNo = enDias(3);
+await esperar('el dueño guarda un cupón con días',
+  crear(dueno, `businesses/${BIZ}/cupones?documentId=TRANQUI`,
+    { codigo: 'TRANQUI', tipo: 'porcentaje', valor: 20, activo: true, usos: 0, dias: [diaDeLaSemana(diaSi)] }), 'permitido');
+await esperar('las Rules no aceptan dias que no sea una lista',
+  escribir(dueno, `businesses/${BIZ}/cupones/TRANQUI`, { dias: 'lunes' }), 'denegado');
+
+r = await llamar('validarCupon', cliente, { businessId: BIZ, codigo: 'TRANQUI', serviceId: 'corte', professionalId: 'martin', appointmentDate: diaSi });
+chequear('en su día, entra y devuelve los días',
+  r.ok?.valido === true && r.ok.precioFinal === 12000 && Array.isArray(r.ok.dias) && r.ok.dias.length === 1, JSON.stringify(r));
+const intentosAntes = (await db.doc(`rateLimits/cupon_${BIZ}_${cliente.uid}`).get()).get('intentos') || 0;
+r = await llamar('validarCupon', cliente, { businessId: BIZ, codigo: 'TRANQUI', serviceId: 'corte', professionalId: 'martin', appointmentDate: diaNo });
+chequear('otro día: no entra, y dice qué días',
+  r.ok?.valido === false && /vale solo para turnos/.test(r.ok.mensaje || '') && r.ok.dias?.length === 1, JSON.stringify(r));
+const intentosDespues = (await db.doc(`rateLimits/cupon_${BIZ}_${cliente.uid}`).get()).get('intentos') || 0;
+chequear('elegir mal el día no cuenta como intento fallido',
+  intentosDespues === intentosAntes, `${intentosAntes} → ${intentosDespues}`);
+r = await llamar('validarCupon', cliente, { businessId: BIZ, codigo: 'TRANQUI', serviceId: 'corte', professionalId: 'martin' });
+chequear('sin fecha: no entra', r.ok?.valido === false, JSON.stringify(r));
+
+await limpiarTurnos();
+r = await reservar(cliente, { cuponCodigo: 'TRANQUI', appointmentDate: diaNo, startTime: '10:00' });
+chequear('reservar otro día: el turno sale, a precio de lista',
+  r.ok?.price === 15000 && !r.ok?.descuento, JSON.stringify(r));
+r = await reservar(cliente, { cuponCodigo: 'TRANQUI', appointmentDate: diaSi, startTime: '11:00' });
+chequear('reservar en su día: con el descuento',
+  r.ok?.price === 12000 && r.ok?.descuento === 3000, JSON.stringify(r));
+c = await db.doc(`businesses/${BIZ}/cupones/TRANQUI`).get();
+chequear('solo el turno de su día consumió un uso', c.get('usos') === 1, String(c.get('usos')));
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron`);
 if (fallas.length) console.log('Fallaron:\n  - ' + fallas.join('\n  - '));
 console.log('');

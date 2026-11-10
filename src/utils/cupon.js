@@ -53,6 +53,39 @@ export function describirCupon(cupon) {
   return `$${(Number(cupon.valor) || 0).toLocaleString('es-AR')} OFF`;
 }
 
+// ── Días de la semana (copia de functions/cupones.js) ──────────────────────
+// 0 = Lunes … 6 = Domingo. Vacío = todos. Cuenta el día del TURNO.
+
+export const NOMBRES_DIAS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
+export function diaDeLaSemana(fechaISO) {
+  const d = new Date(`${fechaISO}T12:00:00Z`).getUTCDay();
+  return d === 0 ? 6 : d - 1;
+}
+
+export function diasDelCupon(cupon) {
+  const dias = Array.isArray(cupon?.dias) ? cupon.dias : [];
+  const limpios = [...new Set(dias.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b);
+  return limpios.length === 7 ? [] : limpios;
+}
+
+export function textoDeDias(dias) {
+  const d = diasDelCupon({ dias });
+  if (d.length === 0) return 'todos los días';
+  if (d.length === 1) return d[0] === 5 || d[0] === 6 ? `los ${NOMBRES_DIAS[d[0]]}s` : `los ${NOMBRES_DIAS[d[0]]}`;
+  const seguidos = d.every((x, i) => i === 0 || x === d[i - 1] + 1);
+  if (seguidos && d.length >= 3) return `de ${NOMBRES_DIAS[d[0]]} a ${NOMBRES_DIAS[d[d.length - 1]]}`;
+  const nombres = d.map((x) => NOMBRES_DIAS[x]);
+  return `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
+}
+
+/** ¿Sirve este cupón (ya validado) para un turno en esta fecha? */
+export function cuponValeElDia(cupon, fechaISO) {
+  const dias = diasDelCupon(cupon);
+  if (dias.length === 0) return true;
+  return Boolean(fechaISO) && dias.includes(diaDeLaSemana(fechaISO));
+}
+
 /** Lo único que se le dice al cliente cuando un cupón no entra. */
 export const MENSAJE_AL_CLIENTE = 'El código no es válido o ya no está disponible.';
 
@@ -96,7 +129,9 @@ export function linkDelCupon(slug, codigo, serviceId = null) {
  */
 export function mensajeParaCompartir(cupon, nombreNegocio, link) {
   const desc = describirCupon(cupon);
-  return `Reservá tu turno en ${nombreNegocio} y aprovechá ${desc} con el código ${cupon.codigo}.\n\n${link}`;
+  const dias = diasDelCupon(cupon);
+  const cuando = dias.length ? ` Válido para turnos ${textoDeDias(dias)}.` : '';
+  return `Reservá tu turno en ${nombreNegocio} y aprovechá ${desc} con el código ${cupon.codigo}.${cuando}\n\n${link}`;
 }
 
 // ── El cupón que vino en el link ───────────────────────────────────────────
