@@ -282,6 +282,29 @@ chequear('100% sobre un servicio puntual: no', !srv.regalaCualquierServicio({ ti
 chequear('gratis sobre un adicional: no', !srv.regalaCualquierServicio({ tipo: 'gratis', adicionalIds: ['lavado'] }));
 chequear('gratis con tope: no', !srv.regalaCualquierServicio({ tipo: 'gratis', valorMaximo: 5000 }));
 chequear('50%: no', !srv.regalaCualquierServicio({ tipo: 'porcentaje', valor: 50 }));
+
+console.log('\nUn premio de 100% que se llama como un adicional (Franlook, 12/11):');
+{
+  const ADS = [{ id: 'cafe', name: 'Café' }, { id: 'lav', name: 'Lavado de cabello' }, { id: 'cejas', name: 'Perfilado de cejas' }];
+  chequear('"Café gratis" nombra el Café', srv.adicionalQueNombra('Café gratis', ADS)?.id === 'cafe');
+  chequear('"Lavado🚿" nombra el lavado (sin tildes ni emojis)', srv.adicionalQueNombra('Lavado🚿', ADS)?.id === 'lav');
+  chequear('"Cejas" nombra "Perfilado de cejas"', srv.adicionalQueNombra('Cejas', ADS)?.id === 'cejas');
+  chequear('"Corte gratis" no nombra ningún adicional', srv.adicionalQueNombra('Corte gratis', ADS) === null);
+  chequear('"Ceras de pelo" no es "Cejas"', srv.adicionalQueNombra('Ceras de pelo', ADS) === null);
+  const cafe = { tipo: 'porcentaje', valor: 100, serviceIds: [], nombre: 'Café gratis' };
+  const ef = srv.premioEfectivo(cafe, ADS);
+  chequear('se aplica sobre el adicional', ef.alcance === 'adicional' && ef.adicionalIds[0] === 'cafe');
+  const c = srv.calcularPremio(ef, { precio: 24000, serviceId: 'corte', adicionales: [{ id: 'cafe', price: 2000 }, { id: 'cejas', price: 4000 }] });
+  chequear('el corte se cobra entero: descuenta solo el café', c.descuento === 0 && c.descuentoAdicional === 2000, JSON.stringify(c));
+  const sinCafe = srv.calcularPremio(ef, { precio: 24000, serviceId: 'corte', adicionales: [{ id: 'cejas', price: 4000 }] });
+  chequear('sin el café en el turno no aplica (no regala el corte)', !sinCafe.aplica && sinCafe.motivo === 'adicional');
+  chequear('confirmado por el dueño: queda como está', srv.premioEfectivo({ ...cafe, regaloConfirmado: true }, ADS).alcance === undefined);
+  chequear('"Corte gratis" sigue regalando el corte', srv.premioEfectivo({ ...cafe, nombre: 'Corte gratis' }, ADS).alcance === undefined);
+  chequear('un 50% no se toca', srv.premioEfectivo({ ...cafe, valor: 50 }, ADS).alcance === undefined);
+  const n = srv.normalizarPremio({ ...cafe, regaloConfirmado: true }).premio;
+  chequear('normalizarPremio conserva la confirmación', n.regaloConfirmado === true);
+  chequear('…pero no en uno que no regala todo', srv.normalizarPremio({ ...cafe, valor: 50, regaloConfirmado: true }).premio.regaloConfirmado === undefined);
+}
 chequear('otro regalo: no', !srv.regalaCualquierServicio({ tipo: 'personalizado', nombre: 'Café' }));
 
 console.log('\nPremios grandes solo para quien ya vino:');

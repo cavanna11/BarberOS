@@ -1,7 +1,7 @@
 // ============================================================================
 // Los premios del cliente: la tarjeta de cada uno y el selector en la reserva
 // ============================================================================
-import { calcularPremio, describirPremio, premioUsableEn } from '../../utils/recompensas';
+import { calcularPremio, describirPremio, premioUsableEn, premioEfectivo } from '../../utils/recompensas';
 import { formatPrice } from '../../utils/dateUtils';
 import { fechaCorta, paraQueServicios } from './movimiento';
 
@@ -12,6 +12,15 @@ const ESTADOS = {
   vencido: { label: 'Vencido', clase: 'badge-danger' },
 };
 
+/**
+ * El premio como lo aplica el servidor: uno de "100%" que se llama como un
+ * adicional ("Café gratis") vale sobre ese adicional (`premioEfectivo`).
+ */
+function comoSeAplica(p, services) {
+  const adicionales = (services || []).filter((s) => s.adicional).map((s) => ({ id: s.id, name: s.name }));
+  return premioEfectivo(p, adicionales);
+}
+
 const ORIGEN = {
   ruleta: 'Ganado en la ruleta',
   caja: 'De la caja sorpresa',
@@ -21,7 +30,8 @@ const ORIGEN = {
   cumpleanos: 'Regalo de cumpleaños',
 };
 
-export function TarjetaPremio({ premio, services, onUsar }) {
+export function TarjetaPremio({ premio: guardado, services, onUsar }) {
+  const premio = comoSeAplica(guardado, services);
   const est = ESTADOS[premio.estado] || ESTADOS.disponible;
   const apagado = premio.estado !== 'disponible';
   return (
@@ -65,7 +75,8 @@ export function PremioEnReserva({ premios = [], elegido, onElegir, serviceId, fe
   const disponibles = premios.filter((p) => p.estado === 'disponible');
   if (!disponibles.length) return null;
 
-  const filas = disponibles.map((p) => {
+  const filas = disponibles.map((guardado) => {
+    const p = comoSeAplica(guardado, services);
     const uso = premioUsableEn(p, { fecha, hoy });
     const calculo = calcularPremio(p, { precio, serviceId, productos, adicionales });
     // Un premio sobre un producto o un adicional que no está en el turno: se

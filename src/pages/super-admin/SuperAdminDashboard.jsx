@@ -28,7 +28,7 @@ import NewBusinessModal from './NewBusinessModal';
 import PlanAMedida from '../../components/super-admin/PlanAMedida';
 import { medidaDesdeNegocio, camposDeLaMedida } from '../../utils/planMedida';
 import TicketsPanel from './TicketsPanel';
-import { aplicarPago, hoyEnArgentina } from '../../utils/facturacion';
+import { aplicarPago, faltaParaElAbono, hoyEnArgentina } from '../../utils/facturacion';
 import { olvidarSucursalEnPanel, elegirSucursalEnPanel } from '../../utils/sucursalEnPanel';
 
 // --- Professional SVG Icons ---
@@ -199,6 +199,8 @@ export default function SuperAdminDashboard({ seccion = null }) {
   const [modalType, setModalType] = useState(null); // 'payment' | 'debt' | 'upgrade'
   const [selectedBusiness, setSelectedBusiness] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
+  // Un pago menor al abono, sin deuda, igual cubre el mes: se confirma a mano.
+  const [aceptaParcial, setAceptaParcial] = useState(false);
   const [debtAmount, setDebtAmount] = useState('');
   const [vencimientoEditado, setVencimientoEditado] = useState('');
   const [deleteName, setDeleteName] = useState('');
@@ -326,6 +328,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
     // Sin deuda, lo que viene a pagar es el mes que vence: se propone el abono.
     // Antes se proponía la deuda, o sea $0, justo el día que más se cobra.
     setPaymentAmount(String(biz.debt > 0 ? biz.debt : (biz.monthlyFee ?? 0)));
+    setAceptaParcial(false);
     setModalType('payment');
   };
 
@@ -377,6 +380,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
 
   const handleRecordPayment = async () => {
     if (!paymentAmount || isNaN(paymentAmount)) return;
+    if (faltaParaElAbono(selectedBusiness, Number(paymentAmount)) > 0 && !aceptaParcial) return;
     // La fecha de Buenos Aires: con toISOString, un cobro anotado después de
     // las 21 h quedaba con fecha de mañana.
     const todayStr = hoyEnArgentina();
@@ -1624,7 +1628,7 @@ export default function SuperAdminDashboard({ seccion = null }) {
                   type="number"
                   className="form-input"
                   value={paymentAmount}
-                  onChange={e => setPaymentAmount(e.target.value)}
+                  onChange={e => { setPaymentAmount(e.target.value); setAceptaParcial(false); }}
                   placeholder="Monto..."
                   required
                   autoFocus
@@ -1646,10 +1650,24 @@ export default function SuperAdminDashboard({ seccion = null }) {
                   </p>
                 );
               })()}
+              {faltaParaElAbono(selectedBusiness, Number(paymentAmount) || 0) > 0 && (
+                <div className="notice notice-warn" role="status" style={{ marginTop: 'var(--space-md)' }}>
+                  El abono es {formatPrice(selectedBusiness.monthlyFee)}: con este pago faltan{' '}
+                  <strong>{formatPrice(faltaParaElAbono(selectedBusiness, Number(paymentAmount)))}</strong>, pero igual cubre el mes completo.
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                    <input type="checkbox" checked={aceptaParcial} onChange={(e) => setAceptaParcial(e.target.checked)} />
+                    Sí, es el precio acordado: que cubra el mes.
+                  </label>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setModalType(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={handleRecordPayment}>
+              <button
+                className="btn btn-primary"
+                onClick={handleRecordPayment}
+                disabled={faltaParaElAbono(selectedBusiness, Number(paymentAmount) || 0) > 0 && !aceptaParcial}
+              >
                 Confirmar Cobro
               </button>
             </div>

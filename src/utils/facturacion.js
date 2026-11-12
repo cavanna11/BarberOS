@@ -37,6 +37,20 @@ export function sumarUnMes(fechaISO) {
  * precio acordado distinto, un descuento), igual se toma como el mes que vence:
  * nadie paga por adelantado para no cubrir nada.
  */
+/**
+ * Lo que le falta a este pago para ser un abono entero, cuando igual va a
+ * cubrir el mes (sin deuda, cualquier pago corre el vencimiento: ver arriba).
+ * 0 si no es ese caso. El modal lo pide confirmar: un $1 tipeado de más, o una
+ * seña de $5.000 sobre $60.000, dejaba la cuenta cubierta un mes entero.
+ */
+export function faltaParaElAbono({ debt = 0, monthlyFee = 0 }, monto) {
+  const deuda = Math.max(0, Number(debt) || 0);
+  const pago = Math.max(0, Number(monto) || 0);
+  const abono = Math.max(0, Number(monthlyFee) || 0);
+  if (deuda > 0 || pago <= 0 || abono <= 0 || pago >= abono) return 0;
+  return abono - pago;
+}
+
 export function aplicarPago({ debt = 0, nextBillingDate = null, monthlyFee = 0 }, monto) {
   const deudaAntes = Math.max(0, Number(debt) || 0);
   const pago = Math.max(0, Number(monto) || 0);

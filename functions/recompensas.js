@@ -116,6 +116,23 @@ function esStaffDe(token, businessId) {
   return Array.isArray(token.businessIds) && token.businessIds.includes(businessId);
 }
 
+/**
+ * Lo mismo, pero mirando la CUENTA entera: un peluquero lleva una sola barbería
+ * en su claim, y sin esto el de Olivos jugaba en Florida (auditoría 12/11).
+ * Lee el `grupoId` de la barbería y, si hace falta, el de la del token: solo
+ * cuando el que llama es staff de algún lado.
+ */
+async function esStaffDeLaCuenta(token, businessId) {
+  if (esStaffDe(token, businessId)) return true;
+  if (!token || !['owner', 'admin', 'cajero'].includes(token.role)) return false;
+  const grupo = (await ref.negocio(businessId).get()).get('grupoId');
+  if (!grupo) return false;
+  if (token.grupoId === grupo || token.businessId === grupo) return true;
+  if (Array.isArray(token.businessIds) && token.businessIds.includes(grupo)) return true;
+  if (!token.businessId) return false;
+  return (await ref.negocio(token.businessId).get()).get('grupoId') === grupo;
+}
+
 function exigirCliente(request, businessId) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Tenés que iniciar sesión.');
   const id = String(businessId || '').trim();
@@ -152,6 +169,7 @@ function documentoDelPremio({ id, businessId, uid, email = '', nombreCliente = '
     ...(Number(def.valorMaximo) > 0 ? { valorMaximo: Number(def.valorMaximo) } : {}),
     icono: def.icono || '🎁',
     color: def.color || '#e03d00',
+    ...(def.regaloConfirmado === true ? { regaloConfirmado: true } : {}),
     estado: 'disponible',
     venceEn,
     appointmentId: null,
@@ -461,7 +479,7 @@ exports.jugarRecompensa = onCall(OPCIONES, async (request) => {
   // El staff no juega en su propia barbería (ni en las sucursales de su
   // cuenta): los premios son para los clientes. La auditoría encontró a un
   // barbero de Volcado con un "Corte gratis" ganado en su propia ruleta.
-  if (esStaffDe(request.auth.token, businessId)) {
+  if (await esStaffDeLaCuenta(request.auth.token, businessId)) {
     throw new HttpsError('permission-denied', 'Los juegos son para los clientes: el equipo de la barbería no participa.');
   }
   const hoy = hoyEnArgentina();
@@ -557,13 +575,27 @@ exports.jugarRecompensa = onCall(OPCIONES, async (request) => {
  * La barbería correcta sale gratis: el premio se busca en la barbería del
  * turno, así que el de otra sucursal acá no existe.
  */
-async function prepararPremio(tx, { businessId, premioId, uid, serviceId, precio, appointmentDate, productos = [], adicionales = [] }) {
+async function prepararPremio(tx, { businessId, premioId, uid, token = null, serviceId, precio, appointmentDate, productos = [], adicionales = [] }) {
+  // Premios que el staff ganó antes de que no pudiera jugar: no se usan.
+  if (token && await esStaffDeLaCuenta(token, businessId)) {
+    throw new HttpsError('failed-precondition', 'Los premios son para los clientes: el equipo de la barbería no los usa. Reservá sin el premio.');
+  }
   const snap = await tx.get(ref.premio(businessId, String(premioId)));
   const noEsta = () => new HttpsError('failed-precondition', 'Ese premio ya no está disponible. Volvé a elegir.');
   if (!snap.exists) throw noEsta();
-  const p = snap.data();
+  const guardado = snap.data();
   // Mismo mensaje que si no existiera: no se confirma que el id es de otro.
-  if (p.userId !== uid) throw noEsta();
+  if (guardado.userId !== uid) throw noEsta();
+
+  // Uno que regala el servicio entero y se llama como un adicional ("Café
+  // gratis") se aplica sobre ese adicional (ver `premioEfectivo`). El catálogo
+  // se lee solo en ese caso, adentro de la transacción como todo lo demás.
+  let p = guardado;
+  if (motor.regalaCualquierServicio(guardado) && guardado.regaloConfirmado !== true) {
+    const catalogo = await tx.get(db().collection(`businesses/${businessId}/services`).where('adicional', '==', true));
+    p = motor.premioEfectivo(guardado, catalogo.docs.map((d) => ({ id: d.id, name: d.get('name') })));
+    if (p !== guardado) logger.info('premio aplicado sobre el adicional que nombra', { businessId, premioId: guardado.id, adicional: p.adicionalNombre });
+  }
 
   const u = motor.premioUsableEn(p, { fecha: appointmentDate, hoy: hoyEnArgentina() });
   if (!u.usable) {

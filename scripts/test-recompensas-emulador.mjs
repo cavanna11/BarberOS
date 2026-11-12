@@ -82,8 +82,10 @@ async function esperar(desc, promesa, debe) {
  * Espera a que un trigger haga lo suyo. Los triggers del emulador tardan, y el
  * primer disparo de cada uno carga el contenedor: una espera fija hace que el
  * caso falle de a ratos y parezca un bug. Se pregunta hasta que se cumple.
+ * 30 s: con 15, después de otras suites, el trigger del premio llegó tarde y
+ * arrastró seis casos (12/11/2026).
  */
-async function hasta(leerFn, cumple, ms = 15000) {
+async function hasta(leerFn, cumple, ms = 30000) {
   const fin = Date.now() + ms;
   let ultimo;
   while (Date.now() < fin) {
@@ -561,6 +563,37 @@ console.log('\nPremio sobre un adicional (Franlook):');
   chequear('corte $15.000 + lavado gratis = $15.000 (el corte se cobra entero)', r.ok?.price === 15000, JSON.stringify(r));
   const t = await turno(r.ok?.id);
   chequear('el turno dice que el premio fue el lavado', t?.premio?.adicionalId === 'lavado' && t.premio.descuento === 3000, JSON.stringify(t?.premio));
+}
+
+console.log('\nPremios viejos de 100% con nombre de adicional (auditoría 12/11):');
+{
+  // Como quedaron guardados en Franlook: 100% del servicio, sin adicionalIds.
+  const cliV = await usuario('rec-viejo@gmail.com', null);
+  await ponerPremio('pViejo', { userId: cliV.uid, tipo: 'porcentaje', valor: 100, nombre: 'Lavado🚿', serviceIds: [] });
+  r = await reservar(cliV, { premioId: 'pViejo', appointmentDate: enDias(7) });
+  chequear('sin el lavado en el turno NO regala el corte', r.error === 'FAILED_PRECONDITION' && /es para Lavado/.test(r.msg), JSON.stringify(r));
+  r = await reservar(cliV, { premioId: 'pViejo', adicionales: ['lavado'], appointmentDate: enDias(7) });
+  chequear('con el lavado: el corte se cobra entero y el lavado sale gratis', r.ok?.price === 15000, JSON.stringify(r));
+  const cliC = await usuario('rec-confirmado@gmail.com', null);
+  await ponerPremio('pConfirmado', { userId: cliC.uid, tipo: 'porcentaje', valor: 100, nombre: 'Lavado gratis', serviceIds: [], regaloConfirmado: true });
+  r = await reservar(cliC, { premioId: 'pConfirmado', appointmentDate: enDias(8) });
+  chequear('si el dueño lo confirmó, sí regala el corte', r.ok?.price === 0, JSON.stringify(r));
+  await ponerPremio('pDueno', { userId: dueno.uid, tipo: 'gratis', nombre: 'Corte gratis' });
+  r = await reservar(dueno, { premioId: 'pDueno', appointmentDate: enDias(9) });
+  chequear('el staff no usa un premio ganado antes', r.error === 'FAILED_PRECONDITION' && /para los clientes/.test(r.msg), JSON.stringify(r));
+}
+
+console.log('\nEl peluquero de una sucursal tampoco juega en otra de la cuenta:');
+{
+  await db.doc(`businesses/${BIZ}`).update({ grupoId: BIZ });
+  await db.doc(`businesses/${OTRA}`).update({ grupoId: BIZ });
+  await llamar('guardarCampana', dueno, { businessId: BIZ, tipo: 'ruleta', activa: true });
+  const peluqueroOtra = await usuario('rec-peluquero-otra@gmail.com', { businessId: OTRA, role: 'admin', professionalId: 'martin' });
+  r = await llamar('jugarRecompensa', peluqueroOtra, { businessId: BIZ, tipo: 'ruleta' });
+  chequear('el de la otra sucursal no juega', r.error === 'PERMISSION_DENIED', JSON.stringify(r));
+  await llamar('guardarCampana', dueno, { businessId: BIZ, tipo: 'ruleta', activa: false });
+  await db.doc(`businesses/${BIZ}`).update({ grupoId: null });
+  await db.doc(`businesses/${OTRA}`).update({ grupoId: null });
 }
 
 console.log('\nEl staff no juega:');

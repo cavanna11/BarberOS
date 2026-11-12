@@ -476,27 +476,34 @@ export async function recordPayment(businessId, monto, fecha) {
   const actual = (await getBilling(businessId)) || {};
   const { debt: nuevaDeuda, nextBillingDate, mesesAdelantados } = aplicarPago(actual, monto);
 
-  await updateBilling(businessId, {
+  // Las tres escrituras van en UN lote: si se corta la conexión en el medio no
+  // puede quedar la deuda saldada sin el asiento del cobro, ni al revés
+  // (auditoría del 12/11/2026). Las Rules se evalúan igual, escritura por
+  // escritura.
+  const lote = writeBatch(db);
+  lote.set(billingDoc(businessId), {
     debt: nuevaDeuda,
     lastPaymentDate: fecha,
     ...(mesesAdelantados > 0 ? { nextBillingDate } : {}),
-  });
+  }, { merge: true });
 
-  // El espejo público de la fecha (lo que lee el cartel "se te vence el…" del
-  // dueño). Si no se actualiza acá, el barbero que acaba de pagar sigue viendo
-  // el aviso de vencimiento hasta la corrida de las 3 AM.
-  if (mesesAdelantados > 0) {
-    await updateDoc(businessDoc(businessId), { proximoVencimiento: nextBillingDate });
-  }
+  // El documento público, en una sola escritura: el espejo de la fecha (lo que
+  // lee el cartel "se te vence el…" del dueño; si no, el barbero que acaba de
+  // pagar sigue viendo el aviso hasta la corrida de las 3 AM) y descongelar.
+  const negocio = {
+    ...(mesesAdelantados > 0 ? { proximoVencimiento: nextBillingDate } : {}),
+    ...(nuevaDeuda === 0 ? { isFrozen: false } : {}),
+  };
+  if (Object.keys(negocio).length) lote.update(businessDoc(businessId), negocio);
 
   // El cobro queda anotado aparte, como un asiento más del libro. Antes lo
   // único que sobrevivía era `lastPaymentDate`, que se pisa en cada cobro: la
   // plata cobrada el mes pasado no quedaba en ningún lado y no había forma de
   // decir cuánto facturó la plataforma en septiembre. El historial arranca el
   // día que esto se puso: los cobros anteriores no se pueden reconstruir.
-  await registrarCobro({ businessId, monto, fecha });
+  lote.set(doc(cobrosCol()), asientoDeCobro({ businessId, monto, fecha }));
 
-  if (nuevaDeuda === 0) await setBusinessFrozen(businessId, false);
+  await lote.commit();
   return { debt: nuevaDeuda, nextBillingDate, mesesAdelantados };
 }
 
@@ -508,9 +515,8 @@ export async function recordPayment(businessId, monto, fecha) {
 
 const cobrosCol = () => collection(db, 'platform', 'cobros', 'items');
 
-export async function registrarCobro({ businessId, monto, fecha, nota = '' }) {
-  const ref = doc(cobrosCol());
-  await setDoc(ref, {
+function asientoDeCobro({ businessId, monto, fecha, nota = '' }) {
+  return {
     businessId,
     monto: Number(monto) || 0,
     // 'YYYY-MM-DD' (la fecha del cobro, que puede no ser hoy) y además el
@@ -518,7 +524,12 @@ export async function registrarCobro({ businessId, monto, fecha, nota = '' }) {
     fecha,
     nota,
     createdAt: serverTimestamp(),
-  });
+  };
+}
+
+export async function registrarCobro(datos) {
+  const ref = doc(cobrosCol());
+  await setDoc(ref, asientoDeCobro(datos));
   return ref.id;
 }
 

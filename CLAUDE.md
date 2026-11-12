@@ -2717,6 +2717,25 @@ Orden de despliegue: **Rules y Functions primero, front después** (un front
 nuevo contra un servidor viejo mandaría `premioId` y el servidor lo ignoraría:
 el cliente vería el descuento y se le cobraría el precio de lista).
 
+### Arreglos de la auditoría del 12/11/2026
+
+- **Premios de 100% guardados antes de la confirmación** (Franlook: "Café",
+  "Lavado", "Cejas" regalaban el corte). `premioEfectivo` (motor): un premio
+  que regala el servicio entero, sin `regaloConfirmado`, y cuyo nombre nombra
+  un adicional (`adicionalQueNombra`: palabra de 4+ letras, sin tildes, sin
+  "corte"/"gratis"…) se aplica sobre ESE adicional. Lo usan `prepararPremio`
+  (lee el catálogo de adicionales en la transacción) y la vista previa del
+  cliente. Corrige solo las campañas viejas y los premios ya ganados.
+  `regaloConfirmado` lo escribe el editor cuando el dueño tilda "Sí, quiero
+  regalar el servicio entero", y el premio ganado lo copia. La tarjeta de la
+  campaña avisa "Revisá:" mientras quede alguno sin confirmar.
+- **Staff de otra sucursal** (`esStaffDeLaCuenta`): mira el `grupoId`. No juega
+  en ninguna sucursal de su cuenta, y `createAppointment` no le deja usar un
+  premio (los que ganó antes de que no pudiera jugar).
+- **Cobro del abono**: `recordPayment` es un `writeBatch` (billing, espejo +
+  descongelar en una sola escritura del negocio, y el asiento). Un pago menor
+  al abono sin deuda pide tildar que cubre el mes (`faltaParaElAbono`).
+
 ### Arreglos de la auditoría del 01/11/2026
 
 - **Mail sin confirmar** (`mailSinVerificar` en `functions/recompensas.js`): una
@@ -3130,14 +3149,16 @@ node scripts/test-ausencias.mjs            # el día suelto distinto: no voy / h
 node scripts/test-orden.mjs                # en qué orden ve el cliente la lista (tampoco)
 node scripts/test-productos.mjs            # la mercadería: stock, precio y qué se ofrece
 node scripts/test-estado-negocio.mjs       # qué pantalla ve el que abre el link
+node scripts/test-facturacion.mjs          # la cuenta del pago del abono (sin emulador)
+node scripts/test-cupones.mjs              # el motor de cupones (sin emulador)
 ```
 
-Hoy: claims 83, reservas 140, facturación 20, rules 155, alta 22, mercadopago 16,
-seña 18, sucursales 68, planes 71, reseñas 36, membresías 123, cupones 83 (emulador) + 105,
-turnos fijos 28, whatsapp 32, preview 24, intervalo 96, ausencias 97, orden 30.
-productos 54.
-estado del negocio 19.
-Todo en verde (1175).
+Hoy (12/11/2026), con emulador: claims 88, reservas 146, billing 20, rules 155,
+alta 23, mercadopago 16, seña 18, sucursales 68, planes 71, reseñas 36,
+membresías 123, cupones 83, recompensas 135, turnos fijos 28 (1010).
+Sin emulador: recompensas 181, cupones 105, facturación 18, whatsapp 39,
+preview 24, intervalo 96, ausencias 97, orden 30, productos 54, estado del
+negocio 19 (663). Todo en verde (1673).
 
 **Cupones por día de la semana** (pedido de Franlook, 09/11/2026): `cupon.dias`
 = [0..6], 0 = Lunes (la convención de horarios y happy hour), vacío = todos.

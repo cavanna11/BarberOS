@@ -1,6 +1,6 @@
 // Cuentas del pago del abono (src/utils/facturacion.js), sin emulador.
 //   node scripts/test-facturacion.mjs
-import { aplicarPago, sumarUnMes, hoyEnArgentina } from '../src/utils/facturacion.js';
+import { aplicarPago, faltaParaElAbono, sumarUnMes, hoyEnArgentina } from '../src/utils/facturacion.js';
 
 let ok = 0, mal = 0;
 function caso(nombre, obtenido, esperado) {
@@ -39,6 +39,12 @@ caso('monto en 0 no hace nada',
 console.log('sumarUnMes');
 caso('31/01 → 28/02', sumarUnMes('2026-01-31'), '2026-02-28');
 caso('diciembre → enero', sumarUnMes('2026-12-09'), '2027-01-09');
+
+console.log('faltaParaElAbono');
+caso('sin deuda, $5.000 sobre $60.000: faltan $55.000', faltaParaElAbono({ debt: 0, monthlyFee: 60000 }, 5000), 55000);
+caso('sin deuda, el abono entero: nada', faltaParaElAbono({ debt: 0, monthlyFee: 60000 }, 60000), 0);
+caso('con deuda no se pregunta (el pago va a la deuda)', faltaParaElAbono({ debt: 15000, monthlyFee: 60000 }, 5000), 0);
+caso('cuenta de regalo (abono 0): nada', faltaParaElAbono({ debt: 0, monthlyFee: 0 }, 5000), 0);
 
 console.log('hoyEnArgentina');
 caso('22:30 en Buenos Aires sigue siendo el mismo día', hoyEnArgentina(new Date('2026-11-10T01:30:00Z')), '2026-11-09');

@@ -1350,7 +1350,7 @@ exports.createAppointment = onCall(async (request) => {
     let premioPreparado = null;
     if (premioId) {
       premioPreparado = await recompensas.prepararPremio(tx, {
-        businessId, premioId, uid: request.auth.uid, serviceId, precio, appointmentDate,
+        businessId, premioId, uid: request.auth.uid, token: request.auth.token, serviceId, precio, appointmentDate,
         productos: renglonesProductos,
         adicionales: extras,
       });

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useId, useState } from 'react';
 import { useTenant } from '../../hooks/useTenantData';
 import { obtenerCampanas, obtenerTarjetasCompletas, obtenerSubcoleccion } from '../../lib/repository';
 import { guardarCampana, reiniciarTarjeta } from '../../lib/functions';
-import { validarCampana, restoSinPremio, segmentosDelJuego, describirPremio, normalizarPremio, repartirProbabilidades, regalaCualquierServicio, COLORES } from '../../utils/recompensas';
+import { validarCampana, restoSinPremio, segmentosDelJuego, describirPremio, normalizarPremio, repartirProbabilidades, regalaCualquierServicio, adicionalQueNombra, COLORES } from '../../utils/recompensas';
 import { diasEnTexto } from '../../components/recompensas/movimiento';
 import Rueda from '../../components/recompensas/Rueda';
 import TarjetaFidelidad from '../../components/recompensas/TarjetaFidelidad';
@@ -36,6 +36,39 @@ function premiosDeLaConfig(cfg) {
     ...(cfg.premio ? [cfg.premio] : []),
     ...(Array.isArray(cfg.niveles) ? cfg.niveles.map((n) => n?.premio).filter(Boolean) : []),
   ];
+}
+
+/** Marca `regaloConfirmado` en los premios que regalan el servicio entero. */
+function confirmarRegalos(cfg) {
+  const marcar = (p) => (p && regalaCualquierServicio(p) ? { ...p, regaloConfirmado: true } : p);
+  return {
+    ...cfg,
+    ...(Array.isArray(cfg.premios) ? { premios: cfg.premios.map(marcar) } : {}),
+    ...(cfg.premio ? { premio: marcar(cfg.premio) } : {}),
+    ...(Array.isArray(cfg.niveles) ? { niveles: cfg.niveles.map((n) => (n ? { ...n, premio: marcar(n.premio) } : n)) } : {}),
+  };
+}
+
+/**
+ * En la tarjeta de la campaña: los premios guardados que regalan el servicio
+ * entero sin que nadie lo haya confirmado. Son los de antes de que el editor lo
+ * preguntara (Franlook). Los que se llaman como un adicional ya se aplican
+ * sobre él solos; igual se avisa, para que el dueño lo deje escrito.
+ */
+function AvisoRegalaTodo({ config, adicionales }) {
+  const sinConfirmar = premiosDeLaConfig(config).filter((p) => regalaCualquierServicio(p) && !p.regaloConfirmado);
+  if (!sinConfirmar.length) return null;
+  return (
+    <div className="notice notice-warn" role="status" style={{ marginBottom: 8 }}>
+      <strong>Revisá:</strong>{' '}
+      {sinConfirmar.map((p) => {
+        const a = adicionalQueNombra(p.nombre, adicionales);
+        return a
+          ? `"${p.nombre}" se aplica sobre ${a.name}, no sobre el corte`
+          : `"${p.nombre}" regala el servicio entero`;
+      }).join('; ')}. Tocá Configurar y guardalo para dejarlo confirmado.
+    </div>
+  );
 }
 
 const CAMPANAS = [
@@ -215,6 +248,7 @@ export default function RecompensasPage() {
                   </div>
                 </div>
                 <p className="campana-desc">{meta.desc}</p>
+                {c?.config && <AvisoRegalaTodo config={c.config} adicionales={adicionales} />}
                 {c?.config ? (
                   <p className="campana-resumen">{resumen(meta.tipo, c.config)}</p>
                 ) : (
@@ -328,7 +362,8 @@ function EditorCampana({ tipo, inicial, activa, services, onCerrar, onGuardar })
   // Un premio que regala el servicio ENTERO, el que sea, se confirma a mano.
   // Es la configuración que le regaló ocho cortes de $20.000 a Franlook con
   // premios que se llamaban "Café", "Lavado" y "Cejas".
-  const regalanTodo = v.ok ? premiosDeLaConfig(v.config).filter(regalaCualquierServicio) : [];
+  // Los ya confirmados no se vuelven a preguntar.
+  const regalanTodo = v.ok ? premiosDeLaConfig(v.config).filter((p) => regalaCualquierServicio(p) && !p.regaloConfirmado) : [];
   const [confirmaRegalo, setConfirmaRegalo] = useState(false);
   const falta = regalanTodo.length > 0 && !confirmaRegalo;
 
@@ -337,7 +372,9 @@ function EditorCampana({ tipo, inicial, activa, services, onCerrar, onGuardar })
     setGuardando(true);
     setError('');
     try {
-      await onGuardar(tipo, v.config, prender);
+      // La confirmación queda en cada premio: sin ella, uno que se llama como
+      // un adicional se aplica sobre el adicional (`premioEfectivo`).
+      await onGuardar(tipo, confirmaRegalo ? confirmarRegalos(v.config) : v.config, prender);
     } catch (err) {
       setError(err.message);
       setGuardando(false);
@@ -435,7 +472,7 @@ function EditorPremio({ premio, onCambio, services, conProbabilidad = false, onQ
   // El nombre dice "lavado" pero el premio descuenta el corte: es exactamente
   // el error de Franlook. Se avisa al lado, con el botón para corregirlo.
   const nombreSugiere = enServicio && p.tipo !== 'personalizado' && p.nombre
-    ? adicionales.find((a) => a.name && String(p.nombre).toLowerCase().includes(String(a.name).toLowerCase().split(' ')[0]))
+    ? adicionalQueNombra(p.nombre, adicionales)
     : null;
   // Un nombre automático del producto anterior se va con él; uno escrito a mano
   // se respeta.

@@ -165,6 +165,9 @@ function normalizarPremio(p, { conProbabilidad = false, indice = 0 } = {}) {
   if (productoIds.length) { premio.productoIds = productoIds; premio.productoNombre = productoNombre; }
   if (adicionalIds.length) { premio.adicionalIds = adicionalIds; premio.adicionalNombre = adicionalNombre; }
   if (valorMaximo) premio.valorMaximo = valorMaximo;
+  // El dueño confirmó que quiere regalar el servicio entero (ver
+  // `premioEfectivo`). Solo tiene sentido en un premio que lo regala.
+  if (d.regaloConfirmado === true && regalaCualquierServicio(premio)) premio.regaloConfirmado = true;
 
   if (conProbabilidad) {
     const prob = Number(d.probabilidad);
@@ -300,6 +303,49 @@ function regalaCualquierServicio(p) {
   if (p.alcance === 'producto' || p.alcance === 'adicional') return false;
   if ((p.serviceIds || []).length) return false;
   return !(Number(p.valorMaximo) > 0);
+}
+
+// Palabras que nombran al servicio principal o al premio en sí, no a un
+// adicional: "Corte gratis" no es el adicional "Corte de cejas".
+const PALABRAS_GENERICAS = ['corte', 'gratis', 'premio', 'regalo', 'descuento', 'servicio', 'turno'];
+
+/** 'Café gratis 🚿' → ['cafe', 'gratis']. Sin tildes, sin emojis. */
+function palabrasDe(texto) {
+  return String(texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9ñ]+/).filter(Boolean);
+}
+
+/**
+ * El adicional que nombra el premio, o null. "Café gratis" → el adicional
+ * "Café"; "Cejas" → "Perfilado de cejas". Cuenta una palabra de 4 letras o
+ * más del adicional (no genérica) que aparezca en el nombre del premio.
+ *
+ * Lo usan el editor (para avisar) y la reserva (ver `premioEfectivo`).
+ */
+function adicionalQueNombra(nombre, adicionales = []) {
+  const delPremio = palabrasDe(nombre);
+  if (!delPremio.length) return null;
+  return (Array.isArray(adicionales) ? adicionales : []).find((a) => a && palabrasDe(a.name)
+    .filter((w) => w.length >= 4 && !PALABRAS_GENERICAS.includes(w))
+    .some((w) => delPremio.some((x) => x === w || (x.length >= 4 && (x.startsWith(w) || w.startsWith(x)))))) || null;
+}
+
+/**
+ * El premio como se aplica de verdad. Uno que regala el servicio ENTERO sin
+ * que nadie lo haya confirmado, y que se llama como un adicional ("Café",
+ * "Lavado", "Cejas"), se aplica sobre ESE adicional: es lo que el dueño quiso
+ * regalar. Así se corrigen solas las campañas guardadas antes de que el editor
+ * pidiera confirmarlo, y los premios que ya ganó alguien con esa configuración
+ * (Franlook, auditoría del 12/11/2026: nueve cortes de $20.000 regalados).
+ *
+ * `regaloConfirmado` lo escribe el editor cuando el dueño tilda que sí quiere
+ * regalar el servicio entero: ese premio queda como está.
+ */
+function premioEfectivo(p, adicionales = []) {
+  if (!p || p.regaloConfirmado === true || !regalaCualquierServicio(p)) return p;
+  const a = adicionalQueNombra(p.nombre, adicionales);
+  if (!a) return p;
+  return { ...p, alcance: 'adicional', adicionalIds: [a.id], adicionalNombre: a.name, serviceIds: [] };
 }
 
 /**
@@ -776,6 +822,8 @@ export {
   describirPremio,
   calcularPremio,
   regalaCualquierServicio,
+  adicionalQueNombra,
+  premioEfectivo,
   esPremioGrande,
   premiosParaSortear,
   estadoDelPremio,
