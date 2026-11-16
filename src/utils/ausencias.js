@@ -56,6 +56,30 @@ import { timeToMinutes } from './dateUtils.js';
 /** Minutos de un día. El límite de los intervalos que se bloquean. */
 export const DIA_COMPLETO = 24 * 60;
 
+// ── El local cerrado un día (feriado) ───────────────────────────────────────
+// Pedido de Franlook (16/11/2026): el lunes feriado no había forma de cerrar
+// el local, así que apagaron el lunes en el horario semanal de la sucursal —
+// que es TODOS los lunes— y se olvidaron de prenderlo: el lunes siguiente
+// nadie pudo reservar. La otra salida era una ausencia por barbero, de a uno.
+//
+// Es una ausencia de día completo con `professionalId: LOCAL`, en la misma
+// colección. `bloqueosDelDia` la cuenta para TODOS los profesionales, así que
+// la respetan sin aprender nada los mismos lugares que ya miran las ausencias:
+// el motor, el calendario, el modal del staff, `createAppointment` y los
+// turnos fijos. Las Rules no dejan que un barbero la cree (`esSuHorario` pide
+// que el `professionalId` sea el suyo): solo el dueño.
+export const LOCAL = '__local';
+
+/** ¿Es el día en que cierra todo el local? */
+export function esCierreDelLocal(a) {
+  return Boolean(a && a.professionalId === LOCAL);
+}
+
+/** Lo que cuenta para un profesional: lo suyo y los cierres del local. */
+function delProfesional(a, professionalId, fecha) {
+  return a && a.fecha === fecha && (a.professionalId === professionalId || a.professionalId === LOCAL);
+}
+
 /**
  * ¿Este documento dice "ese día trabajo de X a Y" y no "ese día no vengo"?
  *
@@ -183,9 +207,7 @@ export function normalizarAusencia({ professionalId, fecha, desde = null, hasta 
  * falta un camino nuevo.
  */
 export function bloqueosDelDia(ausencias = [], professionalId, fecha) {
-  const propias = (ausencias || []).filter(
-    (a) => a && a.professionalId === professionalId && a.fecha === fecha
-  );
+  const propias = (ausencias || []).filter((a) => delProfesional(a, professionalId, fecha));
   if (!propias.length) return { todoElDia: false, intervalos: [] };
 
   const horarios = propias.filter(esHorarioEspecial);
@@ -285,6 +307,18 @@ export function fechasEntre(desde, hasta, tope = 366) {
     d.setDate(d.getDate() + 1);
   }
   return salida;
+}
+
+/** ¿Cierra el local ese día? */
+export function localCerrado(ausencias = [], fecha) {
+  return (ausencias || []).some((a) => esCierreDelLocal(a) && a.fecha === fecha);
+}
+
+/** Los días en que cierra el local, de hoy en adelante y ordenados. */
+export function cierresProximos(ausencias = [], desdeFecha) {
+  return (ausencias || [])
+    .filter((a) => esCierreDelLocal(a) && a.fecha >= desdeFecha)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
 }
 
 /**

@@ -267,6 +267,8 @@ await esperar('cajero NO crea profesionales',            crear(cajeroA, `busines
 await esperar('cajero NO se nombra admin',               crear(cajeroA, `businesses/${A}/admins`, { email: 'x@y.com', role: 'owner' }), 'denegado');
 await esperar('cajero NO borra turnos',                  borrar(cajeroA, `businesses/${A}/appointments/apt-otro`), 'denegado');
 await esperar('cajero NO toca horarios',                 crear(cajeroA, `businesses/${A}/schedules`, { professionalId: 'p1', dayOfWeek: 1 }), 'denegado');
+await esperar('el dueno cierra el local un dia',       crear(duenoA, `businesses/${A}/ausencias`, { professionalId: '__local', fecha: '2027-03-09', desde: null, hasta: null }), 'permitido');
+await esperar('barbero NO cierra el local',            crear(barberoA, `businesses/${A}/ausencias`, { professionalId: '__local', fecha: '2027-03-10', desde: null, hasta: null }), 'denegado');
 await esperar('cajero NO marca ausencias',               crear(cajeroA, `businesses/${A}/ausencias`, { professionalId: 'p1', fecha: '2027-04-01', desde: null, hasta: null }), 'denegado');
 await esperar('cajero NO lee la agenda de la OTRA barberia', consultar(cajeroA, `businesses/${B}`, 'appointments'), 'denegado');
 await esperar('cajero NO lee los cobros de la plataforma',   leer(cajeroA, 'platform/cobros/items/cob-1'), 'denegado');

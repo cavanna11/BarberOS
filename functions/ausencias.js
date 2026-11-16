@@ -14,6 +14,10 @@
 // ya leídos. Es para que los turnos fijos, que recorren ocho semanas de fechas
 // en un bucle, puedan leer las ausencias UNA vez y no una por fecha.
 
+// El local cerrado un día (feriado): una ausencia de día completo con este
+// `professionalId`, que vale para todos. Gemelo de `LOCAL` en el front.
+const LOCAL = '__local';
+
 /** 'HH:MM' → minutos desde medianoche. null si no se entiende. */
 function aMinutos(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
@@ -50,6 +54,11 @@ function esHorarioEspecial(a) {
  */
 function motivoEnLista(propias, inicio, fin) {
   if (!propias || !propias.length) return null;
+
+  // El local cerrado le gana a todo: no hay horario especial que lo abra.
+  if (propias.some((a) => a && a.professionalId === LOCAL)) {
+    return 'La barbería está cerrada ese día.';
+  }
 
   const horarios = propias.filter(esHorarioEspecial);
   const faltas = propias.filter((a) => !esHorarioEspecial(a));
@@ -105,15 +114,19 @@ async function leerDeLaFecha(db, businessId, professionalId, fecha) {
   const snap = await db.collection(`businesses/${businessId}/ausencias`)
     .where('fecha', '==', fecha)
     .get();
-  return snap.docs.map((d) => d.data()).filter((a) => a && a.professionalId === professionalId);
+  return snap.docs.map((d) => d.data())
+    .filter((a) => a && (a.professionalId === professionalId || a.professionalId === LOCAL));
 }
 
 /** Todas las de un profesional, para recorrer un rango de fechas sin releer. */
 async function leerDelProfesional(db, businessId, professionalId) {
-  const snap = await db.collection(`businesses/${businessId}/ausencias`)
-    .where('professionalId', '==', professionalId)
-    .get();
-  return snap.docs.map((d) => d.data()).filter(Boolean);
+  // Dos consultas de una igualdad cada una, y no un `in`: así no depende de
+  // ningún índice. La segunda trae los días que cierra el local.
+  const [suyas, delLocal] = await Promise.all([
+    db.collection(`businesses/${businessId}/ausencias`).where('professionalId', '==', professionalId).get(),
+    db.collection(`businesses/${businessId}/ausencias`).where('professionalId', '==', LOCAL).get(),
+  ]);
+  return [...suyas.docs, ...delLocal.docs].map((d) => d.data()).filter(Boolean);
 }
 
 /** Lo que usa `createAppointment`: una fecha, una respuesta. */
@@ -122,6 +135,7 @@ async function motivoDeAusencia(db, businessId, professionalId, fecha, inicio, f
 }
 
 module.exports = {
+  LOCAL,
   esHorarioEspecial,
   motivoEnLista,
   faltaTodoElDia,

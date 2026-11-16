@@ -9,6 +9,7 @@ import { getDayName } from '../../utils/dateUtils';
 import CobroSena from '../../components/admin/CobroSena';
 import { errorDeHorario } from '../../utils/horarios';
 import HorarioSemanal from '../../components/admin/HorarioSemanal';
+import CierresDelLocal from '../../components/admin/CierresDelLocal';
 import LogoBarberia from '../../components/admin/LogoBarberia';
 import { puede } from '../../config/plans';
 
@@ -28,7 +29,7 @@ const defaultHours = [
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const { business, businessId } = useCurrentBusiness();
+  const { business, businessId, sucursales } = useCurrentBusiness();
   // Los servicios, para poder decirle si su grilla le hace perder tiempo.
   const { services, appointments } = useTenant();
   const [guardando, setGuardando] = useState(false);
@@ -296,7 +297,13 @@ export default function SettingsPage() {
               de 8 a 16 y de 19 a 22 es abrir 08:00, cerrar 16:00, volver 19:00 y cerrar 22:00.
             </p>
             <HorarioSemanal dias={form.businessHours || defaultHours} onChange={(h) => editar({ businessHours: h })} />
+            <p className="text-sm text-muted" style={{ marginTop: 8 }}>
+              ¿Un feriado? No apagues el día acá, que se apaga para todas las semanas: usá
+              &quot;Días que cierra el local&quot;, más abajo.
+            </p>
           </div>
+
+          <CierresDelLocal businessId={businessId} sucursales={sucursales} />
 
           {error && (
             <div className="notice notice-danger mt-md">{error}</div>

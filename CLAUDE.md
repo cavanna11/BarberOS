@@ -2717,6 +2717,25 @@ Orden de despliegue: **Rules y Functions primero, front después** (un front
 nuevo contra un servidor viejo mandaría `premioId` y el servidor lo ignoraría:
 el cliente vería el descuento y se le cobraría el precio de lista).
 
+### Días que cierra el local: feriados (16/11/2026)
+
+Franlook, para el lunes feriado, apagó el lunes en el horario de la sucursal
+(no había otra forma salvo cargar la ausencia de cada barbero de a uno) y se
+olvidó de prenderlo: el lunes siguiente nadie pudo reservar.
+
+Ahora Configuración → **Días que cierra el local** cierra una fecha (o varias
+seguidas, hasta 31) para todo el equipo, y con "En todas las sucursales" en las
+de la cuenta, en un solo lote. Es una ausencia de día completo con
+`professionalId: '__local'` (`LOCAL` en `utils/ausencias.js` y en
+`functions/ausencias.js`), en la misma colección: `bloqueosDelDia` y
+`leerDeLaFecha`/`leerDelProfesional` la cuentan para cualquier profesional, así
+que el motor, el calendario, el modal del staff, `createAppointment` ("La
+barbería está cerrada ese día.") y los turnos fijos la respetan sin otro cambio.
+Las Rules no dejan que un barbero la cree (`esSuHorario` pide su propio id).
+Los turnos ya reservados ese día no se cancelan solos: el panel avisa cuántos
+hay. Orden de despliegue: Functions primero (un bundle viejo la ignora, pero el
+servidor la hace cumplir).
+
 ### Cupones gratis sin tope (auditoría del 15/11/2026)
 
 Había dos cupones del 100% sin máximo de usos ni por cliente (`BARBER` en
@@ -3164,12 +3183,12 @@ node scripts/test-facturacion.mjs          # la cuenta del pago del abono (sin e
 node scripts/test-cupones.mjs              # el motor de cupones (sin emulador)
 ```
 
-Hoy (15/11/2026), con emulador: claims 88, reservas 146, billing 20, rules 155,
+Hoy (16/11/2026), con emulador: claims 88, reservas 149, billing 20, rules 157,
 alta 23, mercadopago 16, seña 18, sucursales 68, planes 71, reseñas 36,
-membresías 123, cupones 83, recompensas 135, turnos fijos 28 (1010).
+membresías 123, cupones 83, recompensas 135, turnos fijos 28 (1015).
 Sin emulador: recompensas 181, cupones 114, facturación 18, whatsapp 39,
-preview 24, intervalo 96, ausencias 97, orden 30, productos 54, estado del
-negocio 19 (672). Todo en verde (1682).
+preview 24, intervalo 96, ausencias 112, orden 30, productos 54, estado del
+negocio 19 (687). Todo en verde (1702).
 
 **Cupones por día de la semana** (pedido de Franlook, 09/11/2026): `cupon.dias`
 = [0..6], 0 = Lunes (la convención de horarios y happy hour), vacío = todos.

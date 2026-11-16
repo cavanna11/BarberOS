@@ -49,6 +49,7 @@ import {
   normalizarAusencia,
   idDeHorarioEspecial,
   normalizarHorarioEspecial,
+  LOCAL,
 } from '../utils/ausencias';
 import { db, reconectarFirestore } from './firebase';
 import { aplicarPago } from '../utils/facturacion';
@@ -1248,6 +1249,34 @@ export async function guardarHorarioEspecial(businessId, horario) {
   const id = idDeHorarioEspecial(datos.professionalId, datos.fecha);
   await setDoc(doc(db, 'businesses', businessId, 'ausencias', id), { id, ...datos });
   return id;
+}
+
+/**
+ * Cierra el local esos dias (feriado), en una o varias sucursales, en UN lote.
+ *
+ * Es una ausencia de dia completo con `professionalId: LOCAL`: vale para todo
+ * el equipo sin tocar el horario semanal, asi que el dia siguiente se abre
+ * solo. En lote, para que no quede cerrada una sucursal y la otra no.
+ */
+export async function cerrarLocal(businessIds, fechas) {
+  const lote = writeBatch(db);
+  for (const bizId of businessIds) {
+    for (const fecha of fechas) {
+      const datos = normalizarAusencia({ professionalId: LOCAL, fecha });
+      const id = idDeAusencia(LOCAL, fecha);
+      lote.set(doc(db, 'businesses', bizId, 'ausencias', id), { id, ...datos });
+    }
+  }
+  await lote.commit();
+}
+
+/** Vuelve a abrir el local ese dia, en una o varias sucursales. */
+export async function abrirLocal(businessIds, fecha) {
+  const lote = writeBatch(db);
+  for (const bizId of businessIds) {
+    lote.delete(doc(db, 'businesses', bizId, 'ausencias', idDeAusencia(LOCAL, fecha)));
+  }
+  await lote.commit();
 }
 
 /** Saca una ausencia: el barbero vuelve a aparecer ese dia. */

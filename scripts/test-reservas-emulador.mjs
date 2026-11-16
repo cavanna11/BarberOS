@@ -500,6 +500,19 @@ chequear('con todos ausentes, el motivo es la ausencia',
   String(r.mensaje || '').includes('no atiende ese día'), JSON.stringify(r.mensaje));
 for (const d of (await db.collection(`businesses/${BID}/ausencias`).get()).docs) await d.ref.delete();
 
+// El local cerrado (feriado): ninguno atiende, sin cargarle nada a cada uno.
+await db.doc(`businesses/${BID}/ausencias/__local_2027-05-18_todo`).set({ professionalId: '__local', fecha: '2027-05-18', desde: null, hasta: null });
+const cFeriado = await usuario('feriado@gmail.com');
+r = await reservar(cFeriado, { ...base, professionalId: PROF, appointmentDate: '2027-05-18', startTime: '10:00' });
+chequear('local cerrado: rechaza con un barbero elegido',
+  !r.ok && String(r.mensaje || '').includes('cerrada'), JSON.stringify([r.ok, r.mensaje]));
+r = await reservar(cFeriado, { ...base, professionalId: 'cualquiera', appointmentDate: '2027-05-18', startTime: '11:00' });
+chequear('local cerrado: rechaza con "cualquiera"',
+  !r.ok && String(r.mensaje || '').includes('cerrada'), JSON.stringify([r.ok, r.mensaje]));
+r = await reservar(cFeriado, { ...base, professionalId: PROF, appointmentDate: '2027-05-25', startTime: '10:00' });
+chequear('local cerrado: la semana siguiente sí', Boolean(r.ok), JSON.stringify(r.mensaje));
+for (const d of (await db.collection(`businesses/${BID}/ausencias`).get()).docs) await d.ref.delete();
+
 // Y el camino de siempre no cambió.
 const cQ8 = await usuario('q8@gmail.com');
 r = await reservar(cQ8, { ...base, professionalId: 'NO-EXISTE', appointmentDate: '2027-05-25', startTime: '10:00' });

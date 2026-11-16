@@ -15,7 +15,10 @@ import {
   bloqueosDelDia, chocaConAusencia, faltaTodoElDia, fechasEntre, proximas,
   idDeHorarioEspecial, errorDeHorarioEspecial, normalizarHorarioEspecial,
   esHorarioEspecial, ventanaDelDia, DIA_COMPLETO,
+  LOCAL, esCierreDelLocal, localCerrado, cierresProximos,
 } from '../src/utils/ausencias.js';
+import { createRequire } from 'node:module';
+const srv = createRequire(import.meta.url)('../functions/ausencias.js');
 
 let pasaron = 0, fallaron = 0;
 const fallas = [];
@@ -282,6 +285,33 @@ console.log('\nEn la lista del panel:');
 const CON_HORARIO = proximas([he(PEPITO, MIERCOLES, '10:00', '13:00'), au(PEPITO, OTRO_MIERCOLES)], PEPITO, '2026-10-13');
 chequear('aparece junto a las ausencias', CON_HORARIO.length === 2);
 chequear('ordenado por fecha', CON_HORARIO[0].fecha === MIERCOLES);
+
+// ── El local cerrado (feriado, 16/11/2026) ─────────────────────────────────
+// Franlook apagó el lunes en el horario de la sucursal para el feriado y el
+// lunes siguiente nadie pudo reservar. El cierre es de UNA fecha y vale para
+// todo el equipo.
+console.log('\nEl local cerrado un día:');
+const FERIADO = au(LOCAL, MIERCOLES);
+chequear('LOCAL coincide en front y servidor', LOCAL === srv.LOCAL);
+chequear('es un cierre del local', esCierreDelLocal(FERIADO) && !esCierreDelLocal(au(PEPITO, MIERCOLES)));
+chequear('bloquea el día a Pepito', faltaTodoElDia([FERIADO], PEPITO, MIERCOLES) === true);
+chequear('y a Julián, sin cargarle nada', faltaTodoElDia([FERIADO], JULIAN, MIERCOLES) === true);
+chequear('el miércoles siguiente no', faltaTodoElDia([FERIADO], PEPITO, OTRO_MIERCOLES) === false);
+chequear('choca con cualquier horario', chocaConAusencia([FERIADO], JULIAN, MIERCOLES, min('10:00'), min('10:30')) === true);
+chequear('le gana a un horario especial',
+  faltaTodoElDia([FERIADO, he(PEPITO, MIERCOLES, '10:00', '13:00')], PEPITO, MIERCOLES) === true);
+chequear('localCerrado ese día', localCerrado([FERIADO], MIERCOLES) && !localCerrado([FERIADO], OTRO_MIERCOLES));
+chequear('la ausencia de un barbero no cierra el local', localCerrado([au(PEPITO, MIERCOLES)], MIERCOLES) === false);
+chequear('cierresProximos: ordenados y sin los pasados', (() => {
+  const l = cierresProximos([au(LOCAL, OTRO_MIERCOLES), au(LOCAL, '2026-10-01'), FERIADO, au(PEPITO, MIERCOLES)], '2026-10-13');
+  return l.length === 2 && l[0].fecha === MIERCOLES && l[1].fecha === OTRO_MIERCOLES;
+})());
+chequear('no aparece entre las ausencias del barbero', proximas([FERIADO], PEPITO, '2026-10-13').length === 0);
+chequear('el id es el de una ausencia de día completo', idDeAusencia(LOCAL, MIERCOLES) === `${LOCAL}_${MIERCOLES}_todo`);
+chequear('servidor: rechaza con "cerrada"', /cerrada/.test(srv.motivoEnLista([FERIADO], min('10:00'), min('10:30')) || ''));
+chequear('servidor: le gana al horario especial',
+  /cerrada/.test(srv.motivoEnLista([he(PEPITO, MIERCOLES, '10:00', '13:00'), FERIADO], min('10:00'), min('10:30')) || ''));
+chequear('servidor: faltaTodoElDia', srv.faltaTodoElDia([FERIADO]) === true);
 
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron`);
 if (fallas.length) console.log('Fallaron:\n  - ' + fallas.join('\n  - '));
