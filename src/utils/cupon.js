@@ -46,6 +46,23 @@ export function calcularDescuento(cupon, precio) {
   return { descuento, precioFinal: base - descuento };
 }
 
+/**
+ * ¿Este cupón deja el turno gratis a cualquiera, cuantas veces quiera?
+ *
+ * Un 100% (o un fijo que cubre el servicio más caro) sin tope de usos ni tope
+ * por cliente es un turno regalado para todo el que conozca el código. Puede
+ * ser a propósito (un cupón interno), pero también es el error más caro que se
+ * puede cometer en esta pantalla, así que el editor pide confirmarlo.
+ */
+export function regalaSinTope(cupon, precioMuestra = 0) {
+  if (!cupon) return false;
+  const valor = Number(cupon.valor) || 0;
+  const gratis = cupon.tipo === 'porcentaje'
+    ? valor >= 100
+    : cupon.tipo === 'fijo' && precioMuestra > 0 && valor >= precioMuestra;
+  return gratis && !(Number(cupon.maxUsos) > 0) && !(Number(cupon.maxUsosPorCliente) > 0);
+}
+
 /** '20% OFF' o '$3.000 OFF'. */
 export function describirCupon(cupon) {
   if (!cupon) return '';

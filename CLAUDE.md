@@ -2717,6 +2717,17 @@ Orden de despliegue: **Rules y Functions primero, front después** (un front
 nuevo contra un servidor viejo mandaría `premioId` y el servidor lo ignoraría:
 el cliente vería el descuento y se le cobraría el precio de lista).
 
+### Cupones gratis sin tope (auditoría del 15/11/2026)
+
+Había dos cupones del 100% sin máximo de usos ni por cliente (`BARBER` en
+Florida y `PRIMO` en Olivos): cualquiera que conociera el código reservaba
+gratis las veces que quisiera. `regalaSinTope(cupon, precioMuestra)` en
+`utils/cupon.js` lo detecta (100%, o un fijo que cubre el servicio más caro,
+sin ningún tope). El editor no deja guardar sin tildar "Sí, es a propósito",
+guarda `gratisConfirmado` (solo mientras siga gratis y sin tope), y la tarjeta
+muestra "Revisá:" en los que no están confirmados. Es solo del editor: las Rules
+y el servidor no lo exigen, porque un cupón interno gratis es legítimo.
+
 ### Arreglos de la auditoría del 12/11/2026
 
 - **Premios de 100% guardados antes de la confirmación** (Franlook: "Café",
@@ -3153,12 +3164,12 @@ node scripts/test-facturacion.mjs          # la cuenta del pago del abono (sin e
 node scripts/test-cupones.mjs              # el motor de cupones (sin emulador)
 ```
 
-Hoy (12/11/2026), con emulador: claims 88, reservas 146, billing 20, rules 155,
+Hoy (15/11/2026), con emulador: claims 88, reservas 146, billing 20, rules 155,
 alta 23, mercadopago 16, seña 18, sucursales 68, planes 71, reseñas 36,
 membresías 123, cupones 83, recompensas 135, turnos fijos 28 (1010).
-Sin emulador: recompensas 181, cupones 105, facturación 18, whatsapp 39,
+Sin emulador: recompensas 181, cupones 114, facturación 18, whatsapp 39,
 preview 24, intervalo 96, ausencias 97, orden 30, productos 54, estado del
-negocio 19 (663). Todo en verde (1673).
+negocio 19 (672). Todo en verde (1682).
 
 **Cupones por día de la semana** (pedido de Franlook, 09/11/2026): `cupon.dias`
 = [0..6], 0 = Lunes (la convención de horarios y happy hour), vacío = todos.

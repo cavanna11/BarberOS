@@ -257,6 +257,19 @@ chequear('el mensaje para compartir dice los días',
   web.mensajeParaCompartir({ ...LMM, codigo: 'TRANQUI' }, 'Franlook', 'https://x').includes('Válido para turnos de lunes a miércoles.'));
 chequear('sin días el mensaje no cambia',
   !web.mensajeParaCompartir({ ...LMM, dias: [], codigo: 'X20' }, 'F', 'https://x').includes('Válido'));
+// ── Gratis sin tope (auditoría 15/11) ──────────────────────────────────────
+// Dos cupones del 100% sin máximo de usos estaban en producción: cualquiera
+// que supiera el código reservaba gratis. El editor pide confirmarlo.
+chequear('100% sin topes regala', web.regalaSinTope({ tipo: 'porcentaje', valor: 100 }) === true);
+chequear('100% con maxUsos no', web.regalaSinTope({ tipo: 'porcentaje', valor: 100, maxUsos: 5 }) === false);
+chequear('100% con tope por cliente no', web.regalaSinTope({ tipo: 'porcentaje', valor: 100, maxUsosPorCliente: 1 }) === false);
+chequear('50% sin topes no', web.regalaSinTope({ tipo: 'porcentaje', valor: 50 }) === false);
+chequear('fijo que cubre el más caro regala', web.regalaSinTope({ tipo: 'fijo', valor: 90000 }, 90000) === true);
+chequear('fijo menor al más caro no', web.regalaSinTope({ tipo: 'fijo', valor: 5000 }, 90000) === false);
+chequear('fijo sin precio de muestra no', web.regalaSinTope({ tipo: 'fijo', valor: 5000 }, 0) === false);
+chequear('topes como texto ("3") cuentan', web.regalaSinTope({ tipo: 'porcentaje', valor: 100, maxUsos: '3' }) === false);
+chequear('sin cupón no', web.regalaSinTope(null) === false);
+
 console.log(`\n${pasaron} pasaron, ${fallaron} fallaron`);
 if (fallas.length) console.log('Fallaron:\n  - ' + fallas.join('\n  - '));
 console.log('');

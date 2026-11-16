@@ -6,7 +6,7 @@ import {
 import {
   normalizarCodigo, codigoValido, calcularDescuento, describirCupon,
   estadoDelCupon, linkDelCupon, mensajeParaCompartir,
-  NOMBRES_DIAS, diasDelCupon, textoDeDias,
+  NOMBRES_DIAS, diasDelCupon, textoDeDias, regalaSinTope,
 } from '../../utils/cupon';
 import { formatPrice } from '../../utils/dateUtils';
 import QrDelCupon from '../../components/admin/QrDelCupon';
@@ -93,6 +93,13 @@ export default function CuponesPage() {
       setError('La fecha de fin tiene que ser posterior a la de inicio.');
       return false;
     }
+    // Un turno gratis para cualquiera, sin tope: se guarda solo si el dueño
+    // dijo que es a propósito (auditoría 15/11: dos cupones así en producción).
+    const sinTope = regalaSinTope({ ...datos, valor }, precioMuestra);
+    if (sinTope && datos.gratisConfirmado !== true) {
+      setError('Este cupón deja el turno gratis sin tope de usos. Poné un máximo o confirmá que es a propósito.');
+      return false;
+    }
     // Cambiar el código de un cupón que ya existe sería otro cupón: el código
     // ES el id del documento. Se avisa en vez de crear un duplicado en silencio.
     if (editando?.existente && editando.codigoOriginal !== codigo) {
@@ -115,6 +122,9 @@ export default function CuponesPage() {
         soloPrimeraVisita: datos.soloPrimeraVisita === true,
         maxUsos: Number(datos.maxUsos) || 0,
         maxUsosPorCliente: Number(datos.maxUsosPorCliente) || 0,
+        // Solo vale mientras el cupón siga siendo gratis y sin tope: si después
+        // le ponen un máximo, la confirmación ya no hace falta y no queda.
+        gratisConfirmado: sinTope,
       });
       setEditando(null);
       return true;
@@ -376,10 +386,24 @@ function FormularioCupon({ valor, services, professionals, precioMuestra, curren
         </div>
       )}
 
+      {regalaSinTope({ ...f, valor: Number(f.valor) || 0 }, precioMuestra) && (
+        <div className="notice notice-warn" role="status" style={{ marginTop: 'var(--space-md)' }}>
+          <p className="text-sm" style={{ margin: 0 }}>
+            Con este cupón el turno sale <strong>gratis</strong> y no tiene tope: cualquiera que
+            conozca el código reserva sin pagar, las veces que quiera. Si es para alguien en
+            particular, poné un máximo de usos o por cliente en "Más condiciones".
+          </p>
+          <label className="pagina-check" style={{ marginTop: 6 }}>
+            <input type="checkbox" checked={f.gratisConfirmado === true} onChange={(e) => set({ gratisConfirmado: e.target.checked })} />
+            <span>Sí, es a propósito: que sea gratis sin tope.</span>
+          </label>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-lg)' }}>
         <button
           className="btn btn-primary"
-          disabled={guardando}
+          disabled={guardando || (regalaSinTope({ ...f, valor: Number(f.valor) || 0 }, precioMuestra) && f.gratisConfirmado !== true)}
           onClick={async () => { setGuardando(true); await onGuardar(f); setGuardando(false); }}
         >
           {guardando ? 'Guardando…' : 'Guardar cupón'}
@@ -434,6 +458,13 @@ function TarjetaCupon({ cupon, slug, nombre, currency, services, professionals, 
         </div>
         <span className={`badge ${estado.clase}`}>{estado.label}</span>
       </div>
+
+      {regalaSinTope(cupon, precioDeMuestra(services)) && cupon.gratisConfirmado !== true && (
+        <p className="notice notice-warn text-sm" role="status" style={{ margin: '4px 0' }}>
+          <strong>Revisá:</strong> deja el turno gratis y no tiene tope de usos. Editalo para ponerle un máximo
+          o confirmar que es a propósito.
+        </p>
+      )}
 
       {condiciones.length > 0 && (
         <p className="text-sm text-muted cupon-condiciones-resumen">{condiciones.join(' · ')}</p>
