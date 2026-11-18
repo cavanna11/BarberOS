@@ -383,6 +383,9 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
                 )}
               </div>
               <div className="text-sm text-muted" title={origen.detalle}>{origen.icono} {origen.etiqueta}</div>
+              {apt.pidioCualquiera && (
+                <div className="text-sm text-secondary">👥 Pidió <strong>cualquiera</strong> — lo atiende el que esté libre</div>
+              )}
               <div className="text-sm text-secondary">
                 {isWalkin ? 'Horario bloqueado' : `${srv?.name || '—'}${textoAdicionales(apt)} · ${precioDe(apt)}${textoMetodoPago(apt)}`}
                 {isOwner && prof && <> · {prof.name}</>}
@@ -450,6 +453,14 @@ El turno vuelve a cobrarse y el uso vuelve al cupo del cliente.`);
                     <span className={`badge ${origen.clase}`} title={origen.detalle} style={{ fontSize: 11 }}>
                       {origen.icono} {origen.etiqueta}
                     </span>
+                    {/* Mismo aviso que la agenda del día. Sin esto, desde
+                        Citas un turno de "Cualquiera" se ve como pedido a
+                        dedo al barbero que le tocó (lo reportó Franlook). */}
+                    {apt.pidioCualquiera && (
+                      <div className="text-sm text-secondary" style={{ marginTop: 4 }} title="El cliente eligió Cualquiera: el sistema le asignó el barbero libre">
+                        👥 Pidió cualquiera
+                      </div>
+                    )}
                   </td>
                   <td className="oculta-mobile">{etiquetaSena(apt, business?.currency)}</td>
                   <td>{apt.clientPhone || '—'}</td>
