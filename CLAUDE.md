@@ -2282,7 +2282,7 @@ Cómo verificarlo sin abrir un navegador (la propagación de Google tarda de 5
 minutos a unas horas, así que esto es lo que dice si ya está):
 
 ```bash
-KEY=AIzaSyA2utnIdWsuBuxBhzGis_e1quOtbB11nUQ
+KEY=$(grep ^VITE_FIREBASE_API_KEY= .env | cut -d= -f2)   # la clave web, pública por diseño
 U=$(curl -s -X POST "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=$KEY"   -H "Content-Type: application/json"   -d '{"providerId":"google.com","continueUri":"https://barberos.sacia.tech/__/auth/handler"}'   | python -c "import sys,json;print(json.load(sys.stdin)['authUri'])")
 curl -s -L "$U" | grep -qi redirect_uri_mismatch && echo RECHAZADO || echo ACEPTADO
 ```
@@ -3067,7 +3067,7 @@ un barbero sin un perfil que exista. Nunca más una agenda vacía sin explicaci�
 La API key es pública por diseño (va en el bundle).
 
 ```bash
-KEY=AIzaSyA2utnIdWsuBuxBhzGis_e1quOtbB11nUQ
+KEY=$(grep ^VITE_FIREBASE_API_KEY= .env | cut -d= -f2)   # la clave web, pública por diseño
 BASE="https://firestore.googleapis.com/v1/projects/barberos-1d60e/databases/(default)/documents"
 
 # Sin login: 404 = la regla permitió (doc no existe) | 403 = denegado
